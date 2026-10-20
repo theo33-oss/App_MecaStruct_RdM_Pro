@@ -1,0 +1,6 @@
+validation/
+userdata/
+*.asv
+*.autosave
+slprj/
+docs/.status/

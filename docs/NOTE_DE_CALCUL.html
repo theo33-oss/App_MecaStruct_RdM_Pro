@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Note de calcul MecaStruct</title>
+<script>window.MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] } };</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-chtml.min.js"></script>
+<style>
+  :root { --bg:#fbfaf7; --fg:#1f2328; --muted:#5b6370; --accent:#1f5fa8; --card:#ffffff; --line:#e3e1db; --ok:#1d7a3a; --ko:#b3261e; --warn:#fff3d6; --demo:#eef5fd; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#16181c; --fg:#e7e9ec; --muted:#a3abb7; --accent:#79b0f0; --card:#1f2228; --line:#30343c; --ok:#5cc47e; --ko:#f08a80; --warn:#2b2716; --demo:#1b2432; } }
+  :root[data-theme="dark"] { --bg:#16181c; --fg:#e7e9ec; --muted:#a3abb7; --accent:#79b0f0; --card:#1f2228; --line:#30343c; --ok:#5cc47e; --ko:#f08a80; --warn:#2b2716; --demo:#1b2432; }
+  body { background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, "Segoe UI", sans-serif; margin:0; }
+  main { max-width:980px; margin:0 auto; padding:24px 16px 90px; }
+  h1 { font-size:2rem; margin:0 0 4px; }
+  h2 { margin-top:52px; padding-top:12px; border-top:2px solid var(--line); color:var(--accent); }
+  h3 { margin-top:28px; }
+  a { color:var(--accent); }
+  table { border-collapse:collapse; width:100%; margin:12px 0; font-size:.93rem; }
+  th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:var(--card); }
+  code { background:var(--card); border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:.9em; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 16px; margin:14px 0; }
+  .hyp { border-left:4px solid var(--accent); }
+  .demo { background:var(--demo); border-left:4px solid var(--accent); border-radius:6px; padding:8px 16px; margin:14px 0; }
+  .warn { background:var(--warn); border-left:4px solid #d9a400; border-radius:6px; padding:8px 16px; margin:14px 0; }
+  .ref { color:var(--muted); font-size:.88rem; }
+  .ok { color:var(--ok); font-weight:600; } .ko { color:var(--ko); font-weight:600; }
+  .toc ol { columns:2; } @media (max-width:640px) { .toc ol { columns:1; } }
+  mjx-container { overflow-x:auto; overflow-y:hidden; max-width:100%; }
+  @media print { h2 { page-break-before:auto; } .demo, .warn, .box { break-inside:avoid; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Note de calcul — MecaStruct RdM Pro</h1>
+<p>Cette note sert à <strong>valider le travail du logiciel</strong>. Pour chaque module, elle donne les hypothèses, les équations utilisées, les conditions aux limites, une démonstration rapide des formules et la fonction MATLAB qui les met en œuvre. Un relecteur peut ainsi vérifier trois choses : le modèle physique est adapté, les équations sont justes, et le code fait bien ce qui est écrit ici.</p>
+
+<div class="box toc"><strong>Sommaire</strong>
+<ol>
+  <li><a href="#usage">Comment relire cette note</a></li>
+  <li><a href="#hyp">Hypothèses générales et conventions</a></li>
+  <li><a href="#statique">Statique et torseur de cohésion</a></li>
+  <li><a href="#sections">Caractéristiques de section</a></li>
+  <li><a href="#poutres">Poutres : efforts, hyperstatisme, déformée</a></li>
+  <li><a href="#treillis">Treillis</a></li>
+  <li><a href="#traction">Traction / compression</a></li>
+  <li><a href="#cisaillement">Cisaillement et matage</a></li>
+  <li><a href="#torsion">Torsion</a></li>
+  <li><a href="#flexion">Flexion</a></li>
+  <li><a href="#flambage">Flambage</a></li>
+  <li><a href="#tenseurs">Tenseurs, Mohr et critères</a></li>
+  <li><a href="#hooke">Loi de Hooke et extensométrie</a></li>
+  <li><a href="#donnees">Données matériaux et profilés</a></li>
+  <li><a href="#cas">Cas de validation et valeurs de référence</a></li>
+  <li><a href="#limites">Limites connues et points à trancher</a></li>
+  <li><a href="#code">Correspondance avec le code</a></li>
+</ol></div>
+
+<!-- ================================================================== -->
+<h2 id="usage">1. Comment relire cette note</h2>
+<ol>
+  <li>Lire les <a href="#hyp">hypothèses générales</a> : elles bornent le domaine de validité de tout le logiciel.</li>
+  <li>Pour chaque module, comparer les équations de la note à celles de votre cours ou d'un manuel de référence.</li>
+  <li>Refaire à la main les cas de la section <a href="#cas">« Cas de validation »</a> : les valeurs attendues y sont données. Elles sont aussi vérifiées automatiquement par les tests (<code>run('tests/run_all_tests.m')</code>).</li>
+  <li>Lire les <a href="#limites">points à trancher</a> : ce sont les endroits où le logiciel suit une convention ou une valeur du cours qu'un relecteur peut vouloir changer.</li>
+</ol>
+<div class="warn"><strong>Principe de contrôle interne.</strong> Chaque grandeur importante est calculée par au moins deux méthodes indépendantes (analytique, intégrale, énergétique, matricielle). Le rapport de l'application affiche l'écart entre elles. Un écart non nul est un signal d'alerte sur le modèle ou sur le code.</div>
+
+<!-- ================================================================== -->
+<h2 id="hyp">2. Hypothèses générales et conventions</h2>
+<div class="box hyp">
+<table>
+  <tr><th>N°</th><th>Hypothèse</th><th>Conséquence</th></tr>
+  <tr><td>H1</td><td><strong>Matériau</strong> homogène, isotrope (sauf l'onglet Hooke en mode orthotrope), linéaire élastique : $\sigma = E\varepsilon$ jusqu'à $R_e$.</td><td>Aucune plasticité, aucun écrouissage. Au-delà de $R_e$, les résultats n'ont plus de sens et le logiciel signale « NON vérifié ».</td></tr>
+  <tr><td>H2</td><td><strong>Petits déplacements et petites déformations</strong>. L'équilibre est écrit sur la géométrie non déformée.</td><td>Pas d'effet du second ordre, sauf le flambage, traité à part (Euler, Rankine).</td></tr>
+  <tr><td>H3</td><td><strong>Poutre</strong> : une dimension (la longueur) très supérieure aux dimensions de la section, ligne moyenne droite, section constante par tronçon. Les sections planes restent planes (hypothèse de Navier-Bernoulli).</td><td>Valable pour $L/h \gtrsim 10$. Pour les poutres courtes, la déformation due à l'effort tranchant devient sensible : elle est incluse dans Castigliano (option) via le coefficient $k_y$.</td></tr>
+  <tr><td>H4</td><td><strong>Principe de Saint-Venant</strong> : les contraintes dans une section éloignée des points d'application des charges ne dépendent que du torseur de cohésion.</td><td>Les contraintes près des appuis, des trous et des changements de section ne sont pas calculées finement : on applique un coefficient de concentration $K_t$ à la contrainte nominale.</td></tr>
+  <tr><td>H5</td><td><strong>Treillis</strong> : barres articulées aux nœuds, charges et appuis aux nœuds seulement, pas de poids propre sauf s'il est saisi comme charge.</td><td>Chaque barre ne subit qu'un effort normal constant.</td></tr>
+  <tr><td>H6</td><td><strong>Superposition</strong> : valable car le système est linéaire (H1 et H2).</td><td>Les cas de charge s'additionnent. La méthode de Ménabréa et les 4 méthodes de flèche reposent là-dessus.</td></tr>
+  <tr><td>H7</td><td><strong>Torsion</strong> : arbre de section circulaire (plein ou creux), section constante, sections qui restent planes et indéformées.</td><td>Les sections non circulaires ne sont pas traitées en torsion. La constante de torsion $J$ pour la poutre est approchée (voir §4).</td></tr>
+  <tr><td>H8</td><td><strong>Critères de résistance</strong> : $\sigma_{eq} \le R_e/s$ avec Tresca ou Von Mises (matériaux ductiles). Pour les matériaux fragiles, un critère de contrainte normale maximale (Rankine) est aussi affiché.</td><td>Aucun calcul de fatigue, de fluage, de fissuration ou de choc.</td></tr>
+</table></div>
+
+<h3>Conventions</h3>
+<table>
+  <tr><th>Sujet</th><th>Convention</th></tr>
+  <tr><td>Unités des moteurs</td><td>SI strict : N, m, Pa, N·m, rad. Les conversions se font uniquement à l'interface (<code>DataManager.toSI</code>/<code>fromSI</code>).</td></tr>
+  <tr><td>Repère de poutre</td><td>$x$ = ligne moyenne (abscisse $s\in[0,L]$), $y$ vertical vers le haut, $z$ tel que $(x,y,z)$ soit direct.</td></tr>
+  <tr><td>Moments quadratiques</td><td>$I_z=\iint y^2\,dS$ (flexion dans le plan $(x,y)$), $I_y=\iint z^2\,dS$, $I_{yz}=\iint yz\,dS$, $I_x=I_z+I_y$ (polaire). <strong>Attention :</strong> pour un profilé en I debout, $I_z$ de l'application est l'axe fort ; les catalogues Eurocode le notent $I_y$.</td></tr>
+  <tr><td>Torseur de cohésion</td><td>$\{T_{coh}\}_G = \{\text{actions extérieures à droite}\}_G = -\{\text{actions à gauche}\}_G$. $N>0$ en traction.</td></tr>
+  <tr><td>Charges</td><td>Composantes dans le repère global. Une charge descendante a $p_y<0$ ; le $q$ du cours vaut $-p_y$.</td></tr>
+  <tr><td>Réactions</td><td>Efforts exercés <em>par l'appui sur la poutre</em>.</td></tr>
+  <tr><td>Contraintes</td><td>Traction positive. Cisaillements des déformations en notation d'ingénieur ($\gamma=2\varepsilon_{xy}$) dans la notation de Voigt.</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="statique">3. Statique et torseur de cohésion</h2>
+<h3>Équations</h3>
+<p>Équilibre d'un solide : $\sum \vec F_{ext}=\vec0$ et $\sum \vec M_A(\vec F_{ext})=\vec0$, avec $\vec M_A(\vec F)=\overrightarrow{AP}\wedge\vec F$ et transport $\vec M_A=\vec M_B+\overrightarrow{AB}\wedge\vec R$.</p>
+<p>Torseur de cohésion en $s$ (somme des actions à droite, charges réparties comprises) :</p>
+<p>$$N(s)=\sum_{droite}F_{x,i}+\int_s^L p_x\,dx,\qquad T_y(s)=\sum_{droite}F_{y,i}+\int_s^L p_y\,dx$$
+$$M_{fz}(s)=\sum_{droite}\big[(x_i-s)F_{y,i}+C_{z,i}\big]+\int_s^L (x-s)\,p_y\,dx$$</p>
+<p>Même écriture pour $T_z$, $M_t$ et $M_{fy}$ (avec le signe moins sur $F_z$ et $p_z$ dans $M_{fy}$).</p>
+
+<div class="demo"><strong>Démonstration des relations différentielles.</strong> On isole la tranche $[s,s+ds]$ soumise à la charge $p_y\,ds$. Avec la convention « droite », $T_y(s)=T_y(s+ds)+p_y\,ds$ (l'action à droite de $s$ est celle à droite de $s+ds$ plus la charge de la tranche), d'où $dT_y/ds=-p_y=q$. De même, $M_{fz}(s)=M_{fz}(s+ds)+ds\,T_y(s+ds)+O(ds^2)$ donne, à la limite, $dM_{fz}/ds=-T_y$. On en déduit :
+<ul>
+  <li>le moment est extrémal là où $T_y$ s'annule ou change de signe ;</li>
+  <li>une force ponctuelle $F_y$ en $a$ crée un saut de $T_y$ de valeur $F_y$ ($T_y(a^-)=T_y(a^+)+F_y$) ;</li>
+  <li>un couple ponctuel $C_z$ en $a$ crée un saut de $M_{fz}$.</li>
+</ul>
+Ces trois propriétés sont vérifiées visuellement sur les diagrammes, et la deuxième est testée numériquement : la méthode « coupures » (sommes à droite) et la méthode « intégrale » (intégration à partir de $s=L$) doivent coïncider ($\text{écart relatif}<10^{-9}$).</div>
+
+<h3>Conditions aux limites (liaisons)</h3>
+<table>
+  <tr><th>Liaison</th><th>Déplacements bloqués</th><th>Inconnues en 2D</th></tr>
+  <tr><td>Appui simple, pivot glissant</td><td>$v$ (et $w$)</td><td>1 : $Y$</td></tr>
+  <tr><td>Rotule, pivot</td><td>$u, v$ (et $w$)</td><td>2 : $X, Y$</td></tr>
+  <tr><td>Encastrement</td><td>$u,v,w,\theta_x,\theta_y,\theta_z$</td><td>3 : $X, Y, M$</td></tr>
+</table>
+<p><strong>Degré d'hyperstatisme</strong> $h$ = inconnues − équations (3 en plan). La poutre est décomposée en 4 sous-problèmes indépendants : axial, flexion $(x,y)$, flexion $(x,z)$ et torsion. Si $h<0$, le logiciel signale un mécanisme (erreur <code>MecaStruct:Beam:mechanism</code>).</p>
+<p class="ref">Code : <code>BeamAndTrussSolver.solveBeam</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="sections">4. Caractéristiques de section</h2>
+<h3>Hypothèses</h3>
+<p>Sections pleines ou creuses, composées de rectangles, de disques et de couronnes (additifs ou soustractifs). Les profilés du catalogue sont modélisés par une géométrie <strong>simplifiée</strong> (épaisseurs constantes, congés ignorés), sauf pour la comparaison avec les valeurs tabulées.</p>
+<h3>Équations</h3>
+<p>$$S=\iint dS,\quad y_G=\frac{\iint y_1\,dS}{S},\quad I_{Gz}=\iint y^2\,dS,\quad I_{Gy}=\iint z^2\,dS,\quad I_x=I_{Gz}+I_{Gy}$$
+$$\text{Huygens :}\quad I_{O_1z_1}=I_{Gz}+S\,d_y^2,\qquad I_{Gz}=\sum_i\left(I_{G_i z}+S_i\,d_{y,i}^2\right)$$
+$$W_z=\frac{I_z}{v_{max}},\qquad r=\sqrt{I/S}$$</p>
+<p>Formules fermées : rectangle $I_z=bh^3/12$ ; disque $I_z=\pi D^4/64$, $I_x=\pi D^4/32$ ; couronne avec $m=d/D$ : $I_z=\pi D^4(1-m^4)/64$. Pour un profil en I, la méthode « grand rectangle moins deux vides » est équivalente à la somme de Huygens.</p>
+
+<div class="demo"><strong>Démonstration de Huygens.</strong> Pour un axe $\Delta$ parallèle à l'axe $G z$ à la distance $d$ : $I_\Delta=\iint (y+d)^2dS=\iint y^2dS+2d\iint y\,dS+d^2S$. Comme $\iint y\,dS=0$ (G est le barycentre), $I_\Delta=I_G+Sd^2$.</div>
+
+<h3>Deux méthodes de calcul, comparées</h3>
+<ul>
+  <li><strong>A : analytique</strong> (formules fermées et Huygens).</li>
+  <li><strong>B : intégrale</strong> (intégrales doubles posées avec leurs bornes ; <code>int</code> symbolique si la Symbolic Math Toolbox est disponible, sinon <code>integral2</code> numérique).</li>
+  <li><strong>C : tabulée</strong> (catalogue, pour les profilés).</li>
+</ul>
+<p>Les tests exigent A ≡ B à $10^{-9}$ près. L'écart avec le catalogue est affiché ; il vient de la géométrie simplifiée (congés), et peut dépasser 10 % sur les UPN et UAP (voir §16).</p>
+
+<h3>Constante de torsion $J$ (utilisée par les poutres)</h3>
+<p>Exacte pour le disque et la couronne ($J=I_x$). Pour les autres sections, <strong>valeur approchée</strong> : somme $\sum b t^3/3$ pour les parois minces ouvertes, formule de Saint-Venant pour le rectangle, formule de Bredt pour le caisson fermé.</p>
+
+<h3>Facteur de cisaillement</h3>
+<p>Valeurs du cours : $k=\tau_{max}/\tau_{moy}$ = 3/2 (rectangle), 4/3 (disque), $S/S_{âme}$ (profil en I). Valeur numérique par Jourawski : $k=\tau_{max}S/T$. Section réduite $k_y = I_z^2/\left(S\int Q^2/b\,dy\right)$ (égalité d'énergie), qui vaut 5/6 pour un rectangle.</p>
+<p class="ref">Code : <code>GeometryEngine.analytical / integral / tabulated / compare / shearFactors</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="poutres">5. Poutres : efforts, hyperstatisme, déformée</h2>
+<h3>Hypothèses spécifiques</h3>
+<ul>
+  <li>Modèle d'Euler-Bernoulli : la rotation des sections est égale à la pente de la ligne moyenne. L'effet de l'effort tranchant sur la flèche est ajouté seulement dans Castigliano, si la case est cochée.</li>
+  <li>Section et matériau constants sur toute la poutre ($E I$ constant).</li>
+  <li>Les charges réparties sont des polynômes (uniforme, linéaire, ou tout polynôme) en variable locale $\xi=s-a$.</li>
+  <li>Toutes les grandeurs (efforts, rotations, flèches) sont des <strong>polynômes par morceaux exacts</strong>, sans maillage ni discrétisation. Les tracés échantillonnent ces polynômes.</li>
+</ul>
+
+<h3>Équations</h3>
+<p>$$E I_z\,v''(s)=M_{fz}(s),\qquad \alpha(s)=v'(s),\qquad E I_y\,w''(s)=-M_{fy}(s)$$
+$$U=\int_0^L\left(\frac{N^2}{2ES}+\frac{T_y^2}{2k_yGS}+\frac{T_z^2}{2k_zGS}+\frac{M_t^2}{2GJ}+\frac{M_{fy}^2}{2EI_y}+\frac{M_{fz}^2}{2EI_z}\right)ds$$</p>
+
+<div class="demo"><strong>Démonstration de $EIv''=M_f$.</strong> Une fibre à la distance $y$ de la ligne moyenne s'allonge de $\varepsilon_{xx}=-y/\rho$, où $1/\rho\simeq v''$ (petits déplacements). Avec $\sigma=E\varepsilon$ : $\sigma_{xx}=-E\,y\,v''$. Le moment des contraintes autour de l'axe $z$ vaut $M_{fz}=-\iint\sigma_{xx}\,y\,dS=E v''\iint y^2dS=E I_z v''$.</div>
+
+<h3>Quatre méthodes de calcul de la flèche (doivent coïncider)</h3>
+<table>
+  <tr><th>Méthode</th><th>Équation</th><th>Conditions aux limites utilisées</th></tr>
+  <tr><td><strong>1. Double intégration</strong> par tronçon</td><td>$EIv_k'=\int M_k\,ds+C_{1k}$ ; $EIv_k=\iint M_k\,ds^2+C_{1k}s+C_{2k}$</td><td>$v=0$ aux appuis ; $v'=0$ à l'encastrement ; <strong>continuité</strong> de $v$ et $v'$ aux frontières de tronçons. Les $2n$ constantes sont déterminées par ces conditions ; si le système est surdéterminé (hyperstatique), résolution aux moindres carrés avec résidu affiché.</td></tr>
+  <tr><td><strong>2. Aires</strong> (moment des aires)</td><td>$\alpha(s)=\alpha_0+\dfrac{1}{EI}\int_0^sM\,ds$ ; $v(s)=v_0+\alpha_0 s+\dfrac1{EI}\sum_kA_k(s-\bar s_k)$</td><td>$\alpha_0,v_0$ fixés par deux conditions d'appui.</td></tr>
+  <tr><td><strong>3. Castigliano</strong></td><td>$v(s_0)=\dfrac{\partial U}{\partial F}=\displaystyle\int\frac{M\,\bar m}{EI}ds+\int\frac{T\,\bar t}{k_yGS}ds$</td><td>Force unité en $s_0$ (couple unité pour une rotation) ; $\bar m,\bar t$ = efforts du problème unité, résolu par le même solveur.</td></tr>
+  <tr><td><strong>4. Intégrales de Mohr</strong></td><td>$\displaystyle\int_0^l M\bar m\,ds$ par table (rectangle, triangle, trapèze, parabole)</td><td>Même problème unité ; hors table, intégration de Gauss.</td></tr>
+</table>
+
+<div class="demo"><strong>Démonstration de Castigliano.</strong> Le travail des forces extérieures est égal à l'énergie de déformation : $W=U$. Pour un système linéaire, $U$ est une fonction quadratique des charges $F_j$. En dérivant par rapport à $F_i$ : $\partial U/\partial F_i=\sum_j (\partial^2U/\partial F_i\partial F_j)\,F_j=\delta_i$, le déplacement du point d'application de $F_i$ dans sa direction (théorème de réciprocité de Maxwell-Betti). Avec $M=M^{(0)}+F\bar m$, $\partial U/\partial F=\int M\,\bar m/(EI)\,ds$ quand $F\to0$.</div>
+
+<h3>Hyperstatisme : Ménabréa</h3>
+<p>On choisit $n$ inconnues hyperstatiques $X_i$ (efforts de liaison redondants), de sorte que le système de base reste isostatique et non singulier. Superposition : $M=M_0+\sum X_i\,m_i$. Chaque appui rigide impose un déplacement nul, c'est-à-dire $\partial U/\partial X_i=0$ (théorème de Ménabréa), soit :</p>
+<p>$$\sum_j\delta_{ij}X_j=-\delta_{i0},\qquad \delta_{ij}=\int\frac{m_im_j}{EI}ds\ \Big(+\int\frac{t_it_j}{k_yGS}ds\ \text{si le tranchant est inclus}\Big),\quad \delta_{i0}=\int\frac{m_iM_0}{EI}ds$$</p>
+<p>Même démarche pour le sous-problème axial ($\int n_in_j/(ES)$) et la torsion ($\int t_it_j/(GJ)$).</p>
+<p><strong>Contrôle :</strong> la méthode « intégration » (réactions plus 2 constantes résolues ensemble avec les conditions cinématiques) doit redonner les mêmes réactions que Ménabréa. Les deux sont affichées.</p>
+<p class="ref">Code : <code>BeamAndTrussSolver.solveBeam</code>, <code>SolicitationsEngine.deflection / strainEnergy / mohrIntegral</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="treillis">6. Treillis</h2>
+<h3>Hypothèses</h3>
+<p>H5 (barres articulées, charges aux nœuds). Barres de section $S$ et de module $E$ constants par barre. Petits déplacements.</p>
+<h3>Équations</h3>
+<ul>
+  <li><strong>Hyperstatisme</strong> : $h=m+r-d\,n$ avec $d=2$ (plan) ou 3 (espace). $h<0$ : mécanisme.</li>
+  <li><strong>Méthode des nœuds</strong> (isostatique) : pour chaque nœud $i$, $\sum_j N_{ij}\,\vec u_{ij}+\vec F_i+\vec R_i=\vec0$ avec $\vec u_{ij}=\overrightarrow{P_iP_j}/L_{ij}$. Forme matricielle $[A]\{N,R\}=\{-F\}$.</li>
+  <li><strong>Méthode des rigidités</strong> (isostatique ou hyperstatique) : $[K]\{u\}=\{F\}$ avec $[K]=\sum_{barres}\dfrac{E_bS_b}{L_b}\,\vec u\,\vec u^{\,T}$ assemblée sur les ddl, les ddl bloqués étant éliminés. Puis $N_b=\dfrac{E_bS_b}{L_b}\,\vec u^{\,T}(\vec u_j-\vec u_i)$.</li>
+  <li><strong>Contrainte et allongement</strong> : $\sigma=N/S$ ; $\Delta L=NL/(ES)$.</li>
+</ul>
+<div class="demo"><strong>Démonstration.</strong> Barre $ij$ articulée : une seule force par extrémité, dirigée selon la barre, d'où un effort normal $N_{ij}$ constant. L'allongement de la barre pour des déplacements nodaux $\vec u_i,\vec u_j$ est, au premier ordre, $\Delta L=\vec u_{ij}\cdot(\vec u_j-\vec u_i)$ ; la loi de comportement donne $N=\dfrac{ES}{L}\Delta L$. L'équilibre de chaque nœud donne alors $[K]\{u\}=\{F\}$.</div>
+<p><strong>Contrôle :</strong> pour un treillis isostatique, les deux méthodes (nœuds et rigidités) sont comparées ; l'écart est rapporté. Une barre comprimée n'est <strong>pas</strong> vérifiée au flambage automatiquement : à faire dans l'onglet Flambage.</p>
+<p class="ref">Code : <code>BeamAndTrussSolver.solveTruss</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="traction">7. Traction / compression</h2>
+<h3>Hypothèses</h3>
+<p>Barre droite sollicitée par un effort normal centré. Contrainte uniforme dans la section (loin des extrémités, Saint-Venant). Section éventuellement variable $S(x)$, avec $N(x)$ et $\Delta T(x)$ variables.</p>
+<h3>Équations</h3>
+<p>$$\sigma=\frac NS,\quad \varepsilon_{xx}=\frac\sigma E+\alpha\Delta T,\quad \varepsilon_{yy}=\varepsilon_{zz}=-\nu\frac\sigma E+\alpha\Delta T,\quad \frac{\Delta V}{V}=\frac{(1-2\nu)\sigma}{E}+3\alpha\Delta T$$
+$$\Delta L=\int_0^{L_0}\left(\frac{N(x)}{E\,S(x)}+\alpha\,\Delta T(x)\right)dx\ \overset{S,N,\Delta T\ \text{cst}}{=}\ \frac{NL_0}{ES}+\alpha\Delta T L_0$$
+$$K_t\,\sigma_{nom}\le\frac{R_e}{s},\qquad K=\frac{ES_0}{L_0},\qquad U=\int\frac{N^2}{2ES}dx$$</p>
+<p>Les trois méthodes de $\Delta L$ : analytique (section constante), intégrale numérique ou symbolique, énergétique (Castigliano : $\Delta L=\partial U/\partial N$ plus la part thermique).</p>
+<div class="demo"><strong>Barre conique (vérification).</strong> Avec $d(x)=d_1+(d_2-d_1)x/L$ : $\Delta L=\dfrac{4NL}{\pi E}\displaystyle\int_0^1\frac{du}{(d_1+(d_2-d_1)u)^2}=\dfrac{4NL}{\pi E\,d_1d_2}$. Ce résultat est dans les tests.</div>
+<p><strong>Conditions aux limites</strong> : une extrémité fixe, l'autre libre pour la force $N$. Si l'allongement est empêché, la contrainte thermique est $\sigma=-E\alpha\Delta T$ (non traitée automatiquement : à calculer par Hooke).</p>
+<p class="ref">Code : <code>SolicitationsEngine.traction</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="cisaillement">8. Cisaillement et matage</h2>
+<h3>Hypothèses</h3>
+<p>Cisaillement simple : $\tau$ supposée uniforme sur la section cisaillée (premier ordre). Jourawski : cisaillement d'une poutre fléchie, $\tau$ uniforme sur la largeur $b(y)$ (valable si $b\ll h$). Matage : pression uniforme sur la surface projetée.</p>
+<h3>Équations</h3>
+<p>$$\tau_{moy}=\frac TS,\quad \tau_{max}=k\frac TS,\quad \gamma=\frac\tau G,\quad \tau_e=\frac{R_e}{2}\ (\text{Tresca})\ \text{ou}\ \frac{R_e}{\sqrt3}\ (\text{Von Mises}),\quad k\frac TS\le\frac{\tau_e}{s}$$
+$$\text{Jourawski :}\quad \tau(y)=\frac{T_y\,Q(y)}{I_z\,b(y)},\qquad Q(y)=\int_{\eta>y}\eta\,dS$$
+$$\text{Matage :}\quad p=\frac{F}{S_{matée}}\le p_{adm}$$</p>
+<div class="demo"><strong>Démonstration de Jourawski.</strong> On isole un élément de poutre de longueur $dx$, limité par un plan horizontal à la hauteur $y$. La variation de la contrainte normale entre les deux faces est $d\sigma=-\dfrac{dM_{fz}}{I_z}\eta=\dfrac{T_y\,dx}{I_z}\eta$. L'équilibre axial de la partie supérieure donne $\tau\,b(y)\,dx=\int_{\eta>y}d\sigma\,dS=\dfrac{T_y\,dx}{I_z}Q(y)$, d'où la formule. Pour un rectangle : $Q=\dfrac b2\left(\dfrac{h^2}4-y^2\right)$, donc $\tau(y)=\dfrac{3T}{2S}\left[1-(2y/h)^2\right]$ et $k=3/2$.</div>
+<h3>Clavette parallèle et goupille</h3>
+<table>
+  <tr><th>Pièce</th><th>Formules du logiciel</th><th>Origine</th></tr>
+  <tr><td>Clavette (couple $C$, arbre $D$, largeur $a$, hauteur $b$, longueur $L$)</td><td>$F=\dfrac{2C}D$ ; $\tau=\dfrac{F}{aL}=\dfrac{2C}{aLD}$ ; $p=\dfrac{4C}{DbL}$ ($b/2$ en appui sur chaque pièce)</td><td>Équilibre du moment $C=F\cdot D/2$ ; surface cisaillée $aL$ ; surface matée $(b/2)\,L$.</td></tr>
+  <tr><td>Goupille / rivet ($n$ sections cisaillées)</td><td>$\tau=\dfrac{4F}{n\pi d^2}$ ; $p=\dfrac{2F}{d\,e}$</td><td>$\tau$ : $F/(n\,S)$ avec $S=\pi d^2/4$. $p=2F/(de)$ : <strong>formule du cours</strong>, voir §16.</td></tr>
+</table>
+<p>Les pressions admissibles $p_{adm}$ (0,5 à 150 MPa selon la liaison et les conditions de fonctionnement) viennent du tableau du cours (<code>DataManager.bearingTableDefault</code>).</p>
+<p class="ref">Code : <code>SolicitationsEngine.shear / jourawski / bearing / keyDesign / pinDesign</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="torsion">9. Torsion</h2>
+<h3>Hypothèses</h3>
+<p>H7 : arbre de révolution, section constante (ou $I_x(s)$ et $M_t(s)$ connus), matériau isotrope élastique. Les sections restent planes et circulaires, les rayons restent droits.</p>
+<h3>Équations</h3>
+<p>$$\gamma=r\theta,\quad \tau=G\gamma=G\theta r,\quad M_t=\iint r\,\tau\,dS=G\theta\,I_x\ \Rightarrow\ \theta=\frac{M_t}{GI_x},\quad \tau(r)=\frac{M_tr}{I_x}$$
+$$I_x=\frac{\pi(D^4-d^4)}{32},\quad \tau_{max}=\frac{M_t\,D/2}{I_x},\quad \varphi(L)=\int_0^L\frac{M_t}{GI_x}ds,\quad U=\int\frac{M_t^2}{2GI_x}ds$$
+$$\text{Résistance : }K_t\tau_{max}\le\frac{\tau_e}{s}\qquad\text{Rigidité : }\theta\le\bar\theta$$</p>
+<div class="demo"><strong>Démonstration.</strong> Pour une rotation relative $d\varphi$ de deux sections distantes de $ds$, un point à la distance $r$ de l'axe se déplace de $r\,d\varphi$, d'où le glissement $\gamma=r\,d\varphi/ds=r\theta$. La loi de Hooke en cisaillement donne $\tau=G\gamma$. Le moment résultant des cisaillements est $M_t=\iint r\tau\,dS=G\theta\iint r^2dS=G\theta I_x$.</div>
+<p><strong>Conditions aux limites</strong> : une extrémité bloquée en rotation, moment appliqué à l'autre. $\varphi$ est calculée de trois façons : analytique $M_tL/(GI_x)$, intégrale, énergétique ($\partial U/\partial M_t$).</p>
+<p class="ref">Code : <code>SolicitationsEngine.torsion</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="flexion">10. Flexion</h2>
+<h3>Hypothèses</h3>
+<p>Navier-Bernoulli (sections planes), élasticité linéaire. La poutre travaille en flexion composée déviée : $N$, $M_{fz}$, $M_{fy}$ simultanés.</p>
+<h3>Équations</h3>
+<p>$$\sigma_{xx}(y,z)=\frac NS-\frac{M_{fz}}{I_z}\,y+\frac{M_{fy}}{I_y}\,z\quad(\text{axes principaux})$$
+Cas général ($I_{yz}\ne0$) : $\sigma_{xx}=\dfrac NS+b\,y+c\,z$ avec $\begin{bmatrix}I_z&I_{yz}\\I_{yz}&I_y\end{bmatrix}\begin{bmatrix}b\\c\end{bmatrix}=\begin{bmatrix}-M_{fz}\\M_{fy}\end{bmatrix}$.</p>
+<p>Flexion simple : $|\sigma|_{max}=|M_f|/W$. Axe neutre : $\sigma=0$. Condition de résistance : $K_t\,|\sigma|_{max}\le R_e/s$.</p>
+<div class="demo"><strong>Démonstration.</strong> Section plane : $\varepsilon_{xx}=\varepsilon_0+\kappa_z\,y+\kappa_y\,z$, donc $\sigma_{xx}=E\varepsilon_{xx}$ est affine en $(y,z)$. Les trois résultantes imposent $N=\iint\sigma\,dS$, $M_{fz}=-\iint\sigma\,y\,dS$, $M_{fy}=\iint\sigma\,z\,dS$. En prenant les axes au barycentre ($\iint y\,dS=\iint z\,dS=0$), le système se découple en $N=ES\varepsilon_0$ et le système $2\times2$ ci-dessus. Pour des axes principaux ($I_{yz}=0$), on retrouve la formule de Navier.</div>
+<p>L'axe neutre est la droite $N/S+b\,y+c\,z=0$ ; la contrainte maximale est cherchée aux sommets du contour. L'axe neutre ne passe pas par G si $N\ne0$.</p>
+<p class="ref">Code : <code>SolicitationsEngine.bendingStress</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="flambage">11. Flambage</h2>
+<h3>Hypothèses</h3>
+<ul>
+  <li>Poutre droite, section constante, chargée en compression centrée ; imperfections négligées dans Euler.</li>
+  <li>Elle flambe dans le plan de plus faible inertie $I_{min}=\min(I_z,I_y)$.</li>
+  <li>Euler (domaine élastique, $\sigma<R_e$), Rankine (interpolation empirique), compression simple pour $\lambda<20$.</li>
+</ul>
+<h3>Équations (arbre de décision du cours)</h3>
+<p>$$r_{min}=\sqrt{\frac{I_{min}}S},\quad L'=c\,L,\quad \lambda=\frac{L'}{r_{min}},\quad \lambda_{lim}=\pi\sqrt{\frac E{R_e}}$$</p>
+<table>
+  <tr><th>Régime</th><th>Charge critique</th></tr>
+  <tr><td>$\lambda<20$ : compression</td><td>$P_C=R_eS$</td></tr>
+  <tr><td>$20\le\lambda<\lambda_{lim}$ : Rankine</td><td>$P_R=\dfrac{R_eS}{1+(\lambda/\lambda_{lim})^2}$, soit $\dfrac1{P_R}=\dfrac1{P_E}+\dfrac1{P_C}$</td></tr>
+  <tr><td>$\lambda\ge\lambda_{lim}$ : Euler</td><td>$P_E=\dfrac{\pi^2EI_{min}}{L'^2}$ ; $\sigma_E=\dfrac{\pi^2E}{\lambda^2}$</td></tr>
+</table>
+<p>Vérification : $P\le P_{adm}=P_{crit}/s$.</p>
+
+<div class="demo"><strong>Démonstration d'Euler (articulé-articulé).</strong> Dans la configuration fléchie, le moment à l'abscisse $x$ est $M=P\,v$ (au second ordre). Avec $EIv''=-Pv$ (signe lié au sens du moment), on obtient $v''+k^2v=0$ avec $k^2=P/(EI)$. Solution : $v=A\sin kx+B\cos kx$. Conditions aux limites : $v(0)=0\Rightarrow B=0$ ; $v(L)=0\Rightarrow A\sin kL=0$. Une solution non nulle exige $\sin kL=0$, donc $kL=n\pi$, et la plus petite charge est $P_E=\pi^2EI/L^2$ (mode $\sin(\pi x/L)$).<br>
+<strong>Domaine de validité.</strong> $\sigma_E=P_E/S=\pi^2E/\lambda^2\le R_e\iff\lambda\ge\lambda_{lim}=\pi\sqrt{E/R_e}$.<br>
+<strong>Rankine.</strong> Avec $\lambda_{lim}^2=\pi^2E/R_e$ : $\dfrac1{P_E}+\dfrac1{P_C}=\dfrac{\lambda^2}{\pi^2ES}+\dfrac1{R_eS}=\dfrac1{R_eS}\left[1+\left(\dfrac\lambda{\lambda_{lim}}\right)^2\right]=\dfrac1{P_R}$.</div>
+
+<h3>Conditions aux limites et longueur de flambement</h3>
+<table>
+  <tr><th>Liaisons</th><th>Conditions</th><th>Équation et $kL$</th><th>$L'$ (code)</th></tr>
+  <tr><td>Articulé-articulé</td><td>$v(0)=v(L)=0$</td><td>$\sin kL=0$, $kL=\pi$</td><td>$L$</td></tr>
+  <tr><td>Encastré-libre</td><td>$v(0)=v'(0)=0$ ; $M(L)=P(v_L-v)$</td><td>$\cos kL=0$, $kL=\pi/2$</td><td>$2L$</td></tr>
+  <tr><td>Encastré-encastré</td><td>$v(0)=v'(0)=v(L)=v'(L)=0$</td><td>$kL=2\pi$</td><td>$L/2$</td></tr>
+  <tr><td>Encastré-articulé</td><td>$v(0)=v'(0)=0$, $v(L)=0$, $M(L)=0$</td><td>$\tan kL=kL$, $kL=4{,}4934$</td><td>$L/\sqrt2\ (=0{,}7071L)$</td></tr>
+</table>
+<p>Pour encastré-articulé, la valeur exacte est $L'=\pi L/4{,}4934=0{,}6992\,L$. Le cours et le code retiennent $L/\sqrt2$ : écart de 1 % sur $L'$, soit 2 % sur $P_E$ (voir §16).</p>
+<p class="ref">Code : <code>BucklingEngine.analyze / stabilityCurve</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="tenseurs">12. Tenseurs, cercle de Mohr et critères</h2>
+<h3>Hypothèses</h3>
+<p>État de contrainte en un point (tenseur symétrique $3\times3$), élasticité linéaire. La facette est définie par sa normale $\vec n$ (unitaire) ou, en 2D, par l'angle $\theta$ de la normale avec $x$.</p>
+<h3>Équations</h3>
+<p>$$\vec C=[\sigma]\vec n,\quad \sigma_n=\vec C\cdot\vec n,\quad \tau=\sqrt{|\vec C|^2-\sigma_n^2}$$
+$$\det([\sigma]-\sigma_i[I])=0\iff \sigma_i^3-I_1\sigma_i^2+I_2\sigma_i-I_3=0,\quad I_1=\mathrm{tr}\,\sigma,\ I_2=\tfrac12[(\mathrm{tr}\,\sigma)^2-\mathrm{tr}\,\sigma^2],\ I_3=\det\sigma$$</p>
+<p>Contraintes principales classées $\sigma_I\ge\sigma_{II}\ge\sigma_{III}$ (valeurs propres, directions orthonormées en trièdre direct). Cisaillement maximal : $\tau_{max}=(\sigma_I-\sigma_{III})/2$.</p>
+<p><strong>Mohr 2D</strong> (rotation de $\theta$ dans le plan $(x,y)$) :</p>
+<p>$$\sigma(\theta)=\frac{\sigma_{xx}+\sigma_{yy}}2+\frac{\sigma_{xx}-\sigma_{yy}}2\cos2\theta+\sigma_{xy}\sin2\theta,\qquad \tau(\theta)=-\frac{\sigma_{xx}-\sigma_{yy}}2\sin2\theta+\sigma_{xy}\cos2\theta$$
+$$\delta=\frac{\sigma_{xx}+\sigma_{yy}}2,\quad \rho=\sqrt{\left(\frac{\sigma_{xx}-\sigma_{yy}}2\right)^2+\sigma_{xy}^2},\quad \sigma_{1,2}=\delta\pm\rho,\quad \theta_P=\tfrac12\mathrm{atan2}(2\sigma_{xy},\sigma_{xx}-\sigma_{yy})$$</p>
+<div class="demo"><strong>Démonstration.</strong> La normale tournée de $\theta$ est $\vec n=(\cos\theta,\sin\theta)$ et la tangente $\vec t=(-\sin\theta,\cos\theta)$. Alors $\sigma(\theta)=\vec n^T[\sigma]\vec n=\sigma_{xx}\cos^2\theta+\sigma_{yy}\sin^2\theta+2\sigma_{xy}\sin\theta\cos\theta$ et $\tau(\theta)=\vec t^T[\sigma]\vec n$. Les formules sont obtenues avec $\cos^2\theta=(1+\cos2\theta)/2$, etc. Les points $(\sigma,\tau)$ décrivent un cercle de centre $(\delta,0)$ et de rayon $\rho$, car $(\sigma-\delta)^2+\tau^2=\rho^2$ pour tout $\theta$.</div>
+<p><strong>Tricercle 3D</strong> : les points $(\sigma_n,\tau)$ de toutes les facettes remplissent la zone comprise entre les trois cercles de diamètres $[\sigma_{III},\sigma_{II}]$, $[\sigma_{II},\sigma_I]$, $[\sigma_{III},\sigma_I]$.</p>
+<h3>Critères de résistance</h3>
+<p>$$\text{Tresca :}\ \sigma_I-\sigma_{III}\le\frac{R_e}s\qquad\text{Von Mises :}\ \sigma_{VM}=\sqrt{\tfrac12\left[(\sigma_I-\sigma_{II})^2+(\sigma_{II}-\sigma_{III})^2+(\sigma_I-\sigma_{III})^2\right]}\le\frac{R_e}s$$</p>
+<div class="demo"><strong>Cohérence des deux critères.</strong> En traction simple, $\sigma_I=\sigma$, les deux autres sont nuls : Tresca donne $\sigma$, Von Mises donne $\sigma$ : les deux critères coïncident. En cisaillement pur ($\sigma_I=\tau,\ \sigma_{III}=-\tau$) : Tresca donne $2\tau\le R_e/s$, soit $\tau_e=R_e/2$ ; Von Mises donne $\sqrt3\,\tau\le R_e/s$, soit $\tau_e=R_e/\sqrt3$. Ce sont exactement les valeurs de $\tau_e$ utilisées au §8. Von Mises est toujours moins sévère ou égal à Tresca.</div>
+<p>Contrainte normale maximale (Rankine, matériaux fragiles) : $\sigma_I\le\sigma_R/s$ avec $\sigma_R=R_m$ par défaut.</p>
+<p class="ref">Code : <code>TensorAndCriteriaEngine.principal / facet / plane2D / mohr3D / criteria / yieldLoci</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="hooke">13. Loi de Hooke et extensométrie</h2>
+<h3>Hypothèses</h3>
+<p>Élasticité linéaire, petites déformations. En 3D isotrope, 2 constantes indépendantes ($E,\nu$ ; $G=E/(2(1+\nu))$, avec $-1<\nu<0{,}5$). Mode orthotrope : 9 constantes ($E_i,\nu_{ij},G_{ij}$) avec les axes d'orthotropie alignés sur $x,y,z$.</p>
+<h3>Équations</h3>
+<p>$$\varepsilon_{ij}=\frac{1+\nu}E\sigma_{ij}-\frac\nu E\,\mathrm{tr}(\sigma)\,\delta_{ij}+\alpha\Delta T\,\delta_{ij},\qquad \gamma_{xy}=2\varepsilon_{xy}=\frac{\tau_{xy}}G$$
+$$\sigma_{ij}=\lambda\,\mathrm{tr}(\varepsilon)\delta_{ij}+2\mu\,\varepsilon_{ij}-(3\lambda+2\mu)\alpha\Delta T\delta_{ij},\quad \lambda=\frac{E\nu}{(1+\nu)(1-2\nu)},\ \mu=G$$</p>
+<table>
+  <tr><th>Cas</th><th>Hypothèse</th><th>Relations</th></tr>
+  <tr><td>Contraintes planes</td><td>$\sigma_{zz}=\tau_{xz}=\tau_{yz}=0$</td><td>$\varepsilon_{xx}=\dfrac{\sigma_{xx}-\nu\sigma_{yy}}E$, $\varepsilon_{yy}=\dfrac{\sigma_{yy}-\nu\sigma_{xx}}E$, $\gamma_{xy}=\dfrac{\tau_{xy}}G$, $\varepsilon_{zz}=-\dfrac{\nu(\sigma_{xx}+\sigma_{yy})}E$</td></tr>
+  <tr><td>Déformations planes</td><td>$\varepsilon_{zz}=\gamma_{xz}=\gamma_{yz}=0$</td><td>$\sigma_{zz}=\nu(\sigma_{xx}+\sigma_{yy})$ ; $[C_{red}]$ extraite de $[C]$</td></tr>
+  <tr><td>Orthotrope</td><td>$[S]$ symétrique : $\nu_{ij}/E_i=\nu_{ji}/E_j$</td><td>$[C]=[S]^{-1}$ ; définie positive vérifiée par le code</td></tr>
+</table>
+<p>Notation de Voigt : $[xx\ yy\ zz\ yz\ xz\ xy]$, déformations de cisaillement d'ingénieur. Le cercle de Mohr des déformations a les axes $\varepsilon$ et $\gamma/2$.</p>
+
+<h3>Extensométrie</h3>
+<ul>
+  <li><strong>Jauge</strong> : $\dfrac{\Delta R}R=K\varepsilon$ (Bridgman, $K\approx2$).</li>
+  <li><strong>Pont de Wheatstone</strong> : $V_{out}=\dfrac{V_{in}K}4(\varepsilon_1-\varepsilon_2+\varepsilon_3-\varepsilon_4)$ (linéarisé). Quart de pont : 1 jauge active ; demi-pont : 2 jauges adjacentes (flexion, $\varepsilon_2=-\varepsilon_1$) ; pont complet : 4 jauges. Le logiciel affiche aussi l'erreur de linéarisation (comparaison avec le pont exact).</li>
+  <li><strong>Rosette rectangulaire 0°/45°/90°</strong> : $\varepsilon_{xx}=\varepsilon_0$, $\varepsilon_{yy}=\varepsilon_{90}$, $\varepsilon_{xy}=\varepsilon_{45}-\dfrac{\varepsilon_0+\varepsilon_{90}}2$.</li>
+  <li><strong>Rosette delta 0°/60°/120°</strong> : $\varepsilon_{xx}=\varepsilon_0$, $\varepsilon_{yy}=\dfrac{2(\varepsilon_{60}+\varepsilon_{120})-\varepsilon_0}3$, $\varepsilon_{xy}=\dfrac{\varepsilon_{60}-\varepsilon_{120}}{\sqrt3}$.</li>
+</ul>
+<div class="demo"><strong>Démonstration (rosette).</strong> Dans la direction $\theta$, $\varepsilon(\theta)=\varepsilon_{xx}\cos^2\theta+\varepsilon_{yy}\sin^2\theta+2\varepsilon_{xy}\sin\theta\cos\theta$. À 45° : $\varepsilon_{45}=\dfrac{\varepsilon_{xx}+\varepsilon_{yy}}2+\varepsilon_{xy}$, d'où $\varepsilon_{xy}$. À 60° et 120° : $\varepsilon_{60,120}=\dfrac{\varepsilon_{xx}}4+\dfrac{3\varepsilon_{yy}}4\pm\dfrac{\sqrt3}2\varepsilon_{xy}$ ; la somme et la différence donnent $\varepsilon_{yy}$ et $\varepsilon_{xy}$. Les déformations principales viennent du cercle de Mohr des déformations, puis les contraintes de la loi de Hooke en contraintes planes.</div>
+<p class="ref">Code : <code>TensorAndCriteriaEngine.hooke3D / planeStress / planeStrain / complianceOrthotropic / gauge / wheatstone / rosette45 / rosette60</code>.</p>
+
+<!-- ================================================================== -->
+<h2 id="donnees">14. Données matériaux et profilés</h2>
+<ul>
+  <li><strong>Matériaux</strong> : valeurs du cours, tels quelles (aciers S185 à S355 avec $E=190$ GPa ; XC 38 à 48 avec $E=210$ GPa, $G=80$ GPa ; aluminium, titane, fontes, laiton, Plexiglas). Les valeurs ajoutées par le logiciel (marquées « usuelle » dans la colonne Note) complètent les constantes manquantes. Pour une plage de valeurs, $R_e$ et $R_m$ prennent la borne basse (côté sécurité) et la plage est dans la Note.</li>
+  <li><strong>Constante manquante</strong> : $G=E/(2(1+\nu))$ ; cohérence vérifiée si $E,G,\nu$ sont tous donnés (alerte si écart > 5 %).</li>
+  <li><strong>Profilés</strong> : IPN, IPE, HEA, HEB, UPN, UAP, valeurs des tables européennes. Cohérence testée : $r_z\approx\sqrt{I_z/S}$ et $W_z\approx I_z/(h/2)$ à 2 % près.</li>
+  <li><strong>Coefficients $K_t$</strong> : ajustements de Peterson $K_t=A\,(r/d)^b$ avec interpolation linéaire de $A$ et $b$ en $D/d$ (arbre épaulé : flexion, torsion, traction) et formule pour la plaque trouée en traction. Ce sont des <strong>ajustements</strong> et non les abaques d'origine : à contrôler pour un cas critique.</li>
+</ul>
+
+<!-- ================================================================== -->
+<h2 id="cas">15. Cas de validation et valeurs de référence</h2>
+<p>Ces cas ont des solutions fermées connues. Ils sont vérifiés par les tests automatiques, et le relecteur peut les refaire à la main ou les saisir dans l'application.</p>
+<table>
+  <tr><th>Cas</th><th>Valeurs théoriques</th></tr>
+  <tr><td>Poutre sur 2 appuis, force centrée $P$</td><td>$R=P/2$ ; $M_{max}=PL/4$ ; $f=PL^3/(48EI)$</td></tr>
+  <tr><td>Console, force $P$ en bout</td><td>$M_{fz}(0)=-PL$ ; $f=PL^3/(3EI)$</td></tr>
+  <tr><td>2 appuis, charge uniforme $q$</td><td>$M_{max}=qL^2/8$ ; $f=5qL^4/(384EI)$</td></tr>
+  <tr><td>Encastrée-appuyée, charge uniforme</td><td>$R_B=3qL/8$ ; $M_A=-qL^2/8$</td></tr>
+  <tr><td>2 travées égales, charge uniforme</td><td>réaction de l'appui central $=5qL/4$</td></tr>
+  <tr><td>Bi-encastrée, charge uniforme</td><td>$-qL^2/12$ aux appuis ; $qL^2/24$ au milieu ; $f=qL^4/(384EI)$</td></tr>
+  <tr><td>Barre bi-encastrée, effort axial $F$ au milieu</td><td>réaction $F/2$ de chaque côté</td></tr>
+  <tr><td>Barre conique</td><td>$\Delta L=4FL/(\pi E d_1d_2)$</td></tr>
+  <tr><td>Torsion arbre plein</td><td>$\varphi=M_tL/(GI_x)$, $I_x=\pi D^4/32$</td></tr>
+  <tr><td>Rectangle</td><td>$I_z=bh^3/12$ ; Jourawski $\tau_{max}=1{,}5\,T/S$ ; $k_y=5/6$</td></tr>
+  <tr><td>Traction simple (Mohr)</td><td>Tresca $=$ Von Mises $=\sigma$</td></tr>
+  <tr><td>Cisaillement pur</td><td>Tresca $=2\tau$ ; Von Mises $=\sqrt3\,\tau$</td></tr>
+</table>
+
+<h3>Cas de contrôle de bout en bout (à refaire à la main)</h3>
+<div class="demo"><strong>Cas 1 — IPE 200, S235, 2 appuis, $L=4$ m, $q=10$ kN/m.</strong> $I_z=1{,}943\cdot10^7$ mm⁴, $W_z=194{,}3\cdot10^3$ mm³, $E=190$ GPa.
+<ul>
+  <li>$M_{max}=qL^2/8=20$ kN·m ; $\sigma_{max}=20\cdot10^6/194\,300=102{,}9$ MPa.</li>
+  <li>$f=\dfrac{5\times10\times4000^4}{384\times190\,000\times1{,}943\cdot10^7}=9{,}029$ mm.</li>
+  <li>Résultat de l'application : 9,029 mm par les 4 méthodes ; $\sigma=102{,}93$ MPa.</li>
+</ul></div>
+<div class="demo"><strong>Cas 2 — poutre de 6 m, pivot en A, appui simple en B, force de 20 kN à 2 m, charge répartie de 10 kN/m.</strong> Réactions $Y_B=(20\times2+60\times3)/6=36{,}67$ kN, $Y_A=43{,}33$ kN ; $M_{max}$ à $s=2{,}333$ m : 67,22 kN·m. Mêmes valeurs dans l'application.</div>
+<div class="demo"><strong>Cas 3 — flambage HEA 200, S235, $L=4$ m, articulé-articulé, $P=300$ kN, $s=2$.</strong> $r_{min}=49{,}8$ mm ; $\lambda=80{,}3$ ; $\lambda_{lim}=89{,}3$ ; Rankine : $P_{cr}=699{,}7$ kN ; $P_{adm}=349{,}9$ kN ≥ 300 kN (vérifié).</div>
+<div class="demo"><strong>Cas 4 — Mohr.</strong> $\sigma_{xx}=80$, $\sigma_{yy}=-40$, $\sigma_{xy}=30$, $\sigma_{zz}=20$ MPa : $\sigma_{I,II}=20\pm67{,}08$ ; $\sigma_{III}=20$ → Tresca 134,2 MPa ; Von Mises 116,2 MPa.</div>
+
+<h3>Tests automatiques</h3>
+<p>Tous les tests réussissent (un fichier de tests par moteur : GeometryEngine, BeamAndTrussSolver, SolicitationsEngine, TensorAndCriteriaEngine, DataManager, BucklingEngine, PlotEngine, MecaStruct_App). Les tests comparent les résultats aux formules ci-dessus. Ils vérifient aussi : analytique ≡ intégrale ($10^{-9}$), coupures ≡ intégrale, Ménabréa ≡ intégration, nœuds ≡ rigidités, $S\cdot C=I$ pour Hooke.</p>
+<p><code>run('tests/run_all_tests.m')</code></p>
+
+<!-- ================================================================== -->
+<h2 id="limites">16. Limites connues et points à trancher</h2>
+<div class="warn"><strong>Points où une relecture critique est utile.</strong></div>
+<table>
+  <tr><th>Sujet</th><th>Ce que fait le logiciel</th><th>Ce qu'il faut savoir ou décider</th></tr>
+  <tr><td>Données du cours</td><td>Reprend les valeurs du cours telles quelles.</td><td>$E=190$ GPa pour les aciers (habituellement 210) ; aluminium $E=90$ GPa (habituellement 70–74) ; <strong>TA6V</strong> : $R_e=100$–120 MPa (usuel : 830–880) ; <strong>Plexiglas</strong> : $G=1{,}1$ GPa retenu (le cours donne 11, incohérent avec $E\approx3$ GPa). À remplacer par des valeurs de fiche matériau pour un vrai dimensionnement.</td></tr>
+  <tr><td>Pression de matage d'une goupille</td><td>$p=2F/(de)$ (formule du cours).</td><td>Beaucoup de manuels écrivent $p=F/(de)$. Le facteur 2 dépend du montage (par exemple 2 plans de cisaillement) : à confirmer avec l'énoncé du cours.</td></tr>
+  <tr><td>Flambage encastré-articulé</td><td>$L'=L/\sqrt2=0{,}7071L$.</td><td>Valeur exacte : $0{,}6992L$. Écart de 2 % sur $P_E$, du côté sécuritaire (le code sous-estime légèrement la charge critique).</td></tr>
+  <tr><td>Rankine</td><td>Formule du cours pour $20\le\lambda<\lambda_{lim}$.</td><td>Formule empirique ; ne remplace pas une vérification normative (Eurocode 3).</td></tr>
+  <tr><td>Profilés UPN / UAP</td><td>Géométrie simplifiée (congés et pente des ailes ignorés).</td><td>Écart avec le catalogue pouvant dépasser 10 % ; l'application l'affiche. Préférer les valeurs tabulées pour les calculs de poutre.</td></tr>
+  <tr><td>Constante de torsion $J$</td><td>Approchée pour les sections non circulaires.</td><td>Précision limitée ; les sections non circulaires ne sont pas traitées dans l'onglet Torsion.</td></tr>
+  <tr><td>Concentration de contrainte $K_t$</td><td>Ajustements de Peterson.</td><td>À comparer aux abaques d'origine pour un cas critique.</td></tr>
+  <tr><td>Effort tranchant dans la flèche</td><td>Inclus dans Castigliano (case à cocher) ; absent des autres méthodes.</td><td>Pour $L/h<10$, cocher la case et comparer.</td></tr>
+  <tr><td>Hors domaine</td><td>—</td><td>Plasticité, grands déplacements, fatigue, fluage, contraintes résiduelles, voilement local des parois minces, déversement des poutres, flexion d'une poutre courbe, assemblages boulonnés et soudés.</td></tr>
+  <tr><td>Normes</td><td>Le logiciel suit le cours de RDM.</td><td>Il n'applique <strong>aucune norme de dimensionnement</strong> (Eurocode, etc.) : pas de coefficients partiels ni de combinaisons.</td></tr>
+</table>
+
+<!-- ================================================================== -->
+<h2 id="code">17. Correspondance avec le code</h2>
+<table>
+  <tr><th>Fichier</th><th>Contenu</th><th>Sections de cette note</th></tr>
+  <tr><td><code>DataManager.m</code></td><td>Matériaux, profilés, pressions de matage, abaques $K_t$, table de Mohr, fiches de formules, conversions d'unités</td><td>14</td></tr>
+  <tr><td><code>GeometryEngine.m</code></td><td>Sections : analytique, intégrale, tabulée, Jourawski (profil), facteurs de cisaillement</td><td>4</td></tr>
+  <tr><td><code>BeamAndTrussSolver.m</code></td><td>Poutres isostatiques et hyperstatiques, torseur de cohésion, treillis</td><td>3, 5, 6</td></tr>
+  <tr><td><code>SolicitationsEngine.m</code></td><td>Traction, cisaillement, matage, clavette, goupille, torsion, flexion, flèche, énergie, Mohr</td><td>5, 7–10</td></tr>
+  <tr><td><code>BucklingEngine.m</code></td><td>Flambage et courbe de stabilité</td><td>11</td></tr>
+  <tr><td><code>TensorAndCriteriaEngine.m</code></td><td>Tenseurs, Mohr, critères, Hooke, jauges, ponts, rosettes</td><td>12, 13</td></tr>
+  <tr><td><code>PlotEngine.m</code></td><td>Tracés uniquement, <strong>aucun calcul mécanique</strong></td><td>—</td></tr>
+  <tr><td><code>MecaStruct_App.m</code></td><td>Interface : convertit les unités, appelle les moteurs, affiche les résultats</td><td>—</td></tr>
+</table>
+<p>Les moteurs de calcul n'ont aucune dépendance à l'interface graphique : chacun se lance depuis la fenêtre de commande de MATLAB, avec des données en SI, ce qui permet de contrôler un résultat indépendamment de l'interface. Exemple :</p>
+<p><code>r = SolicitationsEngine.torsion(struct('Mt',500,'D',0.04,'G',73.08e9,'L',1,'Re',235e6,'s',1.5));</code></p>
+<p class="ref">Le détail des entrées et des sorties de chaque fonction est dans <code>docs/ARCHITECTURE.md</code>. Le texte source de la demande est dans <code>docs/CAHIER_DES_CHARGES.md</code>.</p>
+
+</main>
+</body>
+</html>

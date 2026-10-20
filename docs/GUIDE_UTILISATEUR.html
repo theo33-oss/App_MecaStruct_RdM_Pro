@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide MecaStruct RdM Pro</title>
+<script>
+  window.MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] } };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-chtml.min.js"></script>
+<style>
+  :root { --bg:#fbfaf7; --fg:#1f2328; --muted:#5b6370; --accent:#1f5fa8; --card:#ffffff; --line:#e3e1db; --ok:#1d7a3a; --ko:#b3261e; --note:#fff6dd; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#16181c; --fg:#e7e9ec; --muted:#a3abb7; --accent:#79b0f0; --card:#1f2228; --line:#30343c; --ok:#5cc47e; --ko:#f08a80; --note:#2b2716; } }
+  :root[data-theme="dark"] { --bg:#16181c; --fg:#e7e9ec; --muted:#a3abb7; --accent:#79b0f0; --card:#1f2228; --line:#30343c; --ok:#5cc47e; --ko:#f08a80; --note:#2b2716; }
+  body { background:var(--bg); color:var(--fg); font:16px/1.6 system-ui, "Segoe UI", sans-serif; margin:0; }
+  main { max-width:960px; margin:0 auto; padding:24px 16px 80px; }
+  h1 { font-size:2rem; margin:0 0 4px; }
+  h2 { margin-top:56px; padding-top:12px; border-top:2px solid var(--line); color:var(--accent); }
+  h3 { margin-top:32px; }
+  a { color:var(--accent); }
+  figure { margin:20px 0; }
+  figure img { width:100%; border:1px solid var(--line); border-radius:6px; }
+  figcaption { color:var(--muted); font-size:.9rem; margin-top:4px; }
+  .box { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 16px; margin:16px 0; }
+  .note { background:var(--note); }
+  .calc { border-left:4px solid var(--accent); }
+  table { border-collapse:collapse; width:100%; margin:12px 0; font-size:.95rem; }
+  th, td { border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:var(--card); }
+  .ok { color:var(--ok); font-weight:600; } .ko { color:var(--ko); font-weight:600; }
+  code { background:var(--card); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
+  .toc ol { columns:2; }
+  @media (max-width:640px) { .toc ol { columns:1; } }
+  .flow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .flow span.step { background:var(--card); border:1px solid var(--accent); border-radius:6px; padding:6px 10px; }
+  mjx-container { overflow-x:auto; overflow-y:hidden; max-width:100%; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>MecaStruct RdM Pro — Guide d'utilisation et rappels de RDM</h1>
+<p>Ce guide montre comment utiliser l'application onglet par onglet. Pour chaque calcul, il rappelle la théorie de résistance des matériaux et refait l'exemple de l'application à la main, pour que vous puissiez retrouver les chiffres affichés.</p>
+
+<div class="box toc">
+<strong>Sommaire</strong>
+<ol>
+  <li><a href="#lancer">Lancer l'application</a></li>
+  <li><a href="#interface">Comprendre l'écran</a></li>
+  <li><a href="#demarche">La démarche RDM en 5 étapes</a></li>
+  <li><a href="#bdd">Base de données (matériaux)</a></li>
+  <li><a href="#sections">Sections</a></li>
+  <li><a href="#poutres">Poutres</a></li>
+  <li><a href="#treillis">Treillis</a></li>
+  <li><a href="#traction">Traction / compression</a></li>
+  <li><a href="#cisaillement">Cisaillement et matage</a></li>
+  <li><a href="#torsion">Torsion</a></li>
+  <li><a href="#flexion">Flexion</a></li>
+  <li><a href="#flambage">Flambage</a></li>
+  <li><a href="#tenseurs">Tenseurs, Mohr et critères</a></li>
+  <li><a href="#hooke">Hooke et jauges</a></li>
+  <li><a href="#convertisseur">Convertisseur d'unités</a></li>
+  <li><a href="#sources">Sur quoi reposent les calculs</a></li>
+  <li><a href="#pieges">Pièges fréquents</a></li>
+</ol>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="lancer">1. Lancer l'application</h2>
+<ol>
+  <li>Ouvrez MATLAB (R2025b, testé). Le <em>Symbolic Math Toolbox</em> est facultatif : sans lui, l'application calcule en numérique.</li>
+  <li>Placez le dossier courant de MATLAB sur <code>5_MecaStruct_RdM_Pro</code>.</li>
+  <li>Tapez dans la fenêtre de commande :<br><code>app = MecaStruct_App();</code></li>
+</ol>
+<p>À l'ouverture, chaque onglet est déjà rempli avec un <strong>exemple d'école</strong>. Cliquez sur <strong>Calculer</strong> pour voir le résultat, puis modifiez les valeurs pour votre propre problème. Le bouton <strong>Recharger l'exemple</strong> remet les valeurs de départ.</p>
+<p>Pour vérifier que tout fonctionne : <code>run('tests/run_all_tests.m')</code> (tous les tests doivent réussir).</p>
+
+<!-- ============================================================ -->
+<h2 id="interface">2. Comprendre l'écran</h2>
+<figure>
+  <img src="img/03_poutre_sollicitations.png" alt="Onglet Poutres : saisie à gauche, diagrammes au centre, formulaire à droite">
+  <figcaption>L'écran a toujours la même organisation en trois colonnes, ici dans l'onglet Poutres.</figcaption>
+</figure>
+<table>
+  <tr><th>Zone</th><th>Contenu</th></tr>
+  <tr><td><strong>Gauche : saisie</strong></td><td>Données du problème (dimensions, matériau, charges) et boutons <em>Calculer</em> et <em>Recharger l'exemple</em>. Les tableaux (appuis, forces, nœuds) ont des boutons <em>Ajouter</em> et <em>Supprimer la sélection</em>.</td></tr>
+  <tr><td><strong>Centre haut : graphiques</strong></td><td>Une ligne de résumé (le résultat clé et la mention vérifié ou NON vérifié), puis des onglets de tracés. <em>Exporter PNG</em> et <em>Exporter PDF</em> enregistrent le tracé affiché.</td></tr>
+  <tr><td><strong>Centre bas : rapport</strong></td><td>Le calcul détaillé étape par étape, avec les formules et les valeurs en unités SI. C'est la partie à lire pour comprendre ou recopier un calcul.</td></tr>
+  <tr><td><strong>Droite : formulaire rapide</strong></td><td>La fiche de cours de l'onglet affiché : formules, signification de chaque lettre, unités. Le menu déroulant permet d'ouvrir une autre fiche.</td></tr>
+</table>
+<div class="box note"><strong>Unités de saisie.</strong> Dimensions de section en mm, longueurs de poutre en m, forces en kN, moments en kN·m, charges réparties en kN/m, E et G en GPa, contraintes en MPa, déformations en µdéf (10⁻⁶). L'application convertit tout en SI (N, m, Pa) avant de calculer, et le rapport affiche les deux.</div>
+
+<!-- ============================================================ -->
+<h2 id="demarche">3. La démarche RDM en 5 étapes</h2>
+<p>Tous les onglets suivent la même chaîne. Si vous ne retenez qu'une chose, retenez celle-ci :</p>
+<div class="flow">
+  <span class="step">1. Isoler et appliquer le PFS → réactions</span> →
+  <span class="step">2. Couper → torseur de cohésion N, T, Mt, Mf</span> →
+  <span class="step">3. Contraintes σ, τ</span> →
+  <span class="step">4. Déformations et flèches</span> →
+  <span class="step">5. Vérifier : résistance, rigidité, flambage</span>
+</div>
+
+<h3>Étape 1 : principe fondamental de la statique (PFS)</h3>
+<p>Un solide en équilibre vérifie $\sum \vec F_{ext} = \vec 0$ et $\sum \vec M_A(\vec F_{ext}) = \vec 0$. En 2D, cela donne trois équations : $\sum F_x = 0$, $\sum F_y = 0$ et $\sum M_{Az} = 0$. Chaque liaison apporte des inconnues : 1 pour un appui simple ($Y$), 2 pour un pivot ($X, Y$) et 3 pour un encastrement ($X, Y, M$).</p>
+<p><strong>Degré d'hyperstatisme</strong> $h$ = nombre d'inconnues − nombre d'équations. Si $h = 0$, le système est isostatique et le PFS suffit. Si $h &gt; 0$, il faut des équations de déformation en plus (Ménabréa, superposition).</p>
+
+<h3>Étape 2 : torseur de cohésion</h3>
+<p>On coupe la poutre à l'abscisse $s$. Le torseur de cohésion représente l'action de la partie <strong>droite</strong> sur la partie gauche (convention du cours) :</p>
+<p>$$\{T_{coh}\}_G = \{\text{actions extérieures à droite}\}_G = -\{\text{actions à gauche}\}_G$$</p>
+<table>
+  <tr><th>Composante</th><th>Nom</th><th>Sollicitation</th></tr>
+  <tr><td>$N$</td><td>effort normal (N &gt; 0 en traction)</td><td>traction / compression</td></tr>
+  <tr><td>$T_y,\ T_z$</td><td>efforts tranchants</td><td>cisaillement</td></tr>
+  <tr><td>$M_t$</td><td>moment de torsion</td><td>torsion</td></tr>
+  <tr><td>$M_{fy},\ M_{fz}$</td><td>moments fléchissants</td><td>flexion</td></tr>
+</table>
+<p>Relations utiles pour vérifier un diagramme : $\dfrac{dT_y}{ds} = q$ et $T_y = -\dfrac{dM_{fz}}{ds}$. Le moment est maximal là où l'effort tranchant s'annule ou change de signe. Une force ponctuelle crée un saut de $T_y$, et un couple ponctuel crée un saut de $M_{fz}$.</p>
+
+<h3>Étapes 3 à 5 : en bref</h3>
+<table>
+  <tr><th>Sollicitation</th><th>Contrainte</th><th>Déformation</th><th>Condition de résistance</th></tr>
+  <tr><td>Traction</td><td>$\sigma = N/S$</td><td>$\Delta L = NL/(ES)$</td><td>$K_t\,\sigma \le R_e/s$</td></tr>
+  <tr><td>Cisaillement</td><td>$\tau_{moy} = T/S$</td><td>$\gamma = \tau/G$</td><td>$k\,T/S \le \tau_e/s$</td></tr>
+  <tr><td>Torsion (arbre rond)</td><td>$\tau_{max} = M_t\,R/I_x$</td><td>$\theta = M_t/(G I_x)$</td><td>$K_t\,\tau_{max} \le \tau_e/s$ et $\theta \le \bar\theta$</td></tr>
+  <tr><td>Flexion</td><td>$\sigma = -M_{fz}\,y/I_z$</td><td>$E I_z v'' = M_{fz}$</td><td>$K_t\,|M_f|/W \le R_e/s$</td></tr>
+</table>
+<p>Ici, $s$ est le coefficient de sécurité, $K_t$ le coefficient de concentration de contrainte et $\tau_e$ la limite élastique en cisaillement : $R_e/2$ selon Tresca et $R_e/\sqrt3$ selon Von Mises.</p>
+
+<!-- ============================================================ -->
+<h2 id="bdd">4. Onglet Base de données</h2>
+<figure><img src="img/01_base_de_donnees.png" alt="Onglet Base de données"><figcaption>Table des matériaux, avec le formulaire d'ajout d'un matériau à droite.</figcaption></figure>
+<p>L'onglet contient quatre sous-onglets :</p>
+<ul>
+  <li><strong>Matériaux</strong> : E, G, ν, Re, Rm, α et ρ. Tous les autres onglets y puisent leurs valeurs.</li>
+  <li><strong>Profilés</strong> : catalogue IPN, IPE, HEA, HEB, UPN et UAP.</li>
+  <li><strong>Pressions de matage</strong> : valeurs de P<sub>adm</sub> selon la liaison.</li>
+  <li><strong>Abaques Kt</strong> : coefficients de concentration de contrainte.</li>
+</ul>
+<p>Vous pouvez ajouter vos propres matériaux et profilés, puis cliquer sur <em>Sauvegarder les données utilisateur</em> (fichier <code>.mat</code>).</p>
+<div class="box calc"><strong>Rappel :</strong> pour un matériau isotrope, $G = \dfrac{E}{2(1+\nu)}$. Pour l'acier S235 du cours : $G = 190/(2 \times 1{,}3) = 73{,}08$ GPa, ce qui est bien la valeur affichée.</div>
+
+<!-- ============================================================ -->
+<h2 id="sections">5. Onglet Sections</h2>
+<figure><img src="img/02_sections.png" alt="Onglet Sections"><figcaption>Profil en I de 100 × 200 mm (âme de 8 mm, ailes de 12 mm). Le rapport compare les méthodes analytique, intégrale et catalogue.</figcaption></figure>
+<p><strong>Utilisation.</strong> Choisissez le type de section (rectangle, disque, couronne, I, T, U, L, rectangle creux ou profilé du catalogue), entrez les dimensions en mm, puis cliquez sur <em>Calculer</em>. Le bouton <em>Utiliser pour la poutre / le flambage</em> envoie la section aux autres onglets.</p>
+<h3>Rappels</h3>
+<ul>
+  <li><strong>Aire</strong> : $S = \iint dS$.</li>
+  <li><strong>Centre de surface</strong> : $y_G = \dfrac{\sum S_i\,y_{Gi}}{\sum S_i}$, même formule pour $z_G$. On découpe la section en rectangles.</li>
+  <li><strong>Moment quadratique</strong> : $I_{Gz} = \iint y^2\,dS$. Il mesure la résistance à la flexion autour de l'axe $z$. La matière loin de l'axe compte beaucoup ($y^2$), c'est pourquoi les profilés en I sont efficaces.</li>
+  <li><strong>Rectangle</strong> : $I_z = \dfrac{b h^3}{12}$. <strong>Disque</strong> : $I_z = \dfrac{\pi D^4}{64}$ et $I_x = \dfrac{\pi D^4}{32}$ (polaire, utilisé en torsion).</li>
+  <li><strong>Huygens</strong> (déplacer un axe) : $I_{\Delta} = I_G + S\,d^2$.</li>
+  <li><strong>Module de flexion</strong> : $W_z = I_z / y_{max}$. <strong>Rayon de giration</strong> : $r = \sqrt{I/S}$, utilisé en flambage.</li>
+</ul>
+<div class="box calc"><strong>Exemple refait à la main</strong> (I : b = 100, h = 200, âme a = 8, ailes e = 12 mm)
+<ul>
+  <li>$S = 2 \times 100 \times 12 + 8 \times 176 = 2400 + 1408 = 3808$ mm²</li>
+  <li>Astuce « grand rectangle moins les deux vides » : $I_z = \dfrac{100 \times 200^3 - 92 \times 176^3}{12} = \dfrac{8{,}000 \cdot 10^8 - 5{,}016 \cdot 10^8}{12} = 2{,}487 \cdot 10^7$ mm⁴</li>
+  <li>$I_y = 2 \times \dfrac{12 \times 100^3}{12} + \dfrac{176 \times 8^3}{12} = 2{,}008 \cdot 10^6$ mm⁴</li>
+  <li>$W_z = I_z / 100 = 248\,697$ mm³</li>
+</ul>
+Ces valeurs correspondent au rapport de l'application.</div>
+<p>L'onglet trace aussi $\sigma(y)$ et $\tau(y)$ dans la section. Pour Jourawski, voir la partie <a href="#cisaillement">Cisaillement</a>.</p>
+
+<!-- ============================================================ -->
+<h2 id="poutres">6. Onglet Poutres</h2>
+<p><strong>Utilisation.</strong></p>
+<ol>
+  <li>Choisissez un exemple d'école (appui-appui, console, hyperstatique, deux travées) ou partez de zéro.</li>
+  <li>Entrez la longueur L, le matériau et la section. <em>Reprendre la section de l'onglet Sections</em> recopie S, Iz, Iy, etc.</li>
+  <li>Remplissez les tableaux <strong>Appuis</strong> (position et type), <strong>Forces ponctuelles</strong>, <strong>Couples</strong> et <strong>Charges réparties</strong>. Une force vers le bas est négative ($F_y &lt; 0$).</li>
+  <li>Cliquez sur <em>Calculer</em>, puis consultez les onglets Schéma, Diagrammes, Déformée et Équations par tronçon. Côté rapport : Réactions, Flèche (4 méthodes) et Énergie.</li>
+</ol>
+<figure><img src="img/03_poutre_sollicitations.png" alt="Diagrammes Ty et Mfz"><figcaption>Exemple : L = 6 m, pivot en A (s = 0), appui simple en B (s = 6 m), force de 20 kN à 2 m et charge répartie de 10 kN/m sur toute la longueur.</figcaption></figure>
+
+<div class="box calc"><strong>Exemple refait à la main</strong>
+<p><strong>1. Réactions (PFS).</strong> La charge répartie vaut $10 \times 6 = 60$ kN, appliquée au milieu (3 m).</p>
+<ul>
+  <li>$\sum M_A = 0$ : $6\,Y_B - 20 \times 2 - 60 \times 3 = 0$, donc $Y_B = 220/6 = $ <strong>36,67 kN</strong>.</li>
+  <li>$\sum F_y = 0$ : $Y_A = 80 - 36{,}67 = $ <strong>43,33 kN</strong>.</li>
+</ul>
+<p><strong>2. Moment fléchissant</strong> (on somme les actions à gauche, ce qui donne le même résultat que la convention « droite »).</p>
+<ul>
+  <li>Pour $0 \le s &lt; 2$ : $M_{fz}(s) = 43{,}33\,s - 5\,s^2$, donc $M_{fz}(2) = 66{,}67$ kN·m.</li>
+  <li>Pour $2 &lt; s \le 6$ : $M_{fz}(s) = 43{,}33\,s - 5\,s^2 - 20(s-2)$.</li>
+  <li>Le maximum est atteint là où $T_y = 0$ : $\dfrac{dM}{ds} = 23{,}33 - 10\,s = 0$, donc $s = 2{,}333$ m et $M_{max} = $ <strong>67,22 kN·m</strong>.</li>
+</ul>
+<p><strong>3. Contrainte maximale</strong> (section de l'exemple : Iz = 8,356·10⁷ mm⁴, y<sub>max</sub> = 150 mm) :
+$\sigma = \dfrac{67{,}22\cdot10^6 \times 150}{8{,}356\cdot10^7} = $ <strong>120,7 MPa</strong> $\le R_e/s = 235/1{,}5 = 156{,}7$ MPa, <span class="ok">vérifié</span>.</p>
+<p><strong>4. Flèche, contrôle par superposition</strong> (E = 190 000 MPa, en N et mm) :</p>
+<ul>
+  <li>Charge répartie seule, au milieu : $\dfrac{5 q L^4}{384 E I} = \dfrac{5 \times 10 \times 6000^4}{384 \times 190000 \times 8{,}356\cdot10^7} = 10{,}63$ mm.</li>
+  <li>Force seule, au milieu (formulaire, a = 2 m) : environ 4,83 mm.</li>
+  <li>Total : environ <strong>15,46 mm</strong>. L'application trouve f<sub>max</sub> = 15,47 mm à s = 2,915 m.</li>
+</ul></div>
+
+<figure><img src="img/04_poutre_deformee.png" alt="Déformée et rotation"><figcaption>Rotation α(s) et déformée v(s). Les quatre méthodes (intégration, aires, Castigliano, intégrales de Mohr) donnent des courbes superposées.</figcaption></figure>
+<h3>Les 4 méthodes de calcul de flèche</h3>
+<table>
+  <tr><th>Méthode</th><th>Principe</th></tr>
+  <tr><td><strong>Double intégration</strong></td><td>On intègre deux fois $E I_z v'' = M_{fz}(s)$ sur chaque tronçon. Les constantes viennent des appuis ($v = 0$) et de la continuité entre tronçons ($v$ et $v'$ continus).</td></tr>
+  <tr><td><strong>Aires (Mohr)</strong></td><td>La variation de rotation entre deux points est l'aire du diagramme $M/(EI)$ entre ces points. La flèche s'obtient par le moment de cette aire.</td></tr>
+  <tr><td><strong>Castigliano</strong></td><td>On ajoute une force fictive $F$ au point voulu, puis $f = \dfrac{\partial U}{\partial F}$ avec $U = \int \dfrac{M_f^2}{2EI}\,ds$.</td></tr>
+  <tr><td><strong>Intégrales de Mohr</strong></td><td>On applique une force unité au point voulu, puis $f = \int \dfrac{M\,\bar m}{EI}\,ds$. L'intégrale se lit dans la table de Mohr.</td></tr>
+</table>
+<p><strong>Hyperstatique</strong> (exemples « hyperstatique » et « deux travées ») : on libère un appui, son effort devient une inconnue $X$, puis on écrit que le déplacement y est nul. Théorème de Ménabréa : $\partial U/\partial X = 0$.</p>
+
+<!-- ============================================================ -->
+<h2 id="treillis">7. Onglet Treillis</h2>
+<figure><img src="img/05_treillis.png" alt="Onglet Treillis"><figcaption>Treillis de 5 nœuds et 7 barres. Les barres rouges sont en traction, les bleues en compression. La déformée est amplifiée.</figcaption></figure>
+<p><strong>Utilisation.</strong> Saisissez les nœuds (coordonnées en m), les barres (numéros des deux nœuds), les appuis (cases <em>Bloqué x</em> et <em>Bloqué y</em>) et les charges nodales en kN. Choisissez ensuite le matériau et la section des barres.</p>
+<h3>Rappels</h3>
+<ul>
+  <li><strong>Hypothèses</strong> : barres articulées à leurs extrémités et charges appliquées uniquement aux nœuds. Chaque barre ne subit alors qu'un effort normal $N$ constant.</li>
+  <li><strong>Hyperstatisme</strong> : $h = m + r - 2n$, avec $m$ barres, $r$ réactions et $n$ nœuds. Dans l'exemple : $7 + 3 - 2 \times 5 = 0$, le treillis est isostatique.</li>
+  <li><strong>Méthode des nœuds</strong> : on isole chaque nœud et on écrit $\sum N_{ij}\,\vec u_{ij} + \vec F_i + \vec R_i = \vec 0$, soit 2 équations par nœud. L'application résout le système complet sous forme matricielle.</li>
+  <li>Une fois $N$ connu : $\sigma = N/S$ et $\Delta L = N L/(E S)$. Une barre comprimée doit aussi être vérifiée au <a href="#flambage">flambage</a>.</li>
+</ul>
+<p>Dans l'exemple, l'effort maximal est |N| = 27,08 kN dans la barre E–C (compression), soit σ = −54,2 MPa avec S = 500 mm².</p>
+
+<!-- ============================================================ -->
+<h2 id="traction">8. Onglet Sollicitations › Traction / compression</h2>
+<figure><img src="img/06_traction.png" alt="Onglet Traction"><figcaption>Exemple de barre conique (case « Utiliser S(x) » cochée) : la contrainte diminue quand la section grandit.</figcaption></figure>
+<p><strong>Utilisation.</strong> Entrez N (positif en traction), S<sub>0</sub>, L<sub>0</sub>, le matériau, ΔT, Kt et s. Pour une section variable, cochez <em>Utiliser S(x)</em> et tapez une formule, par exemple <code>pi/4*(20 + 10*x)^2</code> (S en mm², x en m).</p>
+<h3>Rappels</h3>
+<ul>
+  <li>$\sigma = \dfrac{N}{S}$, $\quad \varepsilon = \dfrac{\sigma}{E} + \alpha\,\Delta T$, $\quad \Delta L = \dfrac{N L}{E S}$.</li>
+  <li>Effet Poisson : $\varepsilon_{transversal} = -\nu\,\varepsilon$.</li>
+  <li>Résistance : $K_t\,\sigma \le \dfrac{R_e}{s}$. Section minimale : $S \ge \dfrac{s\,K_t\,|N|}{R_e}$.</li>
+  <li>Section variable : $\Delta L = \displaystyle\int_0^L \dfrac{N}{E\,S(x)}\,dx$.</li>
+</ul>
+<div class="box calc"><strong>Exemple refait à la main</strong> : N = 50 kN, diamètre de 20 mm à l'extrémité la plus fine, donc S = 314,16 mm².
+<ul>
+  <li>$\sigma_{max} = 50\,000 / 314{,}16 = 159{,}2$ MPa, supérieur à $235/1{,}5 = 156{,}7$ MPa : <span class="ko">NON vérifié</span>, il faut un diamètre un peu plus grand.</li>
+  <li>Avec S constante : $\Delta L = \dfrac{50\,000 \times 1000}{190\,000 \times 314{,}16} = 0{,}838$ mm.</li>
+  <li>Avec la vraie section conique (intégrale) : $\Delta L = 0{,}558$ mm. La méthode « analytique » à S constante surestime donc l'allongement, et le rapport le signale.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="cisaillement">9. Onglet Sollicitations › Cisaillement &amp; Matage</h2>
+<figure><img src="img/07_cisaillement.png" alt="Onglet Cisaillement et matage"><figcaption>Cisaillement simple, matage, clavette et goupille. La section pour Jourawski vient de l'onglet Sections.</figcaption></figure>
+<h3>Rappels</h3>
+<ul>
+  <li><strong>Cisaillement simple</strong> : $\tau_{moy} = T/S$ et $\tau_{max} = k\,T/S \le \tau_e/s$. Le facteur $k$ vaut 1,5 pour un rectangle et 4/3 pour un disque.</li>
+  <li><strong>Limite au glissement</strong> : $\tau_e = R_e/2$ (Tresca, plus prudent) ou $R_e/\sqrt3$ (Von Mises).</li>
+  <li><strong>Jourawski</strong> (répartition réelle de τ dans une poutre fléchie) : $\tau(y) = \dfrac{T_y\,Q(y)}{I_z\,b(y)}$, où $Q(y)$ est le moment statique de la partie située au-dessus de $y$ et $b(y)$ la largeur à ce niveau.<br>
+  Vérification sur le profil en I de l'exemple, à l'axe neutre : $Q = 100 \times 12 \times 94 + 8 \times 88 \times 44 = 143\,776$ mm³, donc $\tau_{max} = \dfrac{60\,000 \times 143\,776}{2{,}487\cdot10^7 \times 8} = 43{,}4$ MPa, comme dans l'onglet Sections.</li>
+  <li><strong>Matage</strong> (écrasement des surfaces en contact) : $p = F/S_{projetée} \le p_{adm}$. Les valeurs de $p_{adm}$ sont dans la base de données.</li>
+  <li><strong>Clavette</strong> : effort tangentiel $F = 2C/D$, cisaillement $\tau = F/(a L)$, matage $p = 4C/(D\,b\,L)$.</li>
+  <li><strong>Goupille</strong> (n sections cisaillées) : $\tau = \dfrac{4F}{n\pi d^2}$ et matage $p = \dfrac{2F}{d\,e}$ (formule du cours). Dans l'exemple : p = 41,7 MPa ≤ 60 MPa et τ = 19,9 MPa, <span class="ok">vérifiés</span>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="torsion">10. Onglet Sollicitations › Torsion</h2>
+<figure><img src="img/08_torsion.png" alt="Onglet Torsion"><figcaption>τ varie linéairement avec le rayon : elle est nulle au centre et maximale en surface.</figcaption></figure>
+<h3>Rappels (arbre circulaire)</h3>
+<ul>
+  <li>$I_x = \dfrac{\pi D^4}{32}$ (plein) ou $\dfrac{\pi (D^4 - d^4)}{32}$ (creux).</li>
+  <li>$\tau(r) = \dfrac{M_t\,r}{I_x}$, donc $\tau_{max} = \dfrac{M_t\,D/2}{I_x} = \dfrac{16\,M_t}{\pi D^3}$ pour un arbre plein.</li>
+  <li>Angle unitaire : $\theta = \dfrac{M_t}{G I_x}$ en rad/m. Rotation totale : $\varphi = \theta\,L$.</li>
+  <li>Deux vérifications : la <strong>résistance</strong> ($\tau_{max} \le \tau_e/s$) et la <strong>rigidité</strong> ($\theta \le \bar\theta$, souvent 0,25 °/m pour un arbre de transmission).</li>
+</ul>
+<div class="box calc"><strong>Exemple refait à la main</strong> : M<sub>t</sub> = 0,5 kN·m, D = 40 mm, S235, G = 73 077 MPa.
+<ul>
+  <li>$I_x = \pi \times 40^4/32 = 251\,327$ mm⁴</li>
+  <li>$\tau_{max} = 0{,}5\cdot10^6 \times 20 / 251\,327 = 39{,}8$ MPa, inférieur à $\tau_{adm} = (235/2)/1{,}5 = 78{,}3$ MPa : <span class="ok">résistance vérifiée</span>.</li>
+  <li>$\theta = \dfrac{0{,}5\cdot10^6}{73\,077 \times 251\,327} = 2{,}72\cdot10^{-5}$ rad/mm, soit 0,0272 rad/m ou 1,56 °/m, supérieur à 0,25 °/m : <span class="ko">rigidité NON vérifiée</span>.</li>
+</ul>
+Leçon : ici, c'est la rigidité qui dimensionne, pas la résistance. Il faudrait augmenter D, car θ varie en 1/D⁴.</div>
+
+<!-- ============================================================ -->
+<h2 id="flexion">11. Onglet Sollicitations › Flexion</h2>
+<figure><img src="img/09_flexion.png" alt="Onglet Flexion"><figcaption>Flexion déviée avec effort normal : l'axe neutre (en pointillés) est incliné. Les triangles indiquent les points les plus sollicités.</figcaption></figure>
+<p>Cet onglet utilise la section de l'onglet Sections. Entrez N, M<sub>fz</sub> et M<sub>fy</sub> (le torseur au point étudié, lu par exemple sur les diagrammes de l'onglet Poutres).</p>
+<h3>Rappels</h3>
+<ul>
+  <li>Formule générale (axes principaux) : $\sigma_{xx}(y,z) = \dfrac{N}{S} - \dfrac{M_{fz}}{I_z}\,y + \dfrac{M_{fy}}{I_y}\,z$</li>
+  <li>Flexion simple : $|\sigma|_{max} = \dfrac{|M_f|}{W}$. La contrainte est nulle sur l'axe neutre et maximale sur les fibres extrêmes.</li>
+  <li>Les signes moins et plus viennent de la convention : un $M_{fz}$ positif comprime les fibres du haut ($y &gt; 0$).</li>
+</ul>
+<div class="box calc"><strong>Exemple refait à la main</strong> : N = 10 kN, M<sub>fz</sub> = 15 kN·m, M<sub>fy</sub> = 2 kN·m sur le profil en I. On prend les valeurs absolues dans le coin le plus défavorable :
+$$\sigma_{max} = \frac{10\,000}{3808} + \frac{15\cdot10^6}{248\,697} + \frac{2\cdot10^6}{2{,}008\cdot10^6/50} = 2{,}6 + 60{,}3 + 49{,}8 = 112{,}75 \text{ MPa}$$
+C'est inférieur à 156,7 MPa : <span class="ok">vérifié</span>. Le faible M<sub>fy</sub> pèse presque autant que M<sub>fz</sub>, car le profil en I est 12 fois moins rigide dans l'autre sens.</div>
+
+<!-- ============================================================ -->
+<h2 id="flambage">12. Onglet Flambage</h2>
+<figure><img src="img/10_flambage.png" alt="Onglet Flambage"><figcaption>Courbe σ<sub>cr</sub>(λ) : palier R<sub>e</sub> (poutres courtes), Rankine (poutres moyennes) et Euler (poutres élancées). L'étoile rouge est la charge critique, le point vert le point de fonctionnement.</figcaption></figure>
+<p><strong>Utilisation.</strong> Choisissez un profilé (ou reprenez la section de l'onglet Sections), le matériau, la longueur, les conditions aux limites, la charge P et le coefficient s.</p>
+<h3>Rappels : l'arbre de décision du cours</h3>
+<ol>
+  <li>La poutre flambe dans le plan de plus faible inertie : $I_{min} = \min(I_z, I_y)$, puis $r_{min} = \sqrt{I_{min}/S}$.</li>
+  <li>Longueur de flambement $L'$ : $2L$ pour encastré-libre, $L$ pour articulé-articulé, $L/\sqrt2$ (≈ 0,7 L) pour encastré-articulé, $L/2$ pour encastré-encastré.</li>
+  <li>Élancement $\lambda = L'/r_{min}$ et élancement limite $\lambda_{lim} = \pi\sqrt{E/R_e}$.</li>
+  <li>Choix de la formule :
+    <ul>
+      <li>$\lambda &lt; 20$ : compression simple, $P_c = R_e\,S$.</li>
+      <li>$20 \le \lambda &lt; \lambda_{lim}$ : Rankine, $P_{cr} = \dfrac{R_e\,S}{1 + (\lambda/\lambda_{lim})^2}$.</li>
+      <li>$\lambda \ge \lambda_{lim}$ : Euler, $P_{cr} = \dfrac{\pi^2 E\,I_{min}}{L'^2}$.</li>
+    </ul></li>
+  <li>Vérification : $P \le P_{adm} = P_{cr}/s$.</li>
+</ol>
+<div class="box calc"><strong>Exemple refait à la main</strong> : HEA 200, S235 (E = 190 GPa), L = 4 m, articulé-articulé, P = 300 kN, s = 2.
+<ul>
+  <li>$I_{min} = 1{,}336\cdot10^7$ mm⁴ et $S = 5383$ mm², donc $r_{min} = 49{,}8$ mm.</li>
+  <li>$\lambda = 4000 / 49{,}8 = 80{,}3$ et $\lambda_{lim} = \pi\sqrt{190\,000/235} = 89{,}3$. On est dans la zone de Rankine.</li>
+  <li>$P_{cr} = \dfrac{235 \times 5383}{1 + (80{,}3/89{,}3)^2} = \dfrac{1\,265\,000}{1{,}808} = 699{,}7$ kN, donc $P_{adm} = 349{,}9$ kN ≥ 300 kN : <span class="ok">vérifié</span>.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="tenseurs">13. Onglet Tenseurs &amp; Critères</h2>
+<figure><img src="img/11_tenseurs_mohr.png" alt="Onglet Tenseurs et Mohr"><figcaption>Tricercle de Mohr. La zone bleue contient tous les couples (σ<sub>n</sub>, τ) possibles. L'étoile correspond à la facette choisie (θ = 30°).</figcaption></figure>
+<p><strong>Utilisation.</strong> Entrez le tenseur des contraintes 3×3 en MPa (il est symétrisé automatiquement), une facette (par un angle θ ou une normale n), le matériau et s. L'onglet <em>Poutres</em> peut aussi envoyer l'état de contrainte d'un point.</p>
+<h3>Rappels</h3>
+<ul>
+  <li>Vecteur contrainte sur une facette de normale $\vec n$ : $\vec C = [\sigma]\,\vec n$, avec une composante normale $\sigma_n$ et une composante tangentielle $\tau$.</li>
+  <li><strong>Contraintes principales</strong> : valeurs propres de $[\sigma]$, solutions de $\sigma^3 - I_1\sigma^2 + I_2\sigma - I_3 = 0$. On les classe : $\sigma_I \ge \sigma_{II} \ge \sigma_{III}$.</li>
+  <li><strong>Cercle de Mohr en 2D</strong> : centre $\dfrac{\sigma_x + \sigma_y}{2}$, rayon $\sqrt{\left(\dfrac{\sigma_x - \sigma_y}{2}\right)^2 + \tau_{xy}^2}$.</li>
+  <li><strong>Tresca</strong> : $\sigma_I - \sigma_{III} \le R_e/s$.</li>
+  <li><strong>Von Mises</strong> : $\sigma_{VM} = \sqrt{\tfrac12\left[(\sigma_I-\sigma_{II})^2 + (\sigma_{II}-\sigma_{III})^2 + (\sigma_I-\sigma_{III})^2\right]} \le R_e/s$.</li>
+</ul>
+<div class="box calc"><strong>Exemple refait à la main</strong> : σ<sub>x</sub> = 80, σ<sub>y</sub> = −40, τ<sub>xy</sub> = 30 et σ<sub>z</sub> = 20 MPa.
+<ul>
+  <li>Dans le plan (x, y), le centre vaut 20 et le rayon $\sqrt{60^2 + 30^2} = 67{,}08$. Les contraintes principales sont donc $20 \pm 67{,}08$, soit 87,08 et −47,08. La troisième est σ<sub>z</sub> = 20.</li>
+  <li>Tresca : $87{,}08 - (-47{,}08) = 134{,}2$ MPa ≤ 156,7 MPa, <span class="ok">vérifié</span>.</li>
+  <li>Von Mises : $\sqrt{\tfrac12(67{,}08^2 + 67{,}08^2 + 134{,}16^2)} = 116{,}2$ MPa, <span class="ok">vérifié</span>. Von Mises est toujours un peu moins sévère que Tresca.</li>
+</ul></div>
+
+<!-- ============================================================ -->
+<h2 id="hooke">14. Onglet Hooke &amp; Jauges</h2>
+<figure><img src="img/12_hooke.png" alt="Loi de Hooke"><figcaption>Loi de Hooke, ici en mode orthotrope (matériau composite). Les autres modes sont isotrope 3D, contraintes planes et déformations planes.</figcaption></figure>
+<h3>Loi de Hooke</h3>
+<p>Elle relie les contraintes et les déformations. En isotrope : $\varepsilon_{xx} = \dfrac{1}{E}\left[\sigma_{xx} - \nu(\sigma_{yy} + \sigma_{zz})\right] + \alpha\,\Delta T$ et $\gamma_{xy} = \tau_{xy}/G$. Sous forme matricielle : $\{\varepsilon\} = [S]\{\sigma\}$, et l'inverse $\{\sigma\} = [C]\{\varepsilon\}$. Les déformations ont elles aussi un cercle de Mohr, avec $\gamma/2$ en ordonnée.</p>
+<figure><img src="img/13_jauges.png" alt="Jauges et rosettes"><figcaption>Jauge, pont de Wheatstone et rosette : à partir de 3 mesures, on retrouve les déformations puis les contraintes principales.</figcaption></figure>
+<h3>Extensométrie</h3>
+<ul>
+  <li><strong>Jauge</strong> : $\dfrac{\Delta R}{R} = K\,\varepsilon$, avec un facteur de jauge K ≈ 2. Exemple : 500 µdéf avec K = 2,1 et R = 120 Ω donne ΔR = 0,126 Ω, une variation minuscule, d'où le pont.</li>
+  <li><strong>Pont de Wheatstone</strong> : $V_{out} = \dfrac{V_{in} K}{4}(\varepsilon_1 - \varepsilon_2 + \varepsilon_3 - \varepsilon_4)$. Les jauges opposées s'additionnent et les jauges adjacentes se soustraient, ce qui permet de compenser la température.</li>
+  <li><strong>Rosette</strong> : 3 jauges à 0°, 45° et 90° (rectangulaire) ou à 0°, 60° et 120° (delta) permettent de retrouver $\varepsilon_x$, $\varepsilon_y$ et $\gamma_{xy}$. On en tire ensuite les déformations principales, puis les contraintes avec Hooke en contraintes planes.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="convertisseur">14 bis. Onglet Convertisseur et dossier de validation</h2>
+<p>Les champs de saisie gardent des unités fixes (mm, m, kN, MPa…). Pour convertir une valeur avant de la saisir, ouvrez l'onglet <strong>Convertisseur</strong> : choisissez la grandeur, entrez la valeur, puis les unités De et Vers. Le résultat s'affiche en grand, le tableau donne la valeur dans toutes les unités, et « Copier le résultat » place le nombre dans le presse-papiers. Un tableau rappelle l'unité attendue dans chaque onglet. Exemple : 235 MPa = 34,08 ksi ; 1 in = 25,4 mm. Pour la température, choisissez <strong>Écart de température</strong> pour un ΔT (champs ΔT de la traction et de Hooke : 50 °C d'écart = 90 °F d'écart) et <strong>Température absolue</strong> pour une température (0 °C = 32 °F).</p>
+<div class="box note">Les rapports et graphes restent en mm, kN, kN·m et MPa. Sur chaque onglet de calcul, le bouton <strong>Dossier de validation de ce problème</strong> génère un fichier HTML (données, hypothèses, équations chiffrées vérifiées à la main, diagrammes) à envoyer à un relecteur. Sur la Base de données, les boutons <strong>Note de calcul</strong> et <strong>Guide d'utilisation</strong> ouvrent les documents généraux.</div>
+
+<!-- ============================================================ -->
+<h2 id="sources">15. Sur quoi reposent les calculs</h2>
+<table>
+  <tr><th>Source</th><th>Ce qui en vient</th></tr>
+  <tr><td><strong>Votre cours de RDM</strong> (texte du « Master Prompt », recopié dans <code>docs/CAHIER_DES_CHARGES.md</code>)</td><td>Toutes les formules, les conventions de signe (torseur = actions à droite), l'arbre de décision du flambage (Euler / Rankine / λ<sub>lim</sub>), les valeurs des matériaux (E = 190 GPa pour les aciers d'usage général, par exemple), les pressions de matage et la formule de la goupille.</td></tr>
+  <tr><td><strong>Théorie classique de la RDM</strong> (manuels de référence, également présents sur le web)</td><td>Les formules standard, identiques partout : Navier ($\sigma = M y/I$), Huygens, Jourawski, Euler, Castigliano, Ménabréa, Mohr, Tresca, Von Mises et Hooke. Références utiles : le <em>Guide du calcul en mécanique</em> (Fanchon, Nathan), le <em>Mémotech</em> ou les cours de RDM des IUT GMP, et les articles de Wikipédia « Résistance des matériaux », « Flambage », « Cercle de Mohr » et « Critère de von Mises ».</td></tr>
+  <tr><td><strong>Catalogues de profilés</strong> (tables Eurocode 3 / fabricants)</td><td>Les valeurs h, b, S, I et r des profilés IPE, HEA et HEB. Attention, les axes sont inversés : voir <a href="#pieges">Pièges</a>.</td></tr>
+  <tr><td><strong>Vérification interne</strong></td><td>Chaque grandeur est calculée par 2 à 4 méthodes indépendantes (analytique, intégrale, énergétique), et le rapport affiche l'écart entre elles. Les tests automatiques comparent aussi les résultats aux formules connues. Exemple : poutre IPE 200, L = 4 m, q = 10 kN/m. La flèche vaut 9,029 mm par les 4 méthodes, soit exactement $5qL^4/(384EI)$.</td></tr>
+</table>
+<div class="box note"><strong>Valeurs du cours à connaître</strong> (elles diffèrent des valeurs usuelles) :
+<ul>
+  <li>Aciers S185 à S355 : le cours donne E = 190 GPa. On trouve souvent 210 GPa ailleurs, ce qui donne des flèches environ 10 % plus faibles.</li>
+  <li>Aluminium : E = 90 GPa dans le cours, contre 70 à 74 GPa habituellement.</li>
+  <li>Titane TA6V : Re = 100 MPa dans le cours, contre environ 830 MPa en réalité.</li>
+  <li>Plexiglas : G = 11 GPa dans le cours, alors qu'environ 1,1 GPa serait cohérent. L'application calcule G avec E/(2(1+ν)).</li>
+</ul>
+Pour un vrai dimensionnement, ajoutez votre propre matériau dans la Base de données.</div>
+
+<!-- ============================================================ -->
+<h2 id="pieges">16. Pièges fréquents</h2>
+<ul>
+  <li><strong>Iz et Iy inversés par rapport aux catalogues.</strong> Dans l'application, l'axe fort d'un I debout est $z$ (flexion dans le plan x, y). Les catalogues Eurocode appellent cet axe $y$. Donc $I_z$(application) = $I_y$(catalogue).</li>
+  <li><strong>Signes des charges</strong> : une force vers le bas s'écrit $F_y &lt; 0$, et une charge répartie vers le bas aussi.</li>
+  <li><strong>Unités</strong> : sections en mm mais longueurs de poutre en m. En cas de doute, regardez la ligne « Données (SI) » du rapport.</li>
+  <li><strong>« NON vérifié »</strong> ne veut pas dire que le calcul est faux : c'est le résultat de la vérification. Le rapport indique quel critère n'est pas respecté (résistance, rigidité ou flambage).</li>
+  <li><strong>Compression</strong> : une barre comprimée (dans un treillis ou un poteau) doit toujours être vérifiée aussi au flambage, pas seulement à σ = N/S.</li>
+  <li><strong>Torsion</strong> : sur un arbre, c'est souvent la rigidité (θ) qui impose le diamètre, pas la résistance.</li>
+</ul>
+<p style="color:var(--muted);margin-top:40px">Captures régénérables avec <code>run('docs/make_screenshots.m')</code>.</p>
+</main>
+</body>
+</html>
