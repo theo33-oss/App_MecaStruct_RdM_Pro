@@ -1,5 +1,6 @@
 classdef BucklingEngine
     %BUCKLINGENGINE Flambage des poutres droites comprimées : Euler, Rankine, compression simple.
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   Moteur de calcul statique (SI strict : N, m, Pa, m², m⁴), sans tracé ni dépendance
     %   interne. Démarche du cours :
     %     I_min = min(Iz, Iy) ; r_min = sqrt(I_min/S) ; L' = coef·L (encastré-libre 2L,

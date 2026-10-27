@@ -1,5 +1,6 @@
 classdef ValidationReport
     %VALIDATIONREPORT Dossier de validation d'un problème traité dans MecaStruct_App.
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   file = ValidationReport.generate(app, key) recalcule l'onglet `key`, puis écrit un fichier
     %   HTML autonome (images intégrées) contenant : les données du problème, les hypothèses du
     %   modèle avec contrôles d'applicabilité, les équations avec valeurs chiffrées, une
@@ -74,6 +75,15 @@ classdef ValidationReport
             clear cl
         end
 
+        function [nOK, nTot] = handCheck(app, key)
+            %HANDCHECK Recalcule l'onglet `key` et compte les contrôles à la main qui concordent (§3), sans écrire de dossier.
+            m = ValidationReport.meta(key);
+            for k = 1:numel(m.calls)
+                app.(m.calls{k})();
+            end
+            [~, nOK, nTot] = ValidationReport.handHTML(app, key);
+        end
+
         function m = meta(key)
             %META Titre, onglet, calculs à relancer et fiches de formules de chaque zone de travail.
             switch key
@@ -127,7 +137,7 @@ classdef ValidationReport
         function html = headHTML(m, status, nOK, nTot, nWarn, nKo, errs)
             e = ValidationReport.esc;
             html = ['<h1>Dossier de validation : ' e(m.title) '</h1>' ...
-                '<p class="meta">Généré le ' char(datetime('now', 'Format', 'dd/MM/yyyy HH:mm')) ' par MecaStruct RdM Pro (MATLAB ' version('-release') ').</p>' ...
+                '<p class="meta">Généré le ' char(datetime('now', 'Format', 'dd/MM/yyyy HH:mm')) ' par MecaStruct RdM Pro, application de Théo Brun (MATLAB ' version('-release') ').</p>' ...
                 '<div class="box"><strong>Objet.</strong> Ce document rassemble les données du problème, les hypothèses, les équations avec valeurs chiffrées, ' ...
                 'les résultats du solveur et les diagrammes. Il permet de vérifier trois points : (1) le solveur a bien calculé, ' ...
                 '(2) le modèle est applicable à ce cas, (3) les hypothèses sont justifiées. Chaque résultat important est recalculé à la main, ' ...

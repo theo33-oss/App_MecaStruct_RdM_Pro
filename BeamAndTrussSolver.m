@@ -1,5 +1,6 @@
 classdef BeamAndTrussSolver
     %BEAMANDTRUSSSOLVER Statique des poutres droites et des treillis (classe statique, unités SI).
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   BeamAndTrussSolver regroupe les calculs du module « Équilibre, treillis,
     %   efforts intérieurs » de MecaStruct_RdM_Pro.
     %
@@ -201,7 +202,7 @@ classdef BeamAndTrussSolver
         function str = poly2latex(c, var)
             %POLY2LATEX Écriture LaTeX (sans les $) d'un polynôme.
             %   str = BeamAndTrussSolver.poly2latex(c, var) : c coefficients
-            %   (ordre polyval), var nom de la variable (défaut 's'). Format %.4g,
+            %   (ordre polyval), var nom de la variable (défaut 's'). Format %.8g (%.4g pour un seul terme),
             %   puissances de 10 écrites \cdot 10^{n}, termes nuls omis, signes
             %   propres (jamais « + - »), '0' si le polynôme est nul.
             if nargin < 2 || isempty(var)
@@ -213,7 +214,7 @@ classdef BeamAndTrussSolver
         function str = poly2str(c, var)
             %POLY2STR Écriture texte d'un polynôme.
             %   str = BeamAndTrussSolver.poly2str(c, var) : version texte de
-            %   poly2latex (ex. '-1500*s^2 + 3000*s - 250'), format %.4g.
+            %   poly2latex (ex. '-1500*s^2 + 3000*s - 250'), même format.
             if nargin < 2 || isempty(var)
                 var = 's';
             end
@@ -439,7 +440,7 @@ end
 end
 
 function str = btsPolyStr(c, var, isTex)
-% Écriture d'un polynôme (texte ou LaTeX), coefficients %.4g, termes nuls omis.
+% Écriture d'un polynôme (texte ou LaTeX), termes nuls omis.
 if ~isnumeric(c)
     error('MecaStruct:BeamAndTrussSolver:invalidArgument', 'Les coefficients doivent être numériques.');
 end
@@ -454,6 +455,12 @@ if isempty(mx)
     mx = 0;
 end
 nC = numel(c);
+% coefficients en variable globale s : les termes se compensent sur les tronçons éloignés de s = 0,
+% 4 chiffres ne suffisent plus dès qu'il y a plusieurs termes
+fmt = '%.4g';
+if nnz(c ~= 0) > 1
+    fmt = '%.8g';
+end
 for i = 1:nC
     a = c(i);
     if a == 0 || (isfinite(a) && abs(a) <= 1e-12 * mx)
@@ -461,9 +468,9 @@ for i = 1:nC
     end
     p = nC - i;
     if isTex
-        mag = btsTexNum(abs(a));
+        mag = btsTexNum(abs(a), fmt);
     else
-        mag = sprintf('%.4g', abs(a));
+        mag = sprintf(fmt, abs(a));
     end
     if p == 0
         term = mag;
@@ -514,9 +521,12 @@ function s = btsNum(v)
 s = sprintf('%.6g', v + 0);
 end
 
-function s = btsTexNum(v)
-% Nombre au format LaTeX (%.4g, exposant écrit \cdot 10^{n}, -0 affiché 0).
-s = sprintf('%.4g', v + 0);
+function s = btsTexNum(v, fmt)
+% Nombre au format LaTeX (%.4g par défaut, exposant écrit \cdot 10^{n}, -0 affiché 0).
+if nargin < 2
+    fmt = '%.4g';
+end
+s = sprintf(fmt, v + 0);
 if strcmp(s, 'Inf')
     s = '\infty';
     return

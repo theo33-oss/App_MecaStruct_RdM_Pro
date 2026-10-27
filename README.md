@@ -71,6 +71,19 @@ Cas de contrôle de bout en bout :
 - **Données** : poutre IPE 200 en acier S235, sur deux appuis, L = 4 m, charge uniforme q = 10 kN/m.
 - **Résultats** : Mmax = 20 kN·m et σmax = 102,9 MPa. La flèche vaut 9,029 mm par les 4 méthodes, soit exactement 5qL⁴/(384·E·Iz) avec E = 190 GPa.
 
+## Auteur et sources
+
+Application de **Théo Brun**, basée sur son cours de Résistance des Matériaux.
+
+| Source | Ce qui en vient |
+|---|---|
+| Cours de RDM de l'auteur (texte de la demande recopié dans `docs/CAHIER_DES_CHARGES.md`) | Formules, conventions de signe (torseur de cohésion = actions à droite), arbre de décision du flambage (compression simple, Rankine, Euler), valeurs des matériaux, pressions de matage, formule de la goupille |
+| Théorie classique de la RDM : *Guide du calcul en mécanique* (J.-L. Fanchon, Nathan), *Mémotech*, cours de RDM des IUT GMP | Navier, Huygens, Jourawski, Euler, Castigliano, Ménabréa, intégrales de Mohr, cercles de Mohr, Tresca, Von Mises, Hooke, Bredt, Saint-Venant |
+| Wikipédia : « Résistance des matériaux », « Flambage », « Cercle de Mohr », « Critère de von Mises » | Rappels et contrôles des formules standard |
+| W. D. Pilkey, *Peterson's Stress Concentration Factors* (Wiley) | Ajustements des abaques Kt (plaque trouée, arbre épaulé) |
+| Tables de profilés Eurocode 3 / fabricants | Dimensions et caractéristiques des IPE, IPN, HEA, HEB, UPN, UAP (Iz de l'application = Iy du catalogue) |
+| MathJax (cdnjs) | Affichage des formules dans les documents HTML |
+
 ## Données issues du cours à vérifier
 
 - **TA6V** : les valeurs de Re et Rm sont celles du cours. Les valeurs usuelles sont plutôt Re ≈ 830–880 MPa et Rm ≈ 900–950 MPa.

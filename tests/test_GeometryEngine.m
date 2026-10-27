@@ -1,5 +1,6 @@
 function tests = test_GeometryEngine
 %TEST_GEOMETRYENGINE Tests unitaires du moteur GeometryEngine (propriétés des sections droites).
+%   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 %   Lancer : r = runtests('tests/test_GeometryEngine.m');
 %   Couvre : formules fermées (rectangle, disque, couronne, rectangle creux, I, T, U, L),
 %   analytique ≡ intégrale symbolique ≡ intégrale numérique (1e-9) pour tous les types, Huygens,
@@ -689,6 +690,13 @@ verifyRel(tc, PC.J, PI.J, 1e-12);
 PT = GeometryEngine.analytical(struct('type', 'composite', 'rects', rects + [1 1 -2 -2]));
 verifyRel(tc, [PT.zG PT.yG], [PI.zG + 1, PI.yG - 2], 1e-12);
 verifyRel(tc, [PT.Iz PT.Iy], [PI.Iz PI.Iy], 1e-9);
+% caisson soudé (contour fermé) et carré plein coupé en deux : Σ l·t³/3 ne s'applique pas
+box = [0 .1 0 .005; 0 .1 .095 .1; 0 .005 .005 .095; .095 .1 .005 .095];
+tc.verifyTrue(isnan(GeometryEngine.analytical(struct('type', 'composite', 'rects', box)).J));
+tc.verifyTrue(isnan(GeometryEngine.analytical(struct('type', 'composite', 'rects', [0 .05 0 .1; .05 .1 0 .1])).J));
+% couronne d = 0 : même ky que le disque
+Pc = GeometryEngine.analytical(struct('type', 'couronne', 'D', 0.1, 'd', 0));
+verifyRel(tc, Pc.ky, 6/7, 1e-12);
 end
 
 function testCompositeHoles(tc)

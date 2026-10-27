@@ -1,5 +1,6 @@
 function tests = test_TensorAndCriteriaEngine
 %TEST_TENSORANDCRITERIAENGINE Tests unitaires du module TensorAndCriteriaEngine (§6 et §9 du contrat).
+%   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 %   Cas couverts : traction simple, cisaillement pur (Tresca = 2τ, Von Mises = √3·τ), exemple 3D à
 %   valeurs propres connues, tenseur tourné quelconque, état hydrostatique, polynôme caractéristique
 %   (roots, eig, symbolique), facette, cohérence plane2D / rotation tensorielle R·σ·Rᵀ (convention

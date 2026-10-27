@@ -1,4 +1,5 @@
 %RUN_ALL_TESTS Lance toute la suite de tests de MecaStruct_RdM_Pro et affiche un résumé.
+% Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 %   run('tests/run_all_tests.m') ou, depuis le dossier du projet : run_all_tests
 %   Exécute tous les fichiers tests/test_*.m (matlab.unittest), affiche un tableau par fichier
 %   puis la liste des tests en échec. Termine par une erreur 'MecaStruct:tests:failed' si au moins

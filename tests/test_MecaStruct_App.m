@@ -1,5 +1,6 @@
 function tests = test_MecaStruct_App
 %TEST_MECASTRUCT_APP Tests de l'interface graphique MecaStruct_App (création invisible).
+%   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 %   Création sans fenêtre visible, exemples de tous les onglets, valeurs de référence, transfert
 %   section → poutre → tenseur, formulaire rapide, export, données utilisateur, erreurs
 %   journalisées, analyse sûre des expressions, fermeture propre.
@@ -75,6 +76,11 @@ verifyTrue(testCase, contains(F.W.Status.Text, 'Attention'));
 app.computeBending();
 txt = strjoin(app.H.Fle.W.Report.Value, ' ');
 verifyTrue(testCase, contains(txt, 'fibres du haut'));
+% saisies de la poutre modifiées sans recalcul : « Lire en s » relit la poutre à jour
+app.H.Beam.dl.Data = {0, 6, 'y', 'uniforme', '-20', 'q'};
+F.s0.Value = 3;
+app.loadFromBeam('Fle', 'abscisse');
+verifyEqual(testCase, F.Mfz.Value, 110, 'AbsTol', 1e-9);              % 73,33·3 − 20·9/2 − 20·1
 S.s0.Value = 99;
 verifyError(testCase, @() app.loadFromBeam('Sec', 'abscisse'), 'MecaStruct:App:invalidInput');
 end
@@ -150,6 +156,12 @@ for key = {'Beam'}   % un seul dossier complet (diagrammes exportés) : suffisan
     verifyFalse(testCase, contains(h, 'non exécutée'), [key{1} ' : vérification indépendante absente']);
     verifyFalse(testCase, contains(h, '<span class="ko">ÉCART'), [key{1} ' : écart solveur / vérification à la main']);
 end
+% §3 de tous les modules : la vérification à la main concorde avec le solveur sur les exemples
+for key = {'Sec', 'Tr', 'Tra', 'Cis', 'Tor', 'Fle', 'Fla', 'Ten', 'Hoo', 'Jau'}
+    [nOK, nTot] = ValidationReport.handCheck(app, key{1});
+    verifyGreaterThan(testCase, nTot, 0, [key{1} ' : aucun contrôle']);
+    verifyEqual(testCase, nOK, nTot, [key{1} ' : écart solveur / vérification à la main']);
+end
 % §7 : chaque formule retenue existe dans les fiches du module (une coquille la ferait disparaître)
 for key = {'Sec', 'Beam', 'Tr', 'Tra', 'Cis', 'Tor', 'Fle', 'Fla', 'Ten', 'Hoo', 'Jau'}
     m = ValidationReport.meta(key{1});
@@ -222,6 +234,29 @@ verifyEqual(testCase, app.H.Beam.S.Value, b * h * 1e6, 'RelTol', 1e-12);
 verifyEqual(testCase, app.H.Beam.ky.Value, P.ky, 'RelTol', 1e-12);
 verifyEqual(testCase, app.H.Fla.Iy.Value, h * b^3 / 12 * 1e12, 'RelTol', 1e-12);
 verifyEqual(testCase, app.H.Beam.Ix.Value, P.J * 1e12, 'RelTol', 1e-12);
+% la section transmise est figée : recalculer une autre section ne change pas la vérification de la poutre
+app.loadExample('Poutres', 'console');
+app.useSectionForBeam();
+app.computeBeam();
+sig0 = app.Results.beam.check.sigma;
+S.b.Value = 50;
+app.computeSection();
+app.computeBeam();
+verifyEqual(testCase, app.Results.beam.check.sigma, sig0, 'RelTol', 1e-12);
+% cornière (Iyz ≠ 0) : le flambage reçoit les moments principaux, l'inertie faible est I2
+S.type.Value = 'L'; S.h.Value = 100; S.b.Value = 100; S.t.Value = 10;
+app.useSectionForBeam();
+PL = app.SectionData.P;
+verifyEqual(testCase, min(app.H.Fla.Iz.Value, app.H.Fla.Iy.Value), PL.I2 * 1e12, 'RelTol', 1e-9);
+verifyLessThan(testCase, PL.I2, 0.5 * PL.Iz);
+% profilé du catalogue : valeurs tabulées, pas la géométrie simplifiée
+S.type.Value = 'profile'; S.fam.Value = 'IPN';
+S.prof.Items = cellstr(app.DM.listProfiles('IPN'));
+S.prof.Value = 'IPN 200';
+app.useSectionForBeam();
+p = app.DM.getProfile('IPN', 'IPN 200');
+verifyEqual(testCase, app.H.Fla.Iy.Value, p.Iy * 1e12, 'RelTol', 1e-9);
+verifyEqual(testCase, app.H.Beam.S.Value, p.S * 1e6, 'RelTol', 1e-9);
 end
 
 function testBeamConsole(testCase)

@@ -1,5 +1,6 @@
 function tests = test_PlotEngine
 %TEST_PLOTENGINE Tests du moteur d'affichage PlotEngine (§7 et §9 du contrat).
+%   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 %   Chaque fonction est exécutée sur des sorties réelles des moteurs, dans un axes d'une
 %   figure invisible ET dans un uiaxes d'une uifigure invisible ; on vérifie l'absence
 %   d'erreur et d'avertissement (lastwarn vide), le contenu graphique attendu, puis on

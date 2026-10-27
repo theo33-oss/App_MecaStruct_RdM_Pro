@@ -1,5 +1,6 @@
 classdef GeometryEngine
     %GEOMETRYENGINE Caractéristiques géométriques des sections droites (moteur statique, SI strict).
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   Dimensions en m, aires en m², moments statiques et modules en m³, moments quadratiques en m⁴.
     %   Repère de saisie O1 : z horizontal vers la droite, y vertical vers le haut (origine : coin
     %   bas-gauche de la section, sauf 'composite' : repère utilisateur). Moments quadratiques en G :
@@ -1387,7 +1388,22 @@ classdef GeometryEngine
                         [J, txt, tex] = GeometryEngine.saintVenant(prims(1).z2 - prims(1).z1, ...
                             prims(1).y2 - prims(1).y1);
                     else
-                        [J, txt, tex] = GeometryEngine.openThinWalled(prims);
+                        % Σ l·t³/3 ne vaut que pour des parois minces formant une section ouverte
+                        w = [prims.z2] - [prims.z1];
+                        hh = [prims.y2] - [prims.y1];
+                        ps = polyshape();
+                        for k = 1:numel(prims)
+                            ps = union(ps, polyshape([prims(k).z1 prims(k).z2 prims(k).z2 prims(k).z1], ...
+                                [prims(k).y1 prims(k).y1 prims(k).y2 prims(k).y2]));
+                        end
+                        if any(min(w, hh)./max(w, hh) > 0.2) || ps.NumHoles > 0
+                            J = NaN;
+                            txt = ['non calculée (rectangles épais ou formant un contour fermé : ' ...
+                                'la formule des parois minces ouvertes ne s''applique pas)'];
+                            tex = '$J : \mathrm{non\ calculee}$';
+                        else
+                            [J, txt, tex] = GeometryEngine.openThinWalled(prims);
+                        end
                     end
             end
         end
@@ -1565,8 +1581,13 @@ classdef GeometryEngine
                 case 'couronne'
                     R = sec.D/2; r = sec.d/2;
                     kC = 4/3*(1 + r*R/(r^2 + R^2));
-                    kyC = 1/2;
-                    txt = sprintf('tube : k = 4/3·(1 + rR/(r² + R²)) = %s, ky = 1/2 (tube mince)', fs(kC));
+                    if r == 0
+                        kyC = 6/7;   % d = 0 : c'est un disque plein
+                        txt = sprintf('couronne avec d = 0 (disque plein) : k = %s, ky = 6/7', fs(kC));
+                    else
+                        kyC = 1/2;
+                        txt = sprintf('tube : k = 4/3·(1 + rR/(r² + R²)) = %s, ky = 1/2 (tube mince)', fs(kC));
+                    end
                 case 'I'
                     Sweb = sec.tw*(sec.h - 2*sec.tf);
                     kC = core.S/Sweb; kyC = Sweb/core.S;

@@ -1,5 +1,6 @@
 function tests = test_BucklingEngine
 %TEST_BUCKLINGENGINE Tests unitaires du module BucklingEngine (flambage).
+%   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 %   Cas couverts (§9 d'ARCHITECTURE.md + cas supplémentaires) :
 %     - régime d'Euler (λ grand) avec valeur calculée à la main ;
 %     - régime de Rankine, régime de compression simple, frontières de l'arbre de décision ;

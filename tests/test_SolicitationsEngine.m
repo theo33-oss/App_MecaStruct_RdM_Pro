@@ -1,5 +1,6 @@
 function tests = test_SolicitationsEngine
 %TEST_SOLICITATIONSENGINE Tests unitaires du module SolicitationsEngine (§4 et §9 du contrat).
+%   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 tests = functiontests(localfunctions);
 end
 

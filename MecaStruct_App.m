@@ -1,5 +1,6 @@
 classdef MecaStruct_App < handle
     %MECASTRUCT_APP Interface graphique de MecaStruct RdM Pro (résistance des matériaux).
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   app = MecaStruct_App() ouvre la fenêtre « MecaStruct RdM Pro ».
     %   app = MecaStruct_App('Visible', 'off') crée l'interface sans l'afficher (tests).
     %   app = MecaStruct_App(..., 'UserFile', f) utilise le fichier de données utilisateur f
@@ -44,7 +45,8 @@ classdef MecaStruct_App < handle
         SubSol                       % sous-onglets de Sollicitations
         SubHooke                     % sous-onglets de Hooke & Jauges
         SubDB                        % sous-onglets de la base de données
-        BeamUsesSection = false      % la poutre utilise la section de l'onglet Sections
+        BeamUsesSection = false      % la vérification de la poutre utilise le contour exact de BeamSection
+        BeamSection = []             % section transmise à la poutre (figée au transfert : sec, P, mat)
         ButtonGrid                   % grille des boutons du formulaire (dossier / note / guide)
         BtnVal                       % bouton « Dossier de validation » (onglets de calcul)
         BtnNote                      % bouton « Note de calcul » (Base de données uniquement)
@@ -160,12 +162,19 @@ classdef MecaStruct_App < handle
 
         function useSectionForBeam(app)
             %USESECTIONFORBEAM Transmet S, Iz, Iy, Ix (constante de torsion), ky de la section aux
-            %   onglets Poutres et Flambage (la section est calculée si nécessaire).
-            if isempty(app.SectionData)
-                app.computeSection();
-            end
+            %   onglets Poutres et Flambage (la section est recalculée avec les saisies actuelles).
+            %   Profilé du catalogue : valeurs tabulées (la géométrie simplifiée ignore les congés).
+            %   Section à Iyz ≠ 0 (cornière…) : le flambage reçoit les moments principaux I1, I2.
+            app.computeSection();
             D = app.SectionData;
             P = D.P;
+            isProfile = strcmp(D.sec.type, 'profile');
+            if isProfile
+                Pt = GeometryEngine.tabulated(D.sec);
+                for f = {'S', 'Iz', 'Iy', 'vyTop', 'vyBot', 'vzRight', 'vzLeft'}
+                    P.(f{1}) = Pt.(f{1});
+                end
+            end
             B = app.H.Beam;
             B.S.Value = DataManager.fromSI(P.S, 'mm^2');
             B.Iz.Value = DataManager.fromSI(P.Iz, 'mm^4');
@@ -184,16 +193,26 @@ classdef MecaStruct_App < handle
             B.vz.Value = DataManager.fromSI(max(P.vzRight, P.vzLeft), 'mm');
             B.mat.Value = D.mat;
             app.applyMaterial('Beam');
-            app.BeamUsesSection = true;
+            app.BeamSection = D;
+            app.BeamUsesSection = ~isProfile;   % profilé : on vérifie avec les valeurs du catalogue saisies
             F = app.H.Fla;
             F.S.Value = B.S.Value;
             F.Iz.Value = B.Iz.Value;
             F.Iy.Value = B.Iy.Value;
+            msg = sprintf('Section reçue : %s', MecaStruct_App.sectionLabel(D.sec));
+            msgF = msg;
+            if ~isProfile && abs(P.Iyz) > 1e-9 * sqrt(P.Iz * P.Iy)
+                % axes non principaux : le flambage se fait autour de l'axe principal faible
+                F.Iz.Value = DataManager.fromSI(P.I1, 'mm^4');
+                F.Iy.Value = DataManager.fromSI(P.I2, 'mm^4');
+                msgF = sprintf('%s — Iyz ≠ 0 : moments principaux I1, I2 (axes tournés de %.4g°)', msg, rad2deg(P.alphaP));
+                msg = sprintf(['%s — ⚠ Iyz ≠ 0 : les contraintes en tiennent compte, mais la flèche est calculée ' ...
+                    'avec Iz et Iy hors axes principaux (sous-estimée)'], msg);
+            end
             F.mat.Value = D.mat;
             app.applyMaterial('Fla');
-            msg = sprintf('Section reçue : %s', MecaStruct_App.sectionLabel(D.sec));
             B.W.Status.Text = msg;
-            F.W.Status.Text = msg;
+            F.W.Status.Text = msgF;
             app.H.Sec.W.Status.Text = 'Section transmise aux onglets Poutres et Flambage.';
         end
 
@@ -296,9 +315,7 @@ classdef MecaStruct_App < handle
             if ~any(strcmp(key, {'Sec', 'Fle'}))
                 error('MecaStruct:App:invalidInput', 'key doit valoir ''Sec'' ou ''Fle''.');
             end
-            if ~isfield(app.Results, 'beam')
-                app.computeBeam();
-            end
+            app.computeBeam();   % toujours : les saisies de la poutre ont pu changer depuis le dernier calcul
             R = app.Results.beam;
             H = app.H.(key);
             if strcmp(mode, 'max')
@@ -322,7 +339,8 @@ classdef MecaStruct_App < handle
                 s, H.N.Value, H.Mfz.Value, H.Mfy.Value);
             % la contrainte se calcule avec la section de l'onglet Sections, pas forcément celle de la poutre
             Pb = app.beamSectionProps();
-            if ~isempty(app.SectionData) && abs(Pb.Iz - app.SectionData.P.Iz) > 1e-3 * app.SectionData.P.Iz
+            sameSec = ~isempty(app.BeamSection) && ~isempty(app.SectionData) && isequal(app.BeamSection.sec, app.SectionData.sec);
+            if ~isempty(app.SectionData) && ~sameSec && abs(Pb.Iz - app.SectionData.P.Iz) > 1e-3 * app.SectionData.P.Iz
                 H.W.Status.Text = [H.W.Status.Text sprintf(['  ⚠ Attention : la section de l''onglet Sections (Iz = %.4g mm⁴) ' ...
                     'diffère de celle de la poutre (Iz = %.4g mm⁴) : les contraintes ne concernent pas la même section.'], ...
                     app.SectionData.P.Iz * 1e12, Pb.Iz * 1e12)];
@@ -332,9 +350,7 @@ classdef MecaStruct_App < handle
         function sendToTensor(app)
             %SENDTOTENSOR Transmet l'état de contrainte du point le plus sollicité de la poutre
             %   (σxx, contraintes de flexion composée) à l'onglet Tenseurs & Critères et le calcule.
-            if ~isfield(app.Results, 'beam')
-                app.computeBeam();
-            end
+            app.computeBeam();
             chk = app.Results.beam.check;
             T = app.H.Ten;
             T.sig.Data = [chk.sigma / 1e6 0 0; 0 0 0; 0 0 0];
@@ -683,11 +699,11 @@ classdef MecaStruct_App < handle
             p = struct('E', app.si(F.E, 'GPa'), 'Re', app.si(F.Re, 'MPa'), 'S', app.si(F.S, 'mm^2'), ...
                 'Iz', app.si(F.Iz, 'mm^4'), 'Iy', app.si(F.Iy, 'mm^4'), 'L', F.L.Value, ...
                 'condition', F.cond.Value, 's', F.s.Value);
-            if F.P.Value > 0
+            if F.P.Value ~= 0   % P < 0 (convention N < 0 en compression) : le moteur retient |P|
                 p.P = app.si(F.P, 'kN');
             end
             b = BucklingEngine.analyze(p);
-            c = BucklingEngine.stabilityCurve(p.E, p.Re);
+            c = BucklingEngine.stabilityCurve(p.E, p.Re, 0:0.5:max(300, ceil(1.2 * b.lambda)));
             PlotEngine.bucklingCurve(W.Axes{1}(1), c, b);
             ax = W.Axes{2}(1);
             cla(ax, 'reset');
@@ -761,8 +777,9 @@ classdef MecaStruct_App < handle
                 pt = [r2.sigma1 r2.sigma2];
                 ptTxt = 'état plan : (σ1, σ2) du plan (x, y)';
             else
-                pt = [pr.sigmaI pr.sigmaIII];
-                ptTxt = 'état triaxial : point (σI, σIII), équivalent pour Tresca';
+                % Tresca et Von Mises ignorent la pression hydrostatique : on retire σII
+                pt = [pr.sigmaI - pr.sigmaII, pr.sigmaIII - pr.sigmaII];
+                ptTxt = 'état triaxial : point (σI − σII, σIII − σII), même σeq Tresca et Von Mises (pas Rankine)';
             end
             PlotEngine.mohr3D(W.Axes{1}(1), m3, [fa.sigmaN fa.tauNorm]);
             PlotEngine.mohr2D(W.Axes{2}(1), r2, th);
@@ -2154,6 +2171,7 @@ classdef MecaStruct_App < handle
 
         function markBeamManual(app)
             app.BeamUsesSection = false;
+            app.BeamSection = [];
         end
 
         function loadBeamExample(app, variant)
@@ -2174,6 +2192,7 @@ classdef MecaStruct_App < handle
             B.vy.Value = p.h / 2 * 1e3;
             B.vz.Value = p.b / 2 * 1e3;
             app.BeamUsesSection = false;
+            app.BeamSection = [];
             B.pm.Data = cell(0, 5);
             switch variant
                 case 'hyperstatique'
@@ -2222,7 +2241,7 @@ classdef MecaStruct_App < handle
             model.Iy = app.si(B.Iy, 'mm^4');
             model.Ix = app.si(B.Ix, 'mm^4');
             model.ky = B.ky.Value;
-            model.kz = B.ky.Value;
+            model.kz = B.ky.Value;   % shortcut: un seul champ k, kz = ky ; la flèche d'effort tranchant dans (x, z) est approchée, ajouter un champ kz si on charge en z
             d = B.sup.Data;
             sup = struct('pos', {}, 'type', {}, 'name', {});
             for i = 1:size(d, 1)
@@ -2284,8 +2303,8 @@ classdef MecaStruct_App < handle
 
         function P = beamSectionProps(app)
             % Propriétés de section utilisées pour la vérification (SI).
-            if app.BeamUsesSection && ~isempty(app.SectionData)
-                P = app.SectionData.P;
+            if app.BeamUsesSection && ~isempty(app.BeamSection)
+                P = app.BeamSection.P;
                 return
             end
             B = app.H.Beam;
@@ -2314,8 +2333,8 @@ classdef MecaStruct_App < handle
             score = abs(N) / P.S + abs(Mfz) * max(P.vyTop, P.vyBot) / P.Iz + abs(Mfy) * max(P.vzRight, P.vzLeft) / P.Iy;
             [~, i] = max(score);
             p = struct('N', N(i), 'Mfz', Mfz(i), 'Mfy', Mfy(i), 'Kt', B.Kt.Value, 'Re', app.si(B.Re, 'MPa'), 's', B.s.Value);
-            if app.BeamUsesSection && ~isempty(app.SectionData)
-                p.sec = app.SectionData.sec;
+            if app.BeamUsesSection && ~isempty(app.BeamSection)
+                p.sec = app.BeamSection.sec;
                 srcTxt = 'section de l''onglet Sections (contour exact)';
             else
                 p.P = P;

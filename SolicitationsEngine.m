@@ -1,5 +1,6 @@
 classdef SolicitationsEngine
     %SOLICITATIONSENGINE Sollicitations simples et composées (classe statique, unités SI strictes).
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   Traction/compression (+ thermique), cisaillement (Jourawski), matage (clavette, goupille),
     %   torsion, flexion (contraintes, déformée par 4 méthodes), énergie de déformation, intégrales
     %   de Mohr ; le flambage est délégué à BucklingEngine.

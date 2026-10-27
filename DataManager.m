@@ -1,5 +1,6 @@
 classdef DataManager < handle
     %DATAMANAGER Base de données de MecaStruct_RdM_Pro.
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   Matériaux (valeurs du cours complétées par des valeurs usuelles), catalogue de profilés
     %   européens (IPN, IPE, HEA, HEB, UPN, UAP), pressions admissibles de matage, abaques de
     %   concentration de contraintes Kt (ajustements de Peterson), table des intégrales de Mohr,

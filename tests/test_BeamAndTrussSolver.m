@@ -1,5 +1,6 @@
 function tests = test_BeamAndTrussSolver
 %TEST_BEAMANDTRUSSSOLVER Tests unitaires du module BeamAndTrussSolver.
+%   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 %   Couvre les utilitaires pp (§0.5), la résolution des poutres (§3 et §9 :
 %   cas d'école isostatiques et hyperstatiques, plans xy et xz, torsion,
 %   effort axial, couples, charges linéaires), l'équivalence coupures ≡
@@ -127,6 +128,10 @@ tc.verifyEqual(BeamAndTrussSolver.poly2latex([1e-20 1]), '1');
 tc.verifyEqual(BeamAndTrussSolver.poly2latex([0 -5000 0]), '-5000\,s');
 tc.verifyEqual(BeamAndTrussSolver.poly2latex([2 3], '\xi'), '2\,\xi + 3');
 tc.verifyEqual(BeamAndTrussSolver.poly2str([-1500 3000 -250]), '-1500*s^2 + 3000*s - 250');
+% tronçon [9, 10] d'une console : l'équation imprimée doit redonner M(10) = 0 (termes qui se compensent)
+c = [-617.3 12346 -61730];
+f = str2func(['@(s) ' BeamAndTrussSolver.poly2str(c)]);
+tc.verifyEqual(f(10), 0, 'AbsTol', 1e-6);
 tc.verifyEqual(BeamAndTrussSolver.poly2str([0.5 -2 0]), '0.5*s^2 - 2*s');
 tc.verifyEqual(BeamAndTrussSolver.poly2str([1 0], 'x'), 'x');
 tc.verifyEqual(BeamAndTrussSolver.poly2str(0), '0');

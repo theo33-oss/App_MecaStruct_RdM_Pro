@@ -1,4 +1,5 @@
 % make_screenshots.m - régénère les captures du guide utilisateur (docs/img/*.png).
+% Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 % Usage : depuis la racine du projet, run('docs/make_screenshots.m')
 root = fileparts(fileparts(mfilename('fullpath')));
 cd(root);

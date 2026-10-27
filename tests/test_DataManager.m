@@ -1,5 +1,6 @@
 function tests = test_DataManager
 %TEST_DATAMANAGER Tests unitaires du module DataManager (§1 et §9 de ARCHITECTURE.md).
+%   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
 %   Les tests n'écrivent jamais dans le dossier userdata réel : tous les fichiers utilisateur
 %   sont créés dans tempdir.
 tests = functiontests(localfunctions);

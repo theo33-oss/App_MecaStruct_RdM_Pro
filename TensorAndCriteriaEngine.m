@@ -1,5 +1,6 @@
 classdef TensorAndCriteriaEngine
     %TENSORANDCRITERIAENGINE Analyse locale : tenseurs, cercles de Mohr, critères, loi de Hooke, extensométrie.
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   Classe statique, sans dépendance interne et sans aucun tracé : les cercles et lieux de
     %   plasticité sont renvoyés sous forme de listes de points, tracés ensuite par PlotEngine.
     %

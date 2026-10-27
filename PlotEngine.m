@@ -1,5 +1,6 @@
 classdef PlotEngine
     %PLOTENGINE Moteur d'affichage graphique de MecaStruct_RdM_Pro (classe statique).
+    %   Application de Théo Brun, basée sur son cours de Résistance des Matériaux et sur les sources citées dans README.md (section « Auteur et sources »).
     %   Toutes les fonctions tracent sur un axe fourni (axes ou uiaxes) passé en premier
     %   argument ; si cet argument est vide, une figure est créée. L'axe est effacé, la
     %   grille activée et l'interpréteur LaTeX utilisé pour titres, labels et légendes.
