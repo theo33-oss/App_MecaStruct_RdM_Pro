@@ -141,12 +141,22 @@ for key = {'Beam'}   % un seul dossier complet (diagrammes exportés) : suffisan
     f = app.exportValidation(key{1}, out);
     verifyTrue(testCase, isfile(f), key{1});
     h = fileread(f);
-    for needle = {'Bilan automatique', 'Données du problème', 'vérification indépendante', 'data:image/png;base64', 'Avis du relecteur'}
+    for needle = {'Bilan automatique', 'Données du problème', 'vérification indépendante', 'data:image/png;base64', 'Avis du relecteur', ...
+            'Sommaire', 'href="#formules"', 'id="formules"', 'Théorème de Ménabréa'}
         verifyTrue(testCase, contains(h, needle{1}), sprintf('%s : « %s » absent', key{1}, needle{1}));
     end
+    verifyFalse(testCase, contains(h, 'Exemple : deux travées égales'), [key{1} ' : §7 non filtré']);
     verifyFalse(testCase, contains(h, 'Section indisponible'), [key{1} ' : section en erreur']);
     verifyFalse(testCase, contains(h, 'non exécutée'), [key{1} ' : vérification indépendante absente']);
     verifyFalse(testCase, contains(h, '<span class="ko">ÉCART'), [key{1} ' : écart solveur / vérification à la main']);
+end
+% §7 : chaque formule retenue existe dans les fiches du module (une coquille la ferait disparaître)
+for key = {'Sec', 'Beam', 'Tr', 'Tra', 'Cis', 'Tor', 'Fle', 'Fla', 'Ten', 'Hoo', 'Jau'}
+    m = ValidationReport.meta(key{1});
+    titles = cellfun(@(f) {DataManager.formulaSheet(f).title}, m.forms, 'UniformOutput', false);
+    titles = [titles{:}];
+    missing = setdiff(m.keep, titles);
+    verifyEmpty(testCase, missing, sprintf('%s : formules introuvables : %s', key{1}, strjoin(missing, ' | ')));
 end
 % boutons : Dossier sur les onglets de calcul, Note et Guide seulement sur la Base de données
 app.selectTab('Torsion');

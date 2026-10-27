@@ -33,17 +33,23 @@ classdef ValidationReport
                 end
             end
             W = app.H.(key).W;
-            body = '';
-            body = [body ValidationReport.section('1. Données du problème', ValidationReport.safe(@() ValidationReport.inputsHTML(app, key)))];
             [chkHTML, nWarn, nKo] = ValidationReport.safeTwo(@() ValidationReport.hypothesesHTML(app, key));
-            body = [body ValidationReport.section('2. Hypothèses du modèle et applicabilité', chkHTML)];
             [hcHTML, nOK, nTot] = ValidationReport.safeHand(@() ValidationReport.handHTML(app, key));
-            body = [body ValidationReport.section('3. Équations et vérification indépendante', hcHTML)];
-            body = [body ValidationReport.section('4. Résultats du solveur', ValidationReport.safe(@() ValidationReport.resultsHTML(app, key)))];
-            body = [body ValidationReport.section('5. Diagrammes', ValidationReport.safe(@() ValidationReport.plotsHTML(app, key, m)))];
-            body = [body ValidationReport.section('6. Rapport détaillé du solveur (étapes de calcul)', ValidationReport.safe(@() ValidationReport.reportHTML(W)))];
-            body = [body ValidationReport.section('7. Rappel des équations générales du module', ValidationReport.safe(@() ValidationReport.formulasHTML(m)))];
-            body = [body ValidationReport.section('8. Avis du relecteur', ValidationReport.reviewHTML())];
+            S = {'donnees',    '1. Données du problème',                            ValidationReport.safe(@() ValidationReport.inputsHTML(app, key))
+                 'hypotheses', '2. Hypothèses du modèle et applicabilité',          chkHTML
+                 'verif',      '3. Équations et vérification indépendante',         hcHTML
+                 'resultats',  '4. Résultats du solveur',                           ValidationReport.safe(@() ValidationReport.resultsHTML(app, key))
+                 'diagrammes', '5. Diagrammes',                                     ValidationReport.safe(@() ValidationReport.plotsHTML(app, key, m))
+                 'rapport',    '6. Rapport détaillé du solveur (étapes de calcul)', ValidationReport.safe(@() ValidationReport.reportHTML(W))
+                 'formules',   '7. Formules utilisées pour ce calcul',              ValidationReport.safe(@() ValidationReport.formulasHTML(m))
+                 'avis',       '8. Avis du relecteur',                              ValidationReport.reviewHTML()};
+            toc = '<nav class="toc" id="top"><strong>Sommaire</strong><ol>';
+            body = '';
+            for k = 1:size(S, 1)
+                toc = [toc '<li><a href="#' S{k, 1} '">' ValidationReport.esc(regexprep(S{k, 2}, '^\d+\. ', '')) '</a></li>']; %#ok<AGROW>
+                body = [body ValidationReport.section(S{k, :})]; %#ok<AGROW>
+            end
+            body = [toc '</ol></nav>' body];
             status = '';
             try
                 status = char(W.Status.Text);
@@ -96,6 +102,20 @@ classdef ValidationReport
                 otherwise
                     error('MecaStruct:Validation:unknownKey', 'Zone de travail inconnue : %s', char(string(key)));
             end
+            % Formules du §7 : seulement celles appliquées par le solveur et les contrôles du §3.
+            switch key
+                case 'Sec', m.keep = {'Aire de la section', 'Centre de surface G', 'Moments quadratiques en G', 'Théorème de Huygens', 'Modules de flexion'};
+                case 'Beam', m.keep = {'Principe fondamental de la statique', 'Degré d''hyperstatisme', 'Composantes du torseur de cohésion', 'Relations différentielles', 'Équation de la déformée', 'Conditions aux limites', 'Théorème de Ménabréa'};
+                case 'Tr', m.keep = {'Équilibre du nœud i (méthode des nœuds)', 'Degré d''hyperstatisme', 'Contrainte normale', 'Allongement d''une barre'};
+                case 'Tra', m.keep = {'Contrainte normale', 'Concentration de contrainte et condition de résistance', 'Allongement : méthode analytique', 'Condition de rigidité'};
+                case 'Cis', m.keep = {'Contrainte tangentielle moyenne', 'Contrainte maximale et condition de résistance', 'Pression de matage', 'Clavette : matage', 'Clavette : cisaillement', 'Rivet ou goupille : cisaillement'};
+                case 'Tor', m.keep = {'Contrainte tangentielle', 'Condition de résistance', 'Rotation : méthode analytique', 'Moment quadratique polaire', 'Puissance transmise'};
+                case 'Fle', m.keep = {'Flexion simple', 'Condition de résistance', 'Axe neutre', 'Flexion composée'};
+                case 'Fla', m.keep = {'Longueurs de flambement', 'Élancement', 'Élancement limite', 'Charge critique d''Euler (λ ≥ λlim)', 'Formule de Rankine (20 ≤ λ < λlim)', 'Charge admissible'};
+                case 'Ten', m.keep = {'Contraintes principales planes', 'Rayon du cercle de Mohr', 'Critère de Tresca', 'Critère de Von Mises', 'Coefficient de sécurité obtenu'};
+                case 'Hoo', m.keep = {'Loi de Hooke 3D isotrope', 'Contraintes planes', 'Variation de volume', 'Relations entre constantes'};
+                case 'Jau', m.keep = {'Loi de la jauge (Bridgman)', 'Quart de pont', 'Rosette à 45°', 'Rosette à 60° (delta)', 'Déformations principales', 'Contraintes (état plan de contrainte)'};
+            end
         end
     end
 
@@ -136,8 +156,8 @@ classdef ValidationReport
             end
         end
 
-        function html = section(title, content)
-            html = ['<h2>' ValidationReport.esc(title) '</h2>' content];
+        function html = section(id, title, content)
+            html = ['<h2 id="' id '">' ValidationReport.esc(title) '<a class="top" href="#top">↑ sommaire</a></h2>' content];
         end
 
         function html = inputsHTML(app, key)
@@ -474,14 +494,20 @@ classdef ValidationReport
         function html = formulasHTML(m)
             e = ValidationReport.esc;
             html = '';
+            seen = {};
             for k = 1:numel(m.forms)
                 sh = DataManager.formulaSheet(m.forms{k});
                 for j = 1:numel(sh)
+                    if ~ismember(sh(j).title, m.keep) || ismember(sh(j).title, seen)
+                        continue
+                    end
+                    seen{end + 1} = sh(j).title; %#ok<AGROW>
                     html = [html '<div class="eqblock"><div class="eqtitle">' e(sh(j).title) '</div>' ...
                         '<div class="eq">' ValidationReport.mjRaw(sh(j).latex) '</div>' ...
                         '<div class="var">' e(sh(j).vars) '</div></div>']; %#ok<AGROW>
                 end
             end
+            html = [html '<p class="muted">Fiches complètes : onglet Base de données, bouton Note de calcul.</p>'];
         end
 
         function html = reviewHTML()
@@ -1423,6 +1449,10 @@ classdef ValidationReport
                 'h1{font-size:1.7rem;margin:0 0 4px;color:#14406e}' ...
                 'h2{margin-top:36px;padding:6px 10px;background:#14406e;color:#fff;border-radius:4px;font-size:1.15rem}' ...
                 'h3{margin:20px 0 6px;color:#14406e}' ...
+                'html{scroll-behavior:smooth}h2{scroll-margin-top:8px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}' ...
+                'h2 a.top{color:#cfe0f5;font-size:.8rem;font-weight:normal;text-decoration:none;white-space:nowrap}h2 a.top:hover{color:#fff}' ...
+                '.toc{border:1px solid #cfd6df;background:#f5f8fc;border-radius:6px;padding:8px 14px;margin:16px 0}' ...
+                '.toc ol{margin:6px 0 0;padding-left:22px;columns:2 260px}.toc a{color:#1f5fa8;text-decoration:none}.toc a:hover{text-decoration:underline}' ...
                 '.meta{color:#5b6370;margin-top:0}' ...
                 '.box{border:1px solid #cfd6df;background:#f5f8fc;border-radius:6px;padding:8px 14px;margin:12px 0}' ...
                 '.status{font-size:1.15rem;font-weight:bold;background:#e8f1fb;border-left:6px solid #1f5fa8;padding:8px 12px;margin:12px 0}' ...
@@ -1444,7 +1474,7 @@ classdef ValidationReport
                 '.rsec{font-weight:bold;color:#14406e;margin-top:10px;border-bottom:1px solid #cfd6df}.rln{white-space:pre-wrap}' ...
                 '.comment{border:1px solid #9aa5b4;min-height:90px;border-radius:4px}' ...
                 'mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}' ...
-                '@media print{h2{break-after:avoid}table,figure,.eqblock{break-inside:avoid}}'];
+                '@media print{h2{break-after:avoid}table,figure,.eqblock{break-inside:avoid}h2 a.top{display:none}}'];
         end
     end
 end

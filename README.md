@@ -31,14 +31,15 @@ Symbolic Math Toolbox est recommandée. Elle sert aux méthodes intégrales symb
 ## Documents et validation par un tiers
 
 - **Base de données** : boutons « Note de calcul » (`docs/NOTE_DE_CALCUL.html` : hypothèses, équations, conditions aux limites, démonstrations) et « Guide d'utilisation » (`docs/GUIDE_UTILISATEUR.html`).
-- **Chaque onglet de calcul** : bouton « Dossier de validation de ce problème ». Il recalcule l'onglet puis écrit dans `validation/` un fichier HTML autonome, à envoyer à un relecteur. Il contient :
+- **Chaque onglet de calcul** : bouton « Dossier de validation de ce problème ». Il recalcule l'onglet puis écrit dans `validation/` un fichier HTML autonome, à envoyer à un relecteur. Un sommaire cliquable ouvre le document. Il contient :
   1. les données saisies ;
   2. les hypothèses, avec un contrôle d'applicabilité chiffré ;
   3. les équations avec les valeurs du problème, recalculées à la main (sans le solveur) puis comparées au solveur ;
   4. les tableaux de résultats ;
   5. les diagrammes ;
   6. le rapport détaillé du solveur ;
-  7. une grille d'avis pour le relecteur.
+  7. les seules formules utilisées pour ce calcul ;
+  8. une grille d'avis pour le relecteur.
 
   Sans interface : `ValidationReport.generate(app, 'Beam')`. Les clés valent `Sec`, `Beam`, `Tr`, `Tra`, `Cis`, `Tor`, `Fle`, `Fla`, `Ten`, `Hoo` et `Jau`. Les formules s'affichent avec MathJax, qui demande une connexion Internet.
 
