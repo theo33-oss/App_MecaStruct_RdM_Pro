@@ -486,12 +486,13 @@ classdef SolicitationsEngine
             o = seDeflOpts(opts);
             m = sol.model;
             L = m.L;
+            [Mz, My] = seBendMoments(sol, m);
             switch o.plane
                 case 'xy'
-                    M = sol.Mfz; T = sol.Ty; EI = m.E*m.Iz; kGS = m.ky*m.G*m.S;
+                    M = Mz; T = sol.Ty; EI = m.E*m.Iz; kGS = m.ky*m.G*m.S;
                     vn = 'v'; It = 'I_z';
                 otherwise
-                    M = BeamAndTrussSolver.ppScale(sol.Mfy, -1); T = sol.Tz; EI = m.E*m.Iy; kGS = m.kz*m.G*m.S;
+                    M = BeamAndTrussSolver.ppScale(My, -1); T = sol.Tz; EI = m.E*m.Iy; kGS = m.kz*m.G*m.S;
                     vn = 'w'; It = 'I_y';
             end
             conds = seConditions(m.supports);
@@ -591,6 +592,15 @@ classdef SolicitationsEngine
 
             rep = {sprintf('Plan (%s) : E·%s·%s'''' = %s, E·%s = %s N·m²', o.plane, strrep(It, '_', ''), vn, ...
                 seIf(strcmp(o.plane, 'xy'), 'Mfz', '−Mfy'), strrep(It, '_', ''), seF(EI))};
+            if seIyz(m) ~= 0
+                rep{end+1, 1} = sprintf(['Flexion déviée (Iyz = %s m⁴) : courbures couplées, [v''''; −w''''] = [Iz Iyz; Iyz Iy]⁻¹·[Mfz; Mfy]/E ; ' ...
+                    'le moment ci-dessus est le moment équivalent %s = %s·E·%s''''.'], seF(seIyz(m)), ...
+                    seIf(strcmp(o.plane, 'xy'), 'Mz,eq', '−My,eq'), strrep(It, '_', ''), vn);
+                if ~sol.isostatic
+                    rep{end+1, 1} = ['Attention : poutre hyperstatique avec Iyz ≠ 0. Les réactions sont calculées plan par plan ' ...
+                        '(couplage y–z des inconnues hyperstatiques négligé) : saisir la section dans ses axes principaux pour un calcul exact.'];
+                end
+            end
             rep{end+1, 1} = sprintf('Intégration : %d tronçons, %d constantes, résidu relatif %s ; flèche max %s m en s = %s m', ...
                 numel(M.breaks) - 1, 2*(numel(M.breaks) - 1), seF(I.residual), seF(I.fmax), seF(I.sAtFmax));
             if isfield(d, 'aires')
@@ -634,20 +644,21 @@ classdef SolicitationsEngine
             end
             m = sol.model;
             if isstruct(model)
-                for f = {'E', 'G', 'S', 'Iz', 'Iy', 'Ix', 'ky', 'kz'}
+                for f = {'E', 'G', 'S', 'Iz', 'Iy', 'Ix', 'ky', 'kz', 'Iyz'}
                     if isfield(model, f{1}) && ~isempty(model.(f{1}))
                         m.(f{1}) = model.(f{1});
                     end
                 end
             end
             q = @(pp, k) seIntProd(pp, pp)/(2*k);
+            [Mz, My] = seBendMoments(sol, m);   % moments équivalents (égaux à Mfz, Mfy si Iyz = 0)
             U = struct();
             U.UN = q(sol.N, m.E*m.S);
             U.UTy = q(sol.Ty, m.ky*m.G*m.S);
             U.UTz = q(sol.Tz, m.kz*m.G*m.S);
             U.UMt = q(sol.Mt, m.G*m.Ix);
-            U.UMfy = q(sol.Mfy, m.E*m.Iy);
-            U.UMfz = q(sol.Mfz, m.E*m.Iz);
+            U.UMfy = seIntProd(sol.Mfy, My)/(2*m.E*m.Iy);
+            U.UMfz = seIntProd(sol.Mfz, Mz)/(2*m.E*m.Iz);
             U.total = U.UN + U.UTy + U.UTz + U.UMt + U.UMfy + U.UMfz;
             U.report = {
                 sprintf('Effort normal : UN = %s J', seF(U.UN))
@@ -1064,6 +1075,33 @@ end
 function v = seIntProd(a, b)
 % ∫_0^L a·b ds exacte.
 v = BeamAndTrussSolver.ppIntegral(BeamAndTrussSolver.ppMultiply(a, b));
+end
+
+function v = seIyz(m)
+% Produit d'inertie du modèle (0 si absent : axes principaux).
+v = 0;
+if isfield(m, 'Iyz') && ~isempty(m.Iyz) && isfinite(m.Iyz)
+    v = double(m.Iyz);
+end
+end
+
+function [Mz, My] = seBendMoments(sol, m)
+% Moments équivalents de la flexion déviée : E·Iz·v'' = Mz et E·Iy·w'' = −My, avec
+% [v''; −w''] = [Iz Iyz; Iyz Iy]⁻¹·[Mfz; Mfy]/E (σ = N/S + b·y + c·z, b = −E·v'', c = −E·w'').
+% Sans Iyz : Mz = Mfz, My = Mfy.
+Iyz = seIyz(m);
+if Iyz == 0
+    Mz = sol.Mfz;
+    My = sol.Mfy;
+    return
+end
+dt = m.Iz*m.Iy - Iyz^2;
+if dt <= 0
+    error('MecaStruct:SolicitationsEngine:invalidInput', 'Il faut Iyz² < Iz·Iy.');
+end
+lin = @(a, b) BeamAndTrussSolver.ppAdd(BeamAndTrussSolver.ppScale(sol.Mfz, a), BeamAndTrussSolver.ppScale(sol.Mfy, b));
+Mz = lin(m.Iz*m.Iy/dt, m.Iz*Iyz/dt);
+My = lin(m.Iy*Iyz/dt, m.Iy*m.Iz/dt);
 end
 
 function s0 = seDefaultS0(sup, L, sMax)

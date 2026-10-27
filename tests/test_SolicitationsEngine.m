@@ -4,6 +4,32 @@ function tests = test_SolicitationsEngine
 tests = functiontests(localfunctions);
 end
 
+%% ------------------------------------------------------------------ flexion déviée (Iyz ≠ 0)
+
+function testDeflectionIyz(tc)
+% Cornière 100×100×10 sur deux appuis, charge uniforme selon y : la flèche a une composante w
+% et le vecteur (v, w) est perpendiculaire à l'axe neutre donné par bendingStress.
+L = 4; q = 10e3; E = 210e9;
+sec = struct('type', 'L', 'h', 0.1, 'b', 0.1, 't', 0.01);
+P = GeometryEngine.analytical(sec);
+m = beamModel(L, [0 L], {'pivot', 'appui_simple'});
+m.Iz = P.Iz; m.Iy = P.Iy; m.Iyz = P.Iyz; m.S = P.S;
+m.distLoads = struct('a', 0, 'b', L, 'dir', 'y', 'coeffs', -q, 'name', 'q');
+sol = BeamAndTrussSolver.solveBeam(m);
+o = struct('includeShear', false);
+dv = SolicitationsEngine.deflection(m, sol, setfield(o, 'plane', 'xy')); %#ok<SFLD>
+dw = SolicitationsEngine.deflection(m, sol, setfield(o, 'plane', 'xz')); %#ok<SFLD>
+dt = P.Iz*P.Iy - P.Iyz^2;
+f0 = 5*q*L^4/(384*E);
+checkAgree(tc, dv, f0*P.Iy/dt, 1e-6);
+checkAgree(tc, dw, f0*abs(P.Iyz)/dt, 1e-6);
+b = SolicitationsEngine.bendingStress(struct('sec', sec, 'Mfz', q*L^2/8, 'Re', 235e6));
+verifyEqual(tc, dw.integration.fmax/dv.integration.fmax, abs(b.coefs(3)/b.coefs(2)), 'RelTol', 1e-9);
+% énergie de flexion : ∫ Mfz²·Iy/(2E·det) ds
+U = SolicitationsEngine.strainEnergy(m, sol);
+verifyEqual(tc, U.UMfz + U.UMfy, q^2*L^5/120*P.Iy/(2*E*dt), 'RelTol', 1e-9);
+end
+
 %% ------------------------------------------------------------------ utilitaires
 
 function m = beamModel(L, supPos, supTypes)

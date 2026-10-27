@@ -694,6 +694,13 @@ verifyRel(tc, [PT.Iz PT.Iy], [PI.Iz PI.Iy], 1e-9);
 box = [0 .1 0 .005; 0 .1 .095 .1; 0 .005 .005 .095; .095 .1 .005 .095];
 tc.verifyTrue(isnan(GeometryEngine.analytical(struct('type', 'composite', 'rects', box)).J));
 tc.verifyTrue(isnan(GeometryEngine.analytical(struct('type', 'composite', 'rects', [0 .05 0 .1; .05 .1 0 .1])).J));
+% kz (tranchant Tz) : rectangle plat → 5/6 aussi ; profil en I → les ailes travaillent, kz > ky
+Pr = GeometryEngine.analytical(struct('type', 'composite', 'rects', [0 .3 0 .1]));
+verifyRel(tc, Pr.kz, 5/6, 1e-6);
+Sf = 2*b*tf/PI.S;                         % part d'aire des ailes : borne haute de kz
+tc.verifyGreaterThan(PI.kz, 0.85*Sf);
+tc.verifyLessThan(PI.kz, Sf);
+tc.verifyGreaterThan(PI.kz, PI.ky);
 % couronne d = 0 : même ky que le disque
 Pc = GeometryEngine.analytical(struct('type', 'couronne', 'D', 0.1, 'd', 0));
 verifyRel(tc, Pc.ky, 6/7, 1e-12);

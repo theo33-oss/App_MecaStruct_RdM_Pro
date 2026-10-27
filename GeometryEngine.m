@@ -411,6 +411,9 @@ classdef GeometryEngine
                 kTxt = sprintf(['k = %s (Jourawski), ky = %s (énergie), calculés sur la géométrie ' ...
                     'simplifiée'], GeometryEngine.fs(P.k), GeometryEngine.fs(P.ky));
             end
+            prims = GeometryEngine.buildPrims(sec);
+            P.kz = GeometryEngine.shearZ(sec, prims, P.ky);
+            kTxt = sprintf('%s ; kz = %s (énergie, effort tranchant Tz, géométrie simplifiée)', kTxt, GeometryEngine.fs(P.kz));
             P.bbox = [0 b 0 h];
             fs = @GeometryEngine.fs;
             rep = {sprintf('Valeurs tabulées du catalogue — %s', GeometryEngine.describeSection(sec))};
@@ -1325,6 +1328,7 @@ classdef GeometryEngine
                 P.ky = f.kyNum;
                 P.kSource = 'numérique';
             end
+            P.kz = GeometryEngine.shearZ(sec, prims, P.ky);
             P.shear = f;
             P.bbox = bb;
             P.report = {};
@@ -1565,6 +1569,26 @@ classdef GeometryEngine
             end
             f.report = rep;
             f.latex = tex;
+        end
+
+        function kz = shearZ(sec, prims, ky)
+            % Coefficient de section réduite kz (effort tranchant Tz) : même calcul énergétique que ky,
+            % sur la section dont on échange les axes y et z.
+            if any(strcmp(sec.type, {'rectangle', 'disque', 'couronne'}))
+                kz = ky;   % valeur du cours indépendante de la direction
+                return
+            end
+            pr = prims;
+            for k = 1:numel(pr)
+                [pr(k).z1, pr(k).y1] = deal(prims(k).y1, prims(k).z1);
+                [pr(k).z2, pr(k).y2] = deal(prims(k).y2, prims(k).z2);
+                [pr(k).zc, pr(k).yc] = deal(prims(k).yc, prims(k).zc);
+            end
+            f = GeometryEngine.shearCore(struct('type', 'composite'), pr, GeometryEngine.huygensCore(pr));
+            kz = f.kyNum;
+            if ~(isfinite(kz) && kz > 0)
+                kz = ky;   % section non connexe selon z : pas de valeur énergétique
+            end
         end
 
         function [kC, kyC, Sweb, txt] = courseShear(sec, core)
@@ -2066,8 +2090,8 @@ classdef GeometryEngine
             rep{end+1, 1} = sprintf('Modules de flexion : Wz = Iz/vy,max = %s m³ (%s cm³) ; Wy = Iy/vz,max = %s m³ (%s cm³)', ...
                 fs(P.Wz), fs(P.Wz*1e6), fs(P.Wy), fs(P.Wy*1e6));
             rep{end+1, 1} = sprintf('Constante de torsion : J = %s m⁴ — %s', fs(P.J), P.Jmethod);
-            rep{end+1, 1} = sprintf('Cisaillement : k = %s, ky = %s (source : %s) ; Jourawski kNum = %s, énergie kyNum = %s', ...
-                fs(P.k), fs(P.ky), P.kSource, fs(P.shear.kNum), fs(P.shear.kyNum));
+            rep{end+1, 1} = sprintf('Cisaillement : k = %s, ky = %s (source : %s) ; Jourawski kNum = %s, énergie kyNum = %s ; kz = %s (Tz)', ...
+                fs(P.k), fs(P.ky), P.kSource, fs(P.shear.kNum), fs(P.shear.kyNum), fs(P.kz));
             rep = [rep; P.shear.report(2:end)];
             tex = {['$I_x = I_{Gz} + I_{Gy} = ' tn(P.Ix) '\ \mathrm{m^4}$']};
             if P.Iyz ~= 0

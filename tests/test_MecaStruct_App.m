@@ -248,6 +248,11 @@ S.type.Value = 'L'; S.h.Value = 100; S.b.Value = 100; S.t.Value = 10;
 app.useSectionForBeam();
 PL = app.SectionData.P;
 verifyEqual(testCase, min(app.H.Fla.Iz.Value, app.H.Fla.Iy.Value), PL.I2 * 1e12, 'RelTol', 1e-9);
+verifyEqual(testCase, app.H.Beam.Iyz.Value, PL.Iyz * 1e12, 'RelTol', 1e-9);
+verifyEqual(testCase, app.H.Beam.kz.Value, PL.kz, 'RelTol', 1e-12);
+app.computeBeam();   % console chargée en y : la cornière fléchit aussi selon z
+verifyGreaterThan(testCase, app.Results.beam.defl.integration.fmax, 0);
+verifyTrue(testCase, any(contains(app.Results.beam.defl.report, 'Flexion déviée')));
 verifyLessThan(testCase, PL.I2, 0.5 * PL.Iz);
 % profilé du catalogue : valeurs tabulées, pas la géométrie simplifiée
 S.type.Value = 'profile'; S.fam.Value = 'IPN';

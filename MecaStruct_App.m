@@ -147,7 +147,7 @@ classdef MecaStruct_App < handle
                 sprintf('Moments principaux : I1 = %.6g mm⁴, I2 = %.6g mm⁴, angle = %.4g°', ds(P.I1, 'mm^4'), ds(P.I2, 'mm^4'), rad2deg(P.alphaP))
                 sprintf('Constante de torsion J = %.6g mm⁴', ds(P.J, 'mm^4'))
                 sprintf('rz = %.5g mm ; ry = %.5g mm ; Wz = %.6g mm³ ; Wy = %.6g mm³', ds(P.rz, 'mm'), ds(P.ry, 'mm'), ds(P.Wz, 'mm^3'), ds(P.Wy, 'mm^3'))
-                sprintf('Facteurs de cisaillement : k = %.4g ; ky = %.4g (%s)', P.k, P.ky, P.kSource)
+                sprintf('Facteurs de cisaillement : k = %.4g ; ky = %.4g (%s) ; kz = %.4g', P.k, P.ky, P.kSource, P.kz)
                 sprintf('Flexion : σ traction max = %.5g MPa ; σ compression max = %.5g MPa ; Kt·|σ|max = %.5g MPa (%s)', ...
                 ds(bend.sigmaMaxTraction, 'MPa'), ds(bend.sigmaMaxCompression, 'MPa'), ds(bend.sigmaMaxKt, 'MPa'), MecaStruct_App.okText(bend.ok))
                 sprintf('Jourawski : τmax = %.5g MPa en y = %.4g mm ; τmoy = %.5g MPa', ds(jour.tauMax, 'MPa'), ds(jour.yAtMax, 'mm'), ds(jour.tauMoy, 'MPa'))};
@@ -189,6 +189,12 @@ classdef MecaStruct_App < handle
                 ky = 1;
             end
             B.ky.Value = ky;
+            kz = P.kz;
+            if ~(isfinite(kz) && kz > 0)
+                kz = ky;
+            end
+            B.kz.Value = kz;
+            B.Iyz.Value = DataManager.fromSI(P.Iyz, 'mm^4');
             B.vy.Value = DataManager.fromSI(max(P.vyTop, P.vyBot), 'mm');
             B.vz.Value = DataManager.fromSI(max(P.vzRight, P.vzLeft), 'mm');
             B.mat.Value = D.mat;
@@ -206,8 +212,7 @@ classdef MecaStruct_App < handle
                 F.Iz.Value = DataManager.fromSI(P.I1, 'mm^4');
                 F.Iy.Value = DataManager.fromSI(P.I2, 'mm^4');
                 msgF = sprintf('%s — Iyz ≠ 0 : moments principaux I1, I2 (axes tournés de %.4g°)', msg, rad2deg(P.alphaP));
-                msg = sprintf(['%s — ⚠ Iyz ≠ 0 : les contraintes en tiennent compte, mais la flèche est calculée ' ...
-                    'avec Iz et Iy hors axes principaux (sous-estimée)'], msg);
+                msg = sprintf('%s — Iyz ≠ 0 : flexion déviée (contraintes et flèches couplées en y et z)', msg);
             end
             F.mat.Value = D.mat;
             app.applyMaterial('Fla');
@@ -2132,10 +2137,12 @@ classdef MecaStruct_App < handle
             B.Iz = app.addRow(g, 'Iz — flexion (x,y) (mm⁴)', 'num');
             B.Iy = app.addRow(g, 'Iy — flexion (x,z) (mm⁴)', 'num');
             B.Ix = app.addRow(g, 'Ix — constante de torsion (mm⁴)', 'num');
-            B.ky = app.addRow(g, 'ky — section réduite (-)', 'num');
+            B.Iyz = app.addRow(g, 'Iyz — produit d''inertie (mm⁴, 0 si axes principaux)', 'num');
+            B.ky = app.addRow(g, 'ky — section réduite, tranchant Ty (-)', 'num');
+            B.kz = app.addRow(g, 'kz — section réduite, tranchant Tz (-)', 'num');
             B.vy = app.addRow(g, 'Fibre extrême |y|max (mm)', 'num');
             B.vz = app.addRow(g, 'Fibre extrême |z|max (mm)', 'num');
-            for f = {'S', 'Iz', 'Iy', 'vy', 'vz'}
+            for f = {'S', 'Iz', 'Iy', 'Iyz', 'vy', 'vz'}
                 B.(f{1}).ValueChangedFcn = @(~, ~) app.markBeamManual();
             end
             app.addRow(g, 'Reprendre la section de l''onglet Sections', 'button', app.cbk(@() app.useSectionForBeam(), 'Poutres'));
@@ -2189,6 +2196,8 @@ classdef MecaStruct_App < handle
             B.Iy.Value = p.Iy * 1e12;
             B.Ix.Value = P.J * 1e12;
             B.ky.Value = P.ky;
+            B.kz.Value = P.kz;
+            B.Iyz.Value = 0;
             B.vy.Value = p.h / 2 * 1e3;
             B.vz.Value = p.b / 2 * 1e3;
             app.BeamUsesSection = false;
@@ -2241,7 +2250,11 @@ classdef MecaStruct_App < handle
             model.Iy = app.si(B.Iy, 'mm^4');
             model.Ix = app.si(B.Ix, 'mm^4');
             model.ky = B.ky.Value;
-            model.kz = B.ky.Value;   % shortcut: un seul champ k, kz = ky ; la flèche d'effort tranchant dans (x, z) est approchée, ajouter un champ kz si on charge en z
+            model.kz = B.kz.Value;
+            model.Iyz = app.si(B.Iyz, 'mm^4');
+            if model.Iyz^2 >= model.Iz * model.Iy
+                error('MecaStruct:App:invalidInput', 'Il faut Iyz² < Iz·Iy (matrice d''inertie définie positive).');
+            end
             d = B.sup.Data;
             sup = struct('pos', {}, 'type', {}, 'name', {});
             for i = 1:size(d, 1)
@@ -2313,7 +2326,7 @@ classdef MecaStruct_App < handle
             if ~(vy > 0 && vz > 0)
                 error('MecaStruct:App:invalidInput', 'Les distances aux fibres extrêmes |y|max et |z|max doivent être > 0.');
             end
-            P = struct('S', app.si(B.S, 'mm^2'), 'Iz', app.si(B.Iz, 'mm^4'), 'Iy', app.si(B.Iy, 'mm^4'), 'Iyz', 0, ...
+            P = struct('S', app.si(B.S, 'mm^2'), 'Iz', app.si(B.Iz, 'mm^4'), 'Iy', app.si(B.Iy, 'mm^4'), 'Iyz', app.si(B.Iyz, 'mm^4'), ...
                 'vyTop', vy, 'vyBot', vy, 'vzRight', vz, 'vzLeft', vz);
         end
 

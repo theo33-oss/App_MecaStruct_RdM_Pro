@@ -1313,6 +1313,13 @@ classdef ValidationReport
             P = app.H.Beam;
             S = P.S.Value; Iz = P.Iz.Value; Iy = P.Iy.Value; vy = P.vy.Value; vz = P.vz.Value;
             sh = abs(chk.N * 1e0) / (S * 1e-6) / 1e6 + abs(chk.Mfz) * 1e3 * vy / Iz + abs(chk.Mfy) * 1e3 * vz / Iy;
+            if P.Iyz.Value ~= 0
+                % flexion déviée : la somme des trois termes ne s'applique pas (axes non principaux)
+                rows{end + 1, 1} = ValidationReport.grp(sprintf(['Contrainte au point le plus sollicité : Iyz ≠ 0, flexion déviée ' ...
+                    '(formule générale du solveur, voir §4) : |σ|max = %.6g MPa'], bd.sigmaMaxAbs / 1e6));
+                rows{end + 1, 1} = ValidationReport.grp(sprintf('Flèche : écart maximal entre les 4 méthodes = %.3g %% (voir §4)', max(abs(B.defl.comparison.Ecart_pct))));
+                return
+            end
             rows = [rows; {
                 ValidationReport.grp('Contrainte au point le plus sollicité (N en N, M en N·mm)')
                 hc('|σ| max = |N|/S + |Mfz|·vy/Iz + |Mfy|·vz/Iy', sprintf('|\\sigma|_{max}=\\frac{%s}{%s}+\\frac{%s\\times%s}{%s}+\\frac{%s\\times%s}{%s}', n(abs(chk.N)), n(S), n(abs(chk.Mfz) * 1e3), n(vy), n(Iz), n(abs(chk.Mfy) * 1e3), n(vz), n(Iy)), sh, bd.sigmaMaxAbs / 1e6, 'MPa')}];
