@@ -85,6 +85,19 @@ S.s0.Value = 99;
 verifyError(testCase, @() app.loadFromBeam('Sec', 'abscisse'), 'MecaStruct:App:invalidInput');
 end
 
+function testPointLePlusSollicitSurSaut(testCase)
+% couple de 20 kN·m en s = 4 sur 6 m : Mfz saute de −13,33 à +6,67 ; « Point le plus sollicité » doit
+% lire 13,33 kN·m (côté retenu par la vérification), pas la limite à droite
+app = testCase.TestData.app;
+app.loadExample('Poutres', 'isostatique');
+B = app.H.Beam;
+B.pl.Data = cell(0, 5);
+B.dl.Data = cell(0, 6);
+B.pm.Data = {4, 0, 0, 20, 'C'};
+app.loadFromBeam('Fle', 'max');
+verifyEqual(testCase, abs(app.H.Fle.Mfz.Value), 20 * 4 / 6, 'AbsTol', 1e-6);
+end
+
 function testConvertisseur(testCase)
 cv = @MecaStruct_App.convertUnits;
 verifyEqual(testCase, cv(1, 'Longueur', 'in', 'mm'), 25.4, 'RelTol', 1e-12);

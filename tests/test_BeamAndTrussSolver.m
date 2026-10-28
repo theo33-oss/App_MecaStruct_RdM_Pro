@@ -888,6 +888,18 @@ end
 %%                       FONCTIONS D'AIDE
 %% =====================================================================
 
+function testReportHyperstaticSignMy(tc)
+% bi-encastrée chargée en z : les sections Ménabréa et intégration du rapport doivent donner
+% My dans le même sens que le tableau des réactions (inconnues du plan équivalent : My = −C')
+m = addSup(addSup(baseModel(2), 0, 'encastrement', 'A'), 2, 'encastrement', 'B');
+m = addF(m, 1, 0, 0, -1000);
+sol = BeamAndTrussSolver.solveBeam(m);
+MyB = sol.reactions(2).My;
+tc.verifyEqual(abs(MyB), 250, 'AbsTol', 1e-6);
+txt = strjoin(sol.report, newline);
+tc.verifyTrue(contains(txt, sprintf('My_B = %s', num2str(MyB, 6))), 'My_B du rapport en sens inverse des réactions');
+end
+
 function m = baseModel(L)
 m = struct('L', L, 'E', 210e9, 'G', 80e9, 'S', 2e-3, 'Iz', 8e-6, 'Iy', 3e-6, 'Ix', 1e-6, 'ky', 1, 'kz', 1);
 m.supports = struct('pos', {}, 'type', {}, 'name', {});

@@ -600,7 +600,8 @@ classdef ValidationReport
             switch key
                 case 'Sec'
                     C = app.Results.section.compare;
-                    ec = max(C.EcartMax_pct, [], 'omitnan');
+                    % seulement analytique / intégrale : la colonne tabulée du catalogue s'écarte de la géométrie simplifiée
+                    ec = C.Properties.UserData.ecartAB_pct;
                     chk = [chk; add('Méthodes analytique et intégrale concordantes', sprintf('écart maximal %.3g %%', ec), ec < 1e-6)];
                     sec = app.Results.section.sec;
                     if strcmp(sec.type, 'profile')
@@ -1031,7 +1032,7 @@ classdef ValidationReport
             nv = fa.n(:);
             Cn = sg * nv;
             sn = dot(Cn, nv);
-            tn = sqrt(max(norm(Cn)^2 - sn^2, 0));
+            tn = norm(Cn - sn * nv);   % même définition que le solveur ; √(|C|² − σn²) donne du bruit près de 0
             rows = {
                 ValidationReport.grp('Invariants et contraintes principales (MPa)')
                 hc('Premier invariant', sprintf('I_1=\\mathrm{tr}\\,\\sigma=%s+%s+%s', n(sg(1, 1)), n(sg(2, 2)), n(sg(3, 3))), I1, pr.I1 / 1e6, 'MPa')
@@ -1276,8 +1277,19 @@ classdef ValidationReport
             posAll = [px, cx, rp];
             for k = 1:numel(s0)
                 if any(abs(posAll - s0(k)) < 1e-9)
-                    s0(k) = s0(k) + 1e-6 * L;
+                    if s0(k) + 1e-6 * L > L   % charge en s = L : couper juste avant, sinon la somme à gauche inclut la charge
+                        s0(k) = s0(k) - 1e-6 * L;
+                    else
+                        s0(k) = s0(k) + 1e-6 * L;
+                    end
                 end
+            end
+            % plan (x, z) : pas de recalcul à la main dans cette version, on le dit plutôt que de laisser croire qu'il est vérifié
+            hasZ = (~isempty(pl) && any([pl.Fz] ~= 0)) || (~isempty(pm) && any([pm.My] ~= 0)) || ...
+                (~isempty(dl) && any(strcmp({dl.dir}, 'z'))) || any([rea.Rz] ~= 0) || any([rea.My] ~= 0);
+            if hasZ
+                rows{end + 1, 1} = ValidationReport.grp(['Plan (x, z) : charges en z présentes, équilibre et diagrammes Tz, Mfy NON recalculés ' ...
+                    'à la main dans ce dossier (seul le plan x, y est vérifié ci-dessous)']);
             end
             rows{end + 1, 1} = ValidationReport.grp('Moment fléchissant et effort tranchant recalculés en sommant les actions à GAUCHE de la coupure (le solveur somme à droite)');
             for k = 1:numel(s0)
@@ -1311,19 +1323,23 @@ classdef ValidationReport
             chk = B.check;
             bd = chk.bend;
             P = app.H.Beam;
-            S = P.S.Value; Iz = P.Iz.Value; Iy = P.Iy.Value; vy = P.vy.Value; vz = P.vz.Value;
-            sh = abs(chk.N * 1e0) / (S * 1e-6) / 1e6 + abs(chk.Mfz) * 1e3 * vy / Iz + abs(chk.Mfy) * 1e3 * vz / Iy;
+            S = P.S.Value; Iz = P.Iz.Value; Iy = P.Iy.Value;
             if P.Iyz.Value ~= 0
-                % flexion déviée : la somme des trois termes ne s'applique pas (axes non principaux)
+                % flexion déviée : la loi σ = N/S − Mfz·y/Iz + Mfy·z/Iy ne s'applique pas (axes non principaux)
                 rows{end + 1, 1} = ValidationReport.grp(sprintf(['Contrainte au point le plus sollicité : Iyz ≠ 0, flexion déviée ' ...
                     '(formule générale du solveur, voir §4) : |σ|max = %.6g MPa'], bd.sigmaMaxAbs / 1e6));
-                rows{end + 1, 1} = ValidationReport.grp(sprintf('Flèche : écart maximal entre les 4 méthodes = %.3g %% (voir §4)', max(abs(B.defl.comparison.Ecart_pct))));
                 return
             end
+            % loi linéaire de Navier évaluée au point (y, z) retenu par le solveur (fibre la plus chargée,
+            % extrémité des fibres pour un rectangle, point du cercle pour un disque)
+            y = chk.loc(1) * 1e3; z = chk.loc(2) * 1e3;
+            sh = abs(chk.N / S - chk.Mfz * 1e3 * y / Iz + chk.Mfy * 1e3 * z / Iy);
             rows = [rows; {
-                ValidationReport.grp('Contrainte au point le plus sollicité (N en N, M en N·mm)')
-                hc('|σ| max = |N|/S + |Mfz|·vy/Iz + |Mfy|·vz/Iy', sprintf('|\\sigma|_{max}=\\frac{%s}{%s}+\\frac{%s\\times%s}{%s}+\\frac{%s\\times%s}{%s}', n(abs(chk.N)), n(S), n(abs(chk.Mfz) * 1e3), n(vy), n(Iz), n(abs(chk.Mfy) * 1e3), n(vz), n(Iy)), sh, bd.sigmaMaxAbs / 1e6, 'MPa')}];
-            rows{end + 1, 1} = ValidationReport.grp(sprintf('Flèche : écart maximal entre les 4 méthodes = %.3g %% (les méthodes Castigliano et Mohr incluent l''effet de l''effort tranchant si la case est cochée ; voir §4)', max(abs(B.defl.comparison.Ecart_pct))));
+                ValidationReport.grp('Contrainte au point le plus sollicité du solveur (N en N, M en N·mm, y et z en mm depuis G)')
+                hc('|σ| = |N/S − Mfz·y/Iz + Mfy·z/Iy|', sprintf('|\\sigma|=\\left|\\frac{%s}{%s}-\\frac{%s\\times%s}{%s}+\\frac{%s\\times%s}{%s}\\right|', n(chk.N), n(S), n(chk.Mfz * 1e3), n(y), n(Iz), n(chk.Mfy * 1e3), n(z), n(Iy)), sh, bd.sigmaMaxAbs / 1e6, 'MPa')}];
+            cmp = B.defl.comparison;
+            bendOnly = ~contains(cmp.Methode, 'tranchant');   % la ligne « flexion + tranchant » s'écarte de l'effet de l'effort tranchant
+            rows{end + 1, 1} = ValidationReport.grp(sprintf('Flèche (flexion seule) : écart maximal entre les méthodes = %.3g %% (la ligne « flexion + tranchant » de Castigliano est à part ; voir §4)', max(abs(cmp.Ecart_pct(bendOnly)))));
         end
     end
 

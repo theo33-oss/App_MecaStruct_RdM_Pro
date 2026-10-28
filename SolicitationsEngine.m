@@ -57,7 +57,14 @@ classdef SolicitationsEngine
 
             r = struct();
             r.sigmaNom = N/S0;
-            r.sigmaMax = Kt*r.sigmaNom;
+            sigWorst = r.sigmaNom;
+            if isfield(p, 'Nfun') || isfield(p, 'Sfun')   % section ou effort variables : on vérifie la section la plus chargée
+                xs = linspace(0, L0, 201);
+                sx = Nfun(xs)./Sfun(xs);
+                [~, iw] = max(abs(sx));
+                sigWorst = sx(iw);
+            end
+            r.sigmaMax = Kt*sigWorst;
             r.sigmaAdm = Re/s;
             r.okResistance = abs(r.sigmaMax) <= r.sigmaAdm;
             r.epsxx = r.sigmaNom/E + alpha*dT;
@@ -77,12 +84,16 @@ classdef SolicitationsEngine
             r.dL = dL;
             r.K = E*S0/L0;
             r.U = U;
-            r.okRigidite = max(abs([dL.analytique dL.integrale dL.energetique])) <= dLmax;
+            if variable   % l'analytique (S0, N constants) n'est pas représentative
+                r.okRigidite = max(abs([dL.integrale dL.energetique])) <= dLmax;
+            else
+                r.okRigidite = max(abs([dL.analytique dL.integrale dL.energetique])) <= dLmax;
+            end
             r.methodUsed = methodUsed;
 
             rep = {
                 sprintf('Contrainte nominale : σ = N/S0 = %s / %s = %s Pa', seF(N), seF(S0), seF(r.sigmaNom))
-                sprintf('Contrainte maximale : σmax = Kt·σ = %s × %s = %s Pa', seF(Kt), seF(r.sigmaNom), seF(r.sigmaMax))
+                sprintf('Contrainte maximale : σmax = Kt·σ = %s × %s = %s Pa', seF(Kt), seF(sigWorst), seF(r.sigmaMax))
                 sprintf('Contrainte admissible : σadm = Re/s = %s Pa → résistance %s', seF(r.sigmaAdm), seOk(r.okResistance))
                 sprintf('Déformations : εxx = %s ; εyy = εzz = %s ; ΔV/V0 = %s', seF(r.epsxx), seF(r.epsyy), seF(r.dVsurV))
                 sprintf('ΔL analytique (N L0/(E S0) + αΔT L0) = %s m', seF(dL.analytique))
@@ -593,7 +604,7 @@ classdef SolicitationsEngine
             rep = {sprintf('Plan (%s) : E·%s·%s'''' = %s, E·%s = %s N·m²', o.plane, strrep(It, '_', ''), vn, ...
                 seIf(strcmp(o.plane, 'xy'), 'Mfz', '−Mfy'), strrep(It, '_', ''), seF(EI))};
             if seIyz(m) ~= 0
-                rep{end+1, 1} = sprintf(['Flexion déviée (Iyz = %s m⁴) : courbures couplées, [v''''; −w''''] = [Iz Iyz; Iyz Iy]⁻¹·[Mfz; Mfy]/E ; ' ...
+                rep{end+1, 1} = sprintf(['Flexion déviée (Iyz = %s m⁴) : courbures couplées, [v''''; −w''''] = [Iz −Iyz; −Iyz Iy]⁻¹·[Mfz; Mfy]/E ; ' ...
                     'le moment ci-dessus est le moment équivalent %s = %s·E·%s''''.'], seF(seIyz(m)), ...
                     seIf(strcmp(o.plane, 'xy'), 'Mz,eq', '−My,eq'), strrep(It, '_', ''), vn);
                 if ~sol.isostatic
@@ -1087,7 +1098,7 @@ end
 
 function [Mz, My] = seBendMoments(sol, m)
 % Moments équivalents de la flexion déviée : E·Iz·v'' = Mz et E·Iy·w'' = −My, avec
-% [v''; −w''] = [Iz Iyz; Iyz Iy]⁻¹·[Mfz; Mfy]/E (σ = N/S + b·y + c·z, b = −E·v'', c = −E·w'').
+% [v''; −w''] = [Iz −Iyz; −Iyz Iy]⁻¹·[Mfz; Mfy]/E (σ = N/S + b·y + c·z, b = −E·v'', c = −E·w'').
 % Sans Iyz : Mz = Mfz, My = Mfy.
 Iyz = seIyz(m);
 if Iyz == 0

@@ -528,7 +528,7 @@ classdef GeometryEngine
             end
             C.Properties.Description = strjoin(rep', ' ');
             C.Properties.UserData = struct('units', {units}, 'analytical', A, 'integral', B, ...
-                'tabulated', T, 'report', {rep});
+                'tabulated', T, 'report', {rep}, 'ecartAB_pct', max(ecAB));
         end
 
         %% =====================================================================================

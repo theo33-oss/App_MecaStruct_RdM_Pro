@@ -126,9 +126,9 @@ classdef MecaStruct_App < handle
                 Bn = Bdef;
             end
             mat = app.DM.getMaterial(S.mat.Value);
-            bend = SolicitationsEngine.bendingStress(struct('sec', sec, ...
+            bend = SolicitationsEngine.bendingStress(MecaStruct_App.stressGeometry(sec, struct( ...
                 'N', app.si(S.N, 'kN'), 'Mfz', app.si(S.Mfz, 'kN.m'), 'Mfy', app.si(S.Mfy, 'kN.m'), ...
-                'Kt', S.Kt.Value, 'Re', mat.Re));
+                'Kt', S.Kt.Value, 'Re', mat.Re)));
             jour = SolicitationsEngine.jourawski(sec, app.si(S.Ty, 'kN'));
 
             PlotEngine.section(W.Axes{1}(1), sec, P);
@@ -171,7 +171,7 @@ classdef MecaStruct_App < handle
             isProfile = strcmp(D.sec.type, 'profile');
             if isProfile
                 Pt = GeometryEngine.tabulated(D.sec);
-                for f = {'S', 'Iz', 'Iy', 'vyTop', 'vyBot', 'vzRight', 'vzLeft'}
+                for f = {'S', 'Iz', 'Iy', 'ky', 'kz', 'vyTop', 'vyBot', 'vzRight', 'vzLeft'}   % ky·S doit rester l'aire d'âme
                     P.(f{1}) = Pt.(f{1});
                 end
             end
@@ -333,11 +333,22 @@ classdef MecaStruct_App < handle
                 end
             end
             ev = @(pp) BeamAndTrussSolver.ppEval(pp, s);
-            H.N.Value = ev(R.sol.N) / 1e3;
-            H.Mfz.Value = ev(R.sol.Mfz) / 1e3;
-            H.Mfy.Value = ev(R.sol.Mfy) / 1e3;
-            if isfield(H, 'Ty')
-                H.Ty.Value = ev(R.sol.Ty) / 1e3;
+            if strcmp(mode, 'max')
+                % efforts du côté de la discontinuité retenu par beamCheck (ppEval prendrait la limite à droite)
+                c = R.check;
+                H.N.Value = c.N / 1e3;
+                H.Mfz.Value = c.Mfz / 1e3;
+                H.Mfy.Value = c.Mfy / 1e3;
+                if isfield(H, 'Ty')
+                    H.Ty.Value = c.Ty / 1e3;
+                end
+            else
+                H.N.Value = ev(R.sol.N) / 1e3;
+                H.Mfz.Value = ev(R.sol.Mfz) / 1e3;
+                H.Mfy.Value = ev(R.sol.Mfy) / 1e3;
+                if isfield(H, 'Ty')
+                    H.Ty.Value = ev(R.sol.Ty) / 1e3;
+                end
             end
             H.s0.Value = s;
             H.W.Status.Text = sprintf('Efforts lus sur la poutre en s = %.4g m : N = %.4g kN, Mfz = %.4g kN·m, Mfy = %.4g kN·m', ...
@@ -395,7 +406,9 @@ classdef MecaStruct_App < handle
                 'VariableNames', {'Nœud', 'Rx (kN)', 'Ry (kN)'});
             W.Tables.Disp.Data = table(string(nm(:)), tsol.displacements(:, 1) * 1e3, tsol.displacements(:, 2) * 1e3, ...
                 'VariableNames', {'Nœud', 'ux (mm)', 'uy (mm)'});
-            if tsol.isostatic
+            if tsol.mechanism
+                hTxt = 'mécanisme, chargement compatible : déplacements non uniques (norme minimale)';
+            elseif tsol.isostatic
                 hTxt = 'isostatique';
             elseif tsol.h > 0
                 hTxt = 'hyperstatique';
@@ -659,9 +672,9 @@ classdef MecaStruct_App < handle
             W = F.W;
             sec = app.buildSection();
             P = GeometryEngine.analytical(sec);
-            bend = SolicitationsEngine.bendingStress(struct('sec', sec, 'N', app.si(F.N, 'kN'), ...
+            bend = SolicitationsEngine.bendingStress(MecaStruct_App.stressGeometry(sec, struct('N', app.si(F.N, 'kN'), ...
                 'Mfz', app.si(F.Mfz, 'kN.m'), 'Mfy', app.si(F.Mfy, 'kN.m'), 'Kt', F.Kt.Value, ...
-                'Re', app.si(F.Re, 'MPa'), 's', F.s.Value));
+                'Re', app.si(F.Re, 'MPa'), 's', F.s.Value)));
             ax = W.Axes{1}(1);
             PlotEngine.section(ax, sec, P);
             hold(ax, 'on');
@@ -769,6 +782,9 @@ classdef MecaStruct_App < handle
             end
             Re = app.si(T.Re, 'MPa');
             Rm = app.si(T.Rm, 'MPa');
+            if ~(Rm > 0)
+                Rm = NaN;   % Rm absent : le moteur prend alors Re, aucun autre résultat n'en dépend
+            end
             sf = T.s.Value;
             pr = TensorAndCriteriaEngine.principal(sig);
             fa = TensorAndCriteriaEngine.facet(sig, n);
@@ -1277,7 +1293,7 @@ classdef MecaStruct_App < handle
                 'rho', D.mRho.Value, 'Note', 'Matériau utilisateur (saisi dans l''interface).');
             app.DM.addMaterial(m);
             app.refreshMaterialTable();
-            app.refreshMaterialLists();
+            app.refreshMaterialLists(name);
         end
 
         function addProfileFromForm(app)
@@ -1350,6 +1366,17 @@ classdef MecaStruct_App < handle
                 return
             end
             out = val .* DataManager.unitFactor(q.units{i, 2}) ./ DataManager.unitFactor(q.units{j, 2});
+        end
+
+        function p = stressGeometry(sec, p)
+            %STRESSGEOMETRY Ajoute à p la géométrie pour bendingStress : profilé du catalogue → valeurs
+            %   tabulées (la géométrie simplifiée ignore les congés : axe faible des IPN/UPN non
+            %   conservatif de 15 à 18 %), sinon le contour exact.
+            if strcmp(sec.type, 'profile')
+                p.P = GeometryEngine.tabulated(sec);
+            else
+                p.sec = sec;
+            end
         end
 
         function f = parseFunction(expr)
@@ -1885,7 +1912,14 @@ classdef MecaStruct_App < handle
                 'VariableNames', {'Liaison', 'Conditions', 'Pmin (MPa)', 'Pmax (MPa)', 'Note'});
         end
 
-        function refreshMaterialLists(app)
+        function refreshMaterialLists(app, changed)
+            %REFRESHMATERIALLISTS Met à jour les menus de matériaux. Un onglet qui utilise un matériau
+            %   modifié (nom dans `changed`) ou supprimé reçoit les valeurs à jour (sinon E, Re… resteraient
+            %   ceux de l'ancien matériau).
+            if nargin < 2
+                changed = {};
+            end
+            changed = cellstr(string(changed));
             names = cellstr(app.DM.listMaterials());
             for k = 1:numel(app.MatKeys)
                 key = app.MatKeys{k};
@@ -1893,8 +1927,12 @@ classdef MecaStruct_App < handle
                     dd = app.H.(key).mat;
                     old = dd.Value;
                     dd.Items = names;
-                    if any(strcmp(old, names))
+                    kept = any(strcmp(old, names));
+                    if kept
                         dd.Value = old;
+                    end
+                    if ~kept || any(strcmp(old, changed))
+                        app.applyMaterial(key);
                     end
                 end
             end
@@ -1961,7 +1999,7 @@ classdef MecaStruct_App < handle
             end
             app.DM.addMaterial(m);
             app.refreshMaterialTable();
-            app.refreshMaterialLists();
+            app.refreshMaterialLists(m.Name);
         end
 
         function autoG(app)
@@ -2191,6 +2229,9 @@ classdef MecaStruct_App < handle
             app.applyMaterial('Beam');
             p = app.DM.getProfile('IPE', 'IPE 300');
             P = GeometryEngine.analytical(GeometryEngine.fromProfile(p));
+            Pt = GeometryEngine.tabulated(GeometryEngine.fromProfile(p));
+            P.ky = Pt.ky;   % ky·S = aire d'âme avec la surface du catalogue
+            P.kz = Pt.kz;
             B.S.Value = p.S * 1e6;
             B.Iz.Value = p.Iz * 1e12;
             B.Iy.Value = p.Iy * 1e12;
@@ -2344,16 +2385,33 @@ classdef MecaStruct_App < handle
             ss = [s s];
             P = app.beamSectionProps();
             score = abs(N) / P.S + abs(Mfz) * max(P.vyTop, P.vyBot) / P.Iz + abs(Mfy) * max(P.vzRight, P.vzLeft) / P.Iy;
-            [~, i] = max(score);
-            p = struct('N', N(i), 'Mfz', Mfz(i), 'Mfy', Mfy(i), 'Kt', B.Kt.Value, 'Re', app.si(B.Re, 'MPa'), 's', B.s.Value);
-            if app.BeamUsesSection && ~isempty(app.BeamSection)
-                p.sec = app.BeamSection.sec;
+            % le score (somme linéaire des termes) est exact pour un rectangle mais pas pour un disque ni
+            % pour Iyz ≠ 0 : on retient les meilleurs candidats et on garde celui dont σ exact est maximal
+            [~, ord] = sort(score, 'descend');
+            [~, iMz] = max(abs(Mfz));
+            [~, iMy] = max(abs(Mfy));
+            cand = unique([ord(1:min(10, numel(ord))), iMz, iMy], 'stable');
+            useSec = app.BeamUsesSection && ~isempty(app.BeamSection);
+            if useSec
                 srcTxt = 'section de l''onglet Sections (contour exact)';
             else
-                p.P = P;
                 srcTxt = 'section saisie (fibres extrêmes symétriques |y|max, |z|max)';
             end
-            bend = SolicitationsEngine.bendingStress(p);
+            best = -Inf;
+            for c = cand
+                pc = struct('N', N(c), 'Mfz', Mfz(c), 'Mfy', Mfy(c), 'Kt', B.Kt.Value, 'Re', app.si(B.Re, 'MPa'), 's', B.s.Value);
+                if useSec
+                    pc.sec = app.BeamSection.sec;
+                else
+                    pc.P = P;
+                end
+                bc = SolicitationsEngine.bendingStress(pc);
+                if bc.sigmaMaxAbs > best * (1 + 1e-12)
+                    best = bc.sigmaMaxAbs;
+                    i = c;
+                    bend = bc;
+                end
+            end
             if abs(bend.sigmaMaxTraction) >= abs(bend.sigmaMaxCompression)
                 sig = bend.sigmaMaxTraction;
                 loc = bend.locMaxTraction;

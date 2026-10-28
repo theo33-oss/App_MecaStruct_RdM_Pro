@@ -88,6 +88,16 @@ checkLatex(tc, r.latex);
 verifyTrue(tc, iscell(r.report) && iscolumn(r.report));
 end
 
+function testTractionVariableSectionVerdict(tc)
+% barre conique S(x) = 100 − 50x mm² sous 10 kN : la section la plus chargée (200 MPa) décide
+p = struct('N', 10e3, 'S0', 100e-6, 'L0', 1, 'E', 210e9, 'Re', 235e6, 's', 1.5, ...
+    'Sfun', @(x) (100 - 50*x)*1e-6);
+r = SolicitationsEngine.traction(p);
+verifyEqual(tc, r.sigmaMax, 200e6, 'RelTol', 1e-9);
+verifyFalse(tc, r.okResistance);
+verifyEqual(tc, r.sigmaNom, 100e6, 'RelTol', 1e-12);
+end
+
 function testTractionConicalBar(tc)
 F = 1e4; L = 0.8; E = 2e11; d1 = 0.02; d2 = 0.04;
 p = struct('N', F, 'S0', pi*d1^2/4, 'L0', L, 'E', E, 'Re', 235e6, ...

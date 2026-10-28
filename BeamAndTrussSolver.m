@@ -1470,7 +1470,7 @@ names = btsCellField(sp.unk, 'name');
 texs = btsCellField(sp.unk, 'tex');
 men = struct('subproblem', sp.name, 'label', sp.label, 'unknowns', {names(Xi)}, ...
     'unknownsTex', {texs(Xi)}, 'base', {names(base)}, 'delta', delta, 'delta0', d0, ...
-    'rhs', rhs, 'X', X, 'includeShear', withShear);
+    'rhs', rhs, 'X', X, 'includeShear', withShear, 'sgn', btsVec(sp.unk(Xi), 'sgn'));   % sgn : plan équivalent -> réaction physique
 end
 
 function [v, th] = btsBendDisp(M, T, br, P, EI, kGS, useShear)
@@ -2204,8 +2204,9 @@ for k = 1:4
         end
         parts = cell(1, hX);
         for i = 1:hX
-            parts{i} = sprintf('X%d = %s = %s', i, men.unknowns{i}, btsNum(men.X(i)));
-            tex{end+1, 1} = ['$X_{' sprintf('%d', i) '} = ' men.unknownsTex{i} ' = ' btsTexNum(men.X(i)) '$']; %#ok<AGROW>
+            xi = men.sgn(i) * men.X(i);
+            parts{i} = sprintf('X%d = %s = %s', i, men.unknowns{i}, btsNum(xi));
+            tex{end+1, 1} = ['$X_{' sprintf('%d', i) '} = ' men.unknownsTex{i} ' = ' btsTexNum(xi) '$']; %#ok<AGROW>
         end
         rep{end+1, 1} = ['  Solution : ' strjoin(parts, ' ; ')]; %#ok<AGROW>
     end
@@ -2224,7 +2225,11 @@ for k = 1:4
             if ~isempty(eqp)
                 nmi = nmi(1:eqp(1)-1);
             end
-            parts{i} = sprintf('%s = %s', nmi, btsNum(it.solution(i)));
+            sg = 1;
+            if i <= numel(s.unk)   % réactions de liaison ; les constantes d'intégration suivent
+                sg = s.unk(i).sgn;
+            end
+            parts{i} = sprintf('%s = %s', nmi, btsNum(sg * it.solution(i)));
         end
         rep{end+1, 1} = ['  Solution : ' strjoin(parts, ' ; ')]; %#ok<AGROW>
     end

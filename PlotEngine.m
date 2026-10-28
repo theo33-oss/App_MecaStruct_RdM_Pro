@@ -545,7 +545,7 @@ classdef PlotEngine
                             'MarkerFaceColor', cC, 'MarkerSize', 7, 'MarkerIndices', peMk(numel(d.castigliano.s0)));
                         lab{end+1} = 'Castigliano (flexion)';
                     end
-                    if peHas(d, 'castigliano', 'vTotal')
+                    if peHas(d, 'castigliano', 'vTotal') && (~isfield(d.castigliano, 'vShear') || any(d.castigliano.vShear(:) ~= 0))   % sans effort tranchant, vTotal = flexion
                         vT = 1e3 * d.castigliano.vTotal(:).';
                         vAll = [vAll vT];
                         hh(end+1) = plot(ax, c0, vT, 's', 'Color', cS, 'MarkerSize', 10, 'LineWidth', 1.5, 'MarkerIndices', peMk(numel(c0)));
@@ -809,7 +809,7 @@ classdef PlotEngine
             zl = {sprintf('Poutre trapue (courte)\nλ < %s : compression simple', peNum(lc)), ...
                 sprintf('Poutre moyenne\n%s ≤ λ < λlim\nRankine', peNum(lc)), ...
                 sprintf('Poutre élancée (longue)\nλ ≥ λlim : Euler')};
-            zn = {sprintf('Poutre trapue (courte) : λ < %s', peNum(lc))};
+            zn = {sprintf('Poutre trapue (courte) : λ < %s', peNum(lc)), 'Poutre moyenne : Rankine', 'Poutre élancée (longue) : Euler'};
             active = 0;
             if ~isempty(b) && isstruct(b) && isfield(b, 'regime')
                 active = find(strcmp(char(b.regime), {'compression', 'rankine', 'euler'}), 1);
@@ -826,7 +826,7 @@ classdef PlotEngine
                     end
                     if zx(k, 2) - zx(k, 1) < 0.15 * lMax
                         % zone étroite : étiquette verticale
-                        t1 = zn{1};
+                        t1 = zn{k};
                         if k == active
                             t1 = [t1 '  (votre poutre)'];
                         end
