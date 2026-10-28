@@ -66,6 +66,16 @@ run('tests/run_all_tests.m')
 ```
 
 Tous les tests doivent réussir : la dernière ligne affichée par `run_all_tests` donne le bilan.
+La suite complète dure environ 12 minutes, dont 10 pour l'interface et les tracés. Pour un contrôle rapide des moteurs (environ 1 à 2 minutes) : `setenv('MECASTRUCT_FAST_TESTS','1'); run('tests/run_all_tests.m')`.
+
+## Limites connues de l'application
+
+Elles sont aussi affichées dans l'application (ligne d'état et rapport) et dans le §2 du dossier de validation.
+
+- **Poutre hyperstatique avec Iyz ≠ 0** (section sans axes principaux, par exemple une cornière) : les réactions sont calculées plan par plan, le couplage y–z des inconnues hyperstatiques est ignoré. Réactions, moments et contraintes ne sont pas fiables. Saisir la section dans ses axes principaux (Iyz = 0). En isostatique, Iyz ≠ 0 est traité exactement (flèches et contraintes).
+- **Dossier de validation, contrainte au point le plus sollicité** : non recalculée à la main pour une section dissymétrique (T, U, L, composée) ni pour Iyz ≠ 0 ; le dossier le dit.
+- **Normes** : aucune norme de dimensionnement (Eurocode…) : voir `docs/NOTE_DE_CALCUL.html`, §16.
+- **Formules du dossier** : MathJax demande Internet ; hors connexion, un bandeau le signale et les équations restent en LaTeX brut.
 
 Cas de contrôle de bout en bout :
 - **Données** : poutre IPE 200 en acier S235, sur deux appuis, L = 4 m, charge uniforme q = 10 kN/m.

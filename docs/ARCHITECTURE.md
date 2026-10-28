@@ -235,6 +235,7 @@ Saint-Venant pour le rectangle, Bredt pour le caisson), `I1, I2` (principaux, I1
 (angle rad de l'axe principal 1 depuis z), `rz, ry`, `vyTop, vyBot, vzRight, vzLeft` (distances de G aux
 fibres extrêmes, positives), `Wz = Iz/max(vyTop,vyBot)`, `Wy = Iy/max(vzRight,vzLeft)`, `MO1z = ∬ y1 dS`,
 `MO1y = ∬ z1 dS` (moments statiques dans le repère O1), `k, ky, kSource` (`'cours'` ou `'numérique'`),
+`kz` (section réduite pour Tz : calcul énergétique sur la section aux axes y et z échangés ; = ky pour rectangle, disque, couronne),
 `method` (`'analytique'` / `'intégrale symbolique'` / `'intégrale numérique'` / `'tabulée'`), `report`,
 `latex`. En plus pour `analytical` : `huygens` (`table` : `Label, S_i, zG_i, yG_i, IGz_i, IGy_i, dy_i, dz_i,
 SDy2, SDz2, Iz_i, Iy_i`). En plus pour `integral` : `integrals` (cell de chaînes LaTeX des intégrales
@@ -252,6 +253,9 @@ model.E, model.G % Pa
 model.S          % m²
 model.Iz, model.Iy, model.Ix   % m⁴ (Ix = constante de torsion utilisée pour G·Ix)
 model.ky, model.kz             % coefficients de section réduite (défaut 1)
+model.Iyz                      % m⁴, produit d'inertie (optionnel, défaut 0). Utilisé par SolicitationsEngine.deflection et
+                               % strainEnergy (flexion déviée, courbures couplées). Le solveur de réactions (BeamAndTrussSolver)
+                               % l'ignore : poutre hyperstatique avec Iyz ≠ 0 = LIMITE (réactions non fiables), signalée par l'application.
 model.supports     % struct array : pos (m), type, name (ex. 'A')
 model.pointLoads   % struct array : pos, Fx, Fy, Fz (N), name
 model.pointMoments % struct array : pos, Mx, My, Mz (N·m), name
@@ -485,3 +489,16 @@ et messages). Callbacks protégés par `try/catch` → `uialert` (non bloquant).
   formulaires rendues sans avertissement**, table de Mohr ≡ intégration numérique.
 - PlotEngine : chaque fonction s'exécute sans erreur ni avertissement sur des sorties réelles des moteurs.
 - App : création invisible, `runAllExamples` entièrement OK, fermeture.
+
+---
+
+## Dossier de validation et convertisseur (hors moteurs)
+
+- `ValidationReport.generate(app, key[, folder])` : écrit un HTML autonome (§1 données, §2 hypothèses et limites,
+  §3 vérification à la main sans le solveur, §4 résultats, §5 diagrammes, §6 rapport, §7 formules utilisées, §8 avis).
+  Clés : `Sec, Beam, Tr, Tra, Cis, Tor, Fle, Fla, Ten, Hoo, Jau`. `ValidationReport.handCheck(app, key)` renvoie `[nOK, nTot]`
+  des contrôles du §3 (utilisé par les tests). Les limites de l'application sont des lignes `ko` du §2.
+- `MecaStruct_App.convertUnits(val, quantity, from, to)` : convertisseur d'unités (dont `Écart de température` sans décalage
+  d'origine et `Température absolue`).
+- `MecaStruct_App.stressGeometry(sec, p)` : profilé du catalogue → valeurs tabulées pour `bendingStress` (sinon contour exact).
+- Les moteurs appellent tous `DataManager.hasSymbolic()` (implémentation unique).

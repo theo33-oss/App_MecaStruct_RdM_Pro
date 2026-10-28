@@ -365,6 +365,8 @@ Pour un vrai dimensionnement, ajoutez votre propre matériau dans la Base de don
 <!-- ============================================================ -->
 <h2 id="pieges">16. Pièges fréquents</h2>
 <ul>
+  <li><strong>Limite : poutre hyperstatique avec $I_{yz}\neq0$.</strong> Pour une section sans axes principaux (une cornière, par exemple) sur une poutre hyperstatique, les réactions sont calculées plan par plan : le couplage y–z est ignoré et les résultats ne sont pas fiables. L'application et le dossier de validation l'affichent en rouge. Saisissez la section dans ses axes principaux ($I_{yz}=0$). En isostatique, tout est traité exactement.</li>
+  <li><strong>Champs $I_{yz}$ et $k_z$ de l'onglet Poutres.</strong> « Reprendre la section » les remplit. $k_z$ s'applique à l'effort tranchant selon z, $I_{yz}$ à la flexion déviée.</li>
   <li><strong>Iz et Iy inversés par rapport aux catalogues.</strong> Dans l'application, l'axe fort d'un I debout est $z$ (flexion dans le plan x, y). Les catalogues Eurocode appellent cet axe $y$. Donc $I_z$(application) = $I_y$(catalogue).</li>
   <li><strong>Signes des charges</strong> : une force vers le bas s'écrit $F_y &lt; 0$, et une charge répartie vers le bas aussi.</li>
   <li><strong>Unités</strong> : sections en mm mais longueurs de poutre en m. En cas de doute, regardez la ligne « Données (SI) » du rapport.</li>

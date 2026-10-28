@@ -581,10 +581,14 @@ classdef DataManager < handle
 
         function tf = hasSymbolic()
             %HASSYMBOLIC Disponibilité de la Symbolic Math Toolbox.
-            %   tf = DataManager.hasSymbolic() (même implémentation que BeamAndTrussSolver).
+            %   tf = DataManager.hasSymbolic() : implémentation unique, appelée par tous les moteurs.
             persistent cached
             if isempty(cached)
-                cached = logical(license('test', 'Symbolic_Toolbox')) && ~isempty(ver('symbolic'));
+                try
+                    cached = logical(license('test', 'Symbolic_Toolbox')) && ~isempty(ver('symbolic'));
+                catch
+                    cached = false;
+                end
             end
             tf = cached;
         end

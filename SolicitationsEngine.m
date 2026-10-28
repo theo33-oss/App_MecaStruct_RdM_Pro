@@ -382,7 +382,11 @@ classdef SolicitationsEngine
             s = seOpt(p, 's', 1);
             hasSec = isfield(p, 'sec') && ~isempty(p.sec);
             if hasSec
-                P = GeometryEngine.analytical(p.sec);
+                if isfield(p, 'Pcore') && ~isempty(p.Pcore)
+                    P = p.Pcore;   % propriétés déjà calculées par l'appelant (évite de refaire l'intégration du cisaillement)
+                else
+                    P = GeometryEngine.analytical(p.sec);
+                end
             elseif isfield(p, 'P') && ~isempty(p.P)
                 P = p.P;
             else

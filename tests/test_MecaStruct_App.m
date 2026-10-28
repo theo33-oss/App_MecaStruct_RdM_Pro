@@ -98,6 +98,45 @@ app.loadFromBeam('Fle', 'max');
 verifyEqual(testCase, abs(app.H.Fle.Mfz.Value), 20 * 4 / 6, 'AbsTol', 1e-6);
 end
 
+function testVerificationMainPlanZEtDisque(testCase)
+% plan (x, z) : le §3 recalcule aussi Tz et Mfy ; disque en flexion biaxiale : pas de faux écart
+app = testCase.TestData.app;
+app.loadExample('Poutres', 'isostatique');
+B = app.H.Beam;
+B.pl.Data = {2, 0, -20, -8, 'F'};
+[nOK, nTot] = ValidationReport.handCheck(app, 'Beam');
+verifyEqual(testCase, nOK, nTot);
+B.pl.Data = {2, 0, -20, 0, 'F'};
+[~, nTot0] = ValidationReport.handCheck(app, 'Beam');
+verifyGreaterThan(testCase, nTot, nTot0, 'Les contrôles du plan (x, z) doivent s''ajouter.');
+S = app.H.Sec;
+S.type.Value = 'disque'; S.D.Value = 60;
+app.useSectionForBeam();
+B.pl.Data = {2, 0, -5, -5, 'F'};
+[nOK, nTot] = ValidationReport.handCheck(app, 'Beam');
+verifyEqual(testCase, nOK, nTot, 'Disque en flexion biaxiale : contrainte à la main ≠ solveur.');
+end
+
+function testLimiteHyperstatiqueIyz(testCase)
+% cornière (Iyz ≠ 0) sur poutre hyperstatique : la limite est dite dans l'état, le rapport et le dossier
+app = testCase.TestData.app;
+setenv('MECASTRUCT_NO_BROWSER', '1');
+cleanup = onCleanup(@() setenv('MECASTRUCT_NO_BROWSER', ''));
+S = app.H.Sec;
+S.type.Value = 'L'; S.h.Value = 100; S.b.Value = 100; S.t.Value = 10;
+app.useSectionForBeam();
+app.loadExample('Poutres', 'hyperstatique');
+B = app.H.Beam;
+B.Iyz.Value = -1.066e6;   % le chargement d'exemple remet Iyz à 0 : on le remet pour cet essai
+app.computeBeam();
+verifyTrue(testCase, contains(B.W.Status.Text, 'LIMITE'));
+verifyTrue(testCase, contains(strjoin(B.W.Report.Value, ' '), 'NON fiables'));
+f = ValidationReport.generate(app, 'Beam', fullfile(testCase.TestData.tmp, 'limite'));
+h = fileread(f);
+verifyTrue(testCase, contains(h, 'LIMITE DU LOGICIEL') && contains(h, 'NON fiables'));
+verifyTrue(testCase, contains(h, 'integrity="sha384-'));
+end
+
 function testConvertisseur(testCase)
 cv = @MecaStruct_App.convertUnits;
 verifyEqual(testCase, cv(1, 'Longueur', 'in', 'mm'), 25.4, 'RelTol', 1e-12);

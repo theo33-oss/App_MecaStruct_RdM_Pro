@@ -19,6 +19,10 @@ suite = TestSuite.fromFolder(testsDir);
 if isempty(suite)
     error('MecaStruct:tests:empty', 'Aucun test trouvé dans %s.', testsDir);
 end
+if ~isempty(getenv('MECASTRUCT_FAST_TESTS'))
+    % mode rapide : sans les tests d'interface et de tracés (les plus longs, environ 10 min sur 12)
+    suite = suite(~startsWith({suite.Name}, {'test_MecaStruct_App', 'test_PlotEngine'}));
+end
 fprintf('MecaStruct_RdM_Pro : %d tests dans %s\n\n', numel(suite), testsDir);
 runner = TestRunner.withTextOutput;
 runAllResults = runner.run(suite);

@@ -552,15 +552,7 @@ end
 end
 
 function tf = btsHasSymbolic()
-persistent cached
-if isempty(cached)
-    try
-        cached = logical(license('test', 'Symbolic_Toolbox')) && ~isempty(ver('symbolic'));
-    catch
-        cached = false;
-    end
-end
-tf = cached;
+tf = DataManager.hasSymbolic();
 end
 
 %% =====================================================================
@@ -1522,7 +1514,11 @@ for k = 1:nu
         K(r, 1:nu) = THp(k, :);
         K(r, nu+2) = 1;
         f(r) = -thL(k);
-        cond{k} = sprintf('%s''(%s) = 0', sp.dispTxt, supName);
+        if useShear   % avec le tranchant, v' = θ + T/kGS : l'encastrement impose la rotation de section θ = 0
+            cond{k} = sprintf('θ(%s) = 0', supName);
+        else
+            cond{k} = sprintf('%s''(%s) = 0', sp.dispTxt, supName);
+        end
     elseif isBend
         K(r, 1:nu) = Vp(k, :);
         K(r, nu+1) = 1;
@@ -1552,7 +1548,11 @@ end
 z = zs ./ cs.';
 R = z(1:nu);
 names = btsCellField(sp.unk, 'name');
-info = struct('subproblem', sp.name, 'label', sp.label, 'unknowns', {[names, sp.constNames]}, ...
+constNames = sp.constNames;
+if useShear
+    constNames{2} = sprintf('C2 = θ(0) (rotation de section ; %s''(0) = C2 + T(0)/(k·G·S))', sp.dispTxt);
+end
+info = struct('subproblem', sp.name, 'label', sp.label, 'unknowns', {[names, constNames]}, ...
     'K', K, 'f', f, 'solution', z, 'constants', z(nu+1:end), 'conditions', {cond}, ...
     'includeShear', useShear);
 end

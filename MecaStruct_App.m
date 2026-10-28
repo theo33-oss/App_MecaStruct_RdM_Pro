@@ -38,15 +38,18 @@ classdef MecaStruct_App < handle
         SectionData = []             % dernière section calculée : sec, P, mat
     end
 
+    properties (SetAccess = private)   % lisibles par ValidationReport
+        BeamUsesSection = false      % la vérification de la poutre utilise le contour exact de BeamSection
+        BeamSection = []             % section transmise à la poutre (figée au transfert : sec, P, mat)
+    end
+
     properties (Access = private)
-        FormulaPanel                 % panneau défilant du formulaire
+        FormulaPanel                % panneau défilant du formulaire
         FormulaAxes                  % axe de rendu de la fiche
         FormulaDrop                  % sélecteur de fiche
         SubSol                       % sous-onglets de Sollicitations
         SubHooke                     % sous-onglets de Hooke & Jauges
         SubDB                        % sous-onglets de la base de données
-        BeamUsesSection = false      % la vérification de la poutre utilise le contour exact de BeamSection
-        BeamSection = []             % section transmise à la poutre (figée au transfert : sec, P, mat)
         ButtonGrid                   % grille des boutons du formulaire (dossier / note / guide)
         BtnVal                       % bouton « Dossier de validation » (onglets de calcul)
         BtnNote                      % bouton « Note de calcul » (Base de données uniquement)
@@ -306,10 +309,19 @@ classdef MecaStruct_App < handle
             lines{end + 1, 1} = sprintf('Énergie de déformation totale U = %.5g J', U.total);
             lines{end + 1, 1} = sprintf('Vérification : Kt·|σ|max = %.5g MPa en s = %.4g m, σadm = %.5g MPa → %s', ...
                 bd.sigmaMaxKt / 1e6, chk.s, bd.sigmaAdm / 1e6, MecaStruct_App.okText(bd.ok));
+            limite = ~sol.isostatic && isfield(sol.model, 'Iyz') && sol.model.Iyz ~= 0;
+            if limite
+                lines = [{['⚠ LIMITE DE L''APPLICATION : poutre hyperstatique avec Iyz ≠ 0. Les réactions sont calculées plan par plan ' ...
+                    '(couplage y–z des inconnues hyperstatiques ignoré) : réactions, moments et contraintes NON fiables. ' ...
+                    'Saisir la section dans ses axes principaux (Iyz = 0).']}; lines];
+            end
             app.setReport(W, lines, '=== Statique et torseur de cohésion (moteur, SI) ===', sol.report, ...
                 '=== Déformée : 4 méthodes ===', d.report, '=== Vérification de résistance ===', chk.report);
             W.Status.Text = sprintf('h = %d (%s) — f max = %.4g mm — Kt·|σ|max = %.4g MPa (%s)', ...
                 h.total, hTxt, di.fmax * 1e3, bd.sigmaMaxKt / 1e6, MecaStruct_App.okText(bd.ok));
+            if limite
+                W.Status.Text = ['⚠ LIMITE : hyperstatique avec Iyz ≠ 0, résultats NON fiables — ' W.Status.Text];
+            end
         end
 
         function loadFromBeam(app, key, mode)
@@ -1997,6 +2009,11 @@ classdef MecaStruct_App < handle
             elseif strcmp(f, 'G')
                 m.nu = NaN;
             end
+            % retirer les phrases automatiques de completeIsotropic (elles seraient périmées) ; le texte de l'utilisateur reste
+            auto = {'Écart de cohérence :.*?\(écart [\d.]+ %\)\.', 'G calculé par G = E/\(2\(1\+ν\)\)\.', ...
+                'ν déduit de E et G : ν = E/\(2G\) − 1\.', 'E calculé par E = 2G\(1\+ν\)\.', ...
+                'Constantes élastiques incomplètes \(au moins deux de E, G, ν sont nécessaires\)\.'};
+            m.Note = strtrim(regexprep(char(strjoin(string(m.Note), ' ')), strjoin(auto, '|'), ''));
             app.DM.addMaterial(m);
             app.refreshMaterialTable();
             app.refreshMaterialLists(m.Name);
@@ -2402,6 +2419,7 @@ classdef MecaStruct_App < handle
                 pc = struct('N', N(c), 'Mfz', Mfz(c), 'Mfy', Mfy(c), 'Kt', B.Kt.Value, 'Re', app.si(B.Re, 'MPa'), 's', B.s.Value);
                 if useSec
                     pc.sec = app.BeamSection.sec;
+                    pc.Pcore = app.BeamSection.P;
                 else
                     pc.P = P;
                 end

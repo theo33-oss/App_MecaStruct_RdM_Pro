@@ -697,15 +697,7 @@ classdef GeometryEngine
         function tf = hasSymbolic()
             %HASSYMBOLIC Indique si la Symbolic Math Toolbox est disponible (résultat mis en cache).
             %   tf = GeometryEngine.hasSymbolic()
-            persistent cached
-            if isempty(cached)
-                try
-                    cached = license('test', 'Symbolic_Toolbox') && ~isempty(ver('symbolic'));
-                catch
-                    cached = false;
-                end
-            end
-            tf = cached;
+            tf = DataManager.hasSymbolic();
         end
 
     end

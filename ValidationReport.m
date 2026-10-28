@@ -61,8 +61,13 @@ classdef ValidationReport
                 '<meta name="viewport" content="width=device-width, initial-scale=1">' ...
                 '<title>Dossier de validation - ' ValidationReport.esc(m.title) '</title>' ...
                 '<script>window.MathJax={tex:{inlineMath:[[''$'',''$'']]}};</script>' ...
-                '<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-chtml.min.js"></script>' ...
-                '<style>' ValidationReport.css() '</style></head><body><main>' head body '</main></body></html>'];
+                '<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-chtml.min.js" ' ...
+                'integrity="sha384-vO3GhWOnJNToPPbwt7p2sFBxI/klrkF8WbEn4uFdj6Mf3Y305DcOVeAkQN/KdOoV" crossorigin="anonymous" ' ...
+                'onerror="document.getElementById(''mjwarn'').style.display=''block''"></script>' ...
+                '<style>' ValidationReport.css() '</style></head><body><main>' ...
+                '<div id="mjwarn" class="warnbox" style="display:none"><strong>Formules non affichées :</strong> le script MathJax ' ...
+                '(cdnjs.cloudflare.com) n''a pas pu être chargé, probablement faute de connexion Internet. Les équations apparaissent en LaTeX brut ; ' ...
+                'les valeurs chiffrées et les tableaux restent lisibles.</div>' head body '</main></body></html>'];
             stamp = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
             name = regexprep(m.title, '[^A-Za-z0-9]+', '_');
             file = fullfile(folder, sprintf('Validation_%s_%s.html', name, stamp));
@@ -628,6 +633,12 @@ classdef ValidationReport
                     if ~B.sol.isostatic
                         chk = [chk; add('Poutre hyperstatique : réactions par Ménabréa et par intégration', sprintf('écart coupures/intégrale = %.2g', B.sol.methodCheck), ...
                             ValidationReport.lvl(B.sol.methodCheck < 1e-6, 'warn'))];
+                    end
+                    if ~B.sol.isostatic && app.H.Beam.Iyz.Value ~= 0
+                        chk = [chk; add('LIMITE DU LOGICIEL : poutre hyperstatique avec Iyz ≠ 0', ...
+                            ['réactions calculées plan par plan : le couplage y–z des inconnues hyperstatiques est ignoré, ' ...
+                            'réactions, moments et contraintes NON fiables ; saisir la section dans ses axes principaux (Iyz = 0)'], ...
+                            ValidationReport.lvl(false, 'ko'))];
                     end
                     chk = [chk; add('Effet de l''effort tranchant sur la flèche', sprintf('inclus dans Castigliano : %s', ValidationReport.yesNo(app.H.Beam.shear.Value)), ...
                         ValidationReport.lvl(app.H.Beam.shear.Value || L / (2 * vy) >= 10, 'warn'))];
@@ -1238,108 +1249,148 @@ classdef ValidationReport
             mo = sol.model;
             L = mo.L;
             rea = sol.reactions;
-            % --- charges ponctuelles et répartie (plan x,y)
             pl = mo.pointLoads;
             pm = mo.pointMoments;
             dl = mo.distLoads;
-            px = []; Fy = []; Fx = [];
-            if ~isempty(pl)
-                px = [pl.pos]; Fy = [pl.Fy]; Fx = [pl.Fx];
-            end
-            cx = []; Cz = [];
-            if ~isempty(pm)
-                cx = [pm.pos]; Cz = [pm.Mz];
-            end
-            rp = [rea.pos]; rRy = [rea.Ry]; rRx = [rea.Rx]; rMz = [rea.Mz];
-            % intégrales des charges réparties dir y
-            distY = struct('a', {}, 'b', {}, 'c', {});
+            Fx = []; if ~isempty(pl), Fx = [pl.Fx]; end
+            rRx = [rea.Rx];
             distX = struct('a', {}, 'b', {}, 'c', {});
             for k = 1:numel(dl)
-                switch char(dl(k).dir)
-                    case 'y', distY(end + 1) = struct('a', dl(k).a, 'b', dl(k).b, 'c', dl(k).coeffs); %#ok<AGROW>
-                    case 'x', distX(end + 1) = struct('a', dl(k).a, 'b', dl(k).b, 'c', dl(k).coeffs); %#ok<AGROW>
+                if strcmp(char(dl(k).dir), 'x')
+                    distX(end + 1) = struct('a', dl(k).a, 'b', dl(k).b, 'c', dl(k).coeffs); %#ok<AGROW>
                 end
             end
             qint = @(d, f) integral(@(x) arrayfun(@(xx) polyval(d.c, xx - d.a) * f(xx), x), d.a, d.b);
-            sumFy = sum(Fy) + sum(rRy) + sum(arrayfun(@(d) qint(d, @(x) 1), distY));
             sumFx = sum(Fx) + sum(rRx) + sum(arrayfun(@(d) qint(d, @(x) 1), distX));
-            sumM = sum(px .* Fy) + sum(Cz) + sum(rp .* rRy) + sum(rMz) + sum(arrayfun(@(d) qint(d, @(x) x), distY));
-            fsc = max([1, abs(Fy), abs(rRy), abs(Fx)]);
             rows = {
-                ValidationReport.grp('Équilibre global de la poutre (plan x, y), recalculé à partir du modèle et des réactions du solveur')
-                hc('Équilibre des forces en x (N)', sprintf('\\sum F_x=%s\\ \\text{(attendu 0)}', n(sumFx)), sumFx, 0, 'N', 1e-6 * fsc * max(1, L))
-                hc('Équilibre des forces en y (N)', sprintf('\\sum F_y=\\sum F_{ext}+\\sum R_y=%s\\ \\text{(attendu 0)}', n(sumFy)), sumFy, 0, 'N', 1e-6 * fsc * max(1, L))
-                hc('Équilibre des moments en z, en s = 0 (N·m)', sprintf('\\sum M_{z}(0)=\\sum x_iF_{y,i}+\\int x\\,p_y\\,dx+\\sum C_z+\\sum(x_RR_y+M_R)=%s\\ \\text{(attendu 0)}', n(sumM)), sumM, 0, 'N·m', 1e-6 * fsc * max(1, L)^2)};
-            % --- torseur de cohésion par la gauche (le solveur utilise la droite)
-            s0 = L * [0.1 0.25 0.5 0.75 0.9];
-            ex = sol.extrema.Mfz;
-            s0 = [s0, ex.sMax];
-            posAll = [px, cx, rp];
-            for k = 1:numel(s0)
-                if any(abs(posAll - s0(k)) < 1e-9)
-                    if s0(k) + 1e-6 * L > L   % charge en s = L : couper juste avant, sinon la somme à gauche inclut la charge
-                        s0(k) = s0(k) - 1e-6 * L;
-                    else
-                        s0(k) = s0(k) + 1e-6 * L;
-                    end
-                end
-            end
-            % plan (x, z) : pas de recalcul à la main dans cette version, on le dit plutôt que de laisser croire qu'il est vérifié
+                ValidationReport.grp('Équilibre axial, recalculé à partir du modèle et des réactions du solveur')
+                hc('Équilibre des forces en x (N)', sprintf('\\sum F_x=%s\\ \\text{(attendu 0)}', n(sumFx)), sumFx, 0, 'N', 1e-6 * max([1, abs(Fx), abs(rRx)]) * max(1, L))};
+            % --- plan (x, y) toujours ; plan (x, z) seulement s'il y a des charges ou des réactions en z
+            rows = [rows; ValidationReport.beamPlaneRows(sol, 'y')];
             hasZ = (~isempty(pl) && any([pl.Fz] ~= 0)) || (~isempty(pm) && any([pm.My] ~= 0)) || ...
                 (~isempty(dl) && any(strcmp({dl.dir}, 'z'))) || any([rea.Rz] ~= 0) || any([rea.My] ~= 0);
             if hasZ
-                rows{end + 1, 1} = ValidationReport.grp(['Plan (x, z) : charges en z présentes, équilibre et diagrammes Tz, Mfy NON recalculés ' ...
-                    'à la main dans ce dossier (seul le plan x, y est vérifié ci-dessous)']);
-            end
-            rows{end + 1, 1} = ValidationReport.grp('Moment fléchissant et effort tranchant recalculés en sommant les actions à GAUCHE de la coupure (le solveur somme à droite)');
-            for k = 1:numel(s0)
-                s = s0(k);
-                Mh = 0; Th = 0;
-                for i = 1:numel(px)
-                    if px(i) < s, Mh = Mh + (s - px(i)) * Fy(i); Th = Th - Fy(i); end
-                end
-                for i = 1:numel(cx)
-                    if cx(i) < s, Mh = Mh - Cz(i); end
-                end
-                for i = 1:numel(rp)
-                    if rp(i) < s, Mh = Mh + (s - rp(i)) * rRy(i) - rMz(i); Th = Th - rRy(i); end
-                end
-                for i = 1:numel(distY)
-                    d = distY(i);
-                    if s > d.a
-                        bb = min(d.b, s);
-                        Mh = Mh + integral(@(x) arrayfun(@(xx) polyval(d.c, xx - d.a) * (s - xx), x), d.a, bb);
-                        Th = Th - integral(@(x) arrayfun(@(xx) polyval(d.c, xx - d.a), x), d.a, bb);
-                    end
-                end
-                Ms = BeamAndTrussSolver.ppEval(sol.Mfz, s);
-                Ts = BeamAndTrussSolver.ppEval(sol.Ty, s);
-                tolM = 1e-6 * max(1, abs(Ms)) + 1e-6;
-                tolT = 1e-6 * max(1, abs(Ts)) + 1e-6;
-                rows{end + 1, 1} = hc(sprintf('Mfz en s = %.4g m', s), sprintf('M_{fz}(s)=\\sum_{gauche}\\left[(s-x_i)F_{y,i}-C_{z,i}\\right]+\\int(s-x)p_y\\,dx=%s\\,\\mathrm{kN\\cdot m}', n(Mh / 1e3)), Mh / 1e3, Ms / 1e3, 'kN·m', tolM / 1e3); %#ok<AGROW>
-                rows{end + 1, 1} = hc(sprintf('Ty en s = %.4g m', s), sprintf('T_y(s)=-\\sum_{gauche}F_y-\\int p_y\\,dx=%s\\,\\mathrm{kN}', n(Th / 1e3)), Th / 1e3, Ts / 1e3, 'kN', tolT / 1e3); %#ok<AGROW>
+                rows = [rows; ValidationReport.beamPlaneRows(sol, 'z')];
             end
             % --- contrainte au point le plus sollicité
             chk = B.check;
             bd = chk.bend;
             P = app.H.Beam;
             S = P.S.Value; Iz = P.Iz.Value; Iy = P.Iy.Value;
-            if P.Iyz.Value ~= 0
-                % flexion déviée : la loi σ = N/S − Mfz·y/Iz + Mfy·z/Iy ne s'applique pas (axes non principaux)
-                rows{end + 1, 1} = ValidationReport.grp(sprintf(['Contrainte au point le plus sollicité : Iyz ≠ 0, flexion déviée ' ...
-                    '(formule générale du solveur, voir §4) : |σ|max = %.6g MPa'], bd.sigmaMaxAbs / 1e6));
-                return
+            secT = '';
+            if app.BeamUsesSection && ~isempty(app.BeamSection)
+                secT = app.BeamSection.sec.type;
             end
-            % loi linéaire de Navier évaluée au point (y, z) retenu par le solveur (fibre la plus chargée,
-            % extrémité des fibres pour un rectangle, point du cercle pour un disque)
-            y = chk.loc(1) * 1e3; z = chk.loc(2) * 1e3;
-            sh = abs(chk.N / S - chk.Mfz * 1e3 * y / Iz + chk.Mfy * 1e3 * z / Iy);
-            rows = [rows; {
-                ValidationReport.grp('Contrainte au point le plus sollicité du solveur (N en N, M en N·mm, y et z en mm depuis G)')
-                hc('|σ| = |N/S − Mfz·y/Iz + Mfy·z/Iy|', sprintf('|\\sigma|=\\left|\\frac{%s}{%s}-\\frac{%s\\times%s}{%s}+\\frac{%s\\times%s}{%s}\\right|', n(chk.N), n(S), n(chk.Mfz * 1e3), n(y), n(Iz), n(chk.Mfy * 1e3), n(z), n(Iy)), sh, bd.sigmaMaxAbs / 1e6, 'MPa')}];
+            if P.Iyz.Value ~= 0
+                rows{end + 1, 1} = ValidationReport.grp(sprintf(['Contrainte au point le plus sollicité : Iyz ≠ 0, flexion déviée : NON recalculée à la main ' ...
+                    '(la loi de Navier à axes principaux ne s''applique pas). Valeur du solveur : |σ|max = %.6g MPa'], bd.sigmaMaxAbs / 1e6));
+            elseif any(strcmp(secT, {'T', 'U', 'L', 'composite'}))
+                rows{end + 1, 1} = ValidationReport.grp(sprintf(['Contrainte au point le plus sollicité : section dissymétrique (%s), contour exact utilisé par le solveur : ' ...
+                    'NON recalculée à la main. Valeur du solveur : |σ|max = %.6g MPa'], secT, bd.sigmaMaxAbs / 1e6));
+            else
+                % maximum de |σ| de la loi de Navier, trouvé sans le solveur : sur les 4 coins des fibres extrêmes
+                % saisies, ou sur le cercle (module du moment résultant) pour un disque ou une couronne
+                if any(strcmp(secT, {'disque', 'couronne'}))
+                    Rr = app.BeamSection.sec.D / 2 * 1e3;
+                    sh = abs(chk.N) / S + hypot(chk.Mfz, chk.Mfy) * 1e3 * Rr / Iz;
+                    ftxt = sprintf('|\\sigma|_{max}=\\frac{|N|}{S}+\\frac{\\sqrt{M_{fz}^2+M_{fy}^2}\\,R}{I}=\\frac{%s}{%s}+\\frac{%s\\times%s}{%s}', ...
+                        n(abs(chk.N)), n(S), n(hypot(chk.Mfz, chk.Mfy) * 1e3), n(Rr), n(Iz));
+                else
+                    vy = P.vy.Value; vz = P.vz.Value;
+                    [Yc, Zc] = ndgrid([-vy vy], [-vz vz]);
+                    sh = max(abs(chk.N / S - chk.Mfz * 1e3 * Yc(:) / Iz + chk.Mfy * 1e3 * Zc(:) / Iy));
+                    ftxt = sprintf('|\\sigma|_{max}=\\max_{\\pm v_y,\\pm v_z}\\left|\\frac{%s}{%s}-\\frac{%s\\,y}{%s}+\\frac{%s\\,z}{%s}\\right|', ...
+                        n(chk.N), n(S), n(chk.Mfz * 1e3), n(Iz), n(chk.Mfy * 1e3), n(Iy));
+                end
+                rows = [rows; {
+                    ValidationReport.grp('Contrainte maximale au point le plus sollicité (N en N, M en N·mm)')
+                    hc('|σ| max (loi de Navier, sans le solveur)', ftxt, sh, bd.sigmaMaxAbs / 1e6, 'MPa')}];
+            end
             cmp = B.defl.comparison;
             bendOnly = ~contains(cmp.Methode, 'tranchant');   % la ligne « flexion + tranchant » s'écarte de l'effet de l'effort tranchant
             rows{end + 1, 1} = ValidationReport.grp(sprintf('Flèche (flexion seule) : écart maximal entre les méthodes = %.3g %% (la ligne « flexion + tranchant » de Castigliano est à part ; voir §4)', max(abs(cmp.Ecart_pct(bendOnly)))));
+        end
+
+        function rows = beamPlaneRows(sol, plane)
+            %BEAMPLANEROWS Équilibre global et torseur de cohésion (par la gauche) d'un plan de flexion.
+            %   plane 'y' : plan (x, y), Mfz et Ty ; plane 'z' : plan (x, z) équivalent (F' = Fz, C' = −My,
+            %   p' = pz), avec Mfy = −M' et Tz = T'.
+            hc = @ValidationReport.hc;
+            n = @ValidationReport.num;
+            mo = sol.model;
+            L = mo.L;
+            rea = sol.reactions;
+            pl = mo.pointLoads;
+            pm = mo.pointMoments;
+            dl = mo.distLoads;
+            if strcmp(plane, 'y')
+                fF = 'Fy'; fC = 'Mz'; fR = 'Ry'; sC = 1; sM = 1; Mpp = sol.Mfz; Tpp = sol.Ty;
+                lab = '(x, y)'; nM = 'Mfz'; nT = 'Ty'; nF = 'y';
+            else
+                fF = 'Fz'; fC = 'My'; fR = 'Rz'; sC = -1; sM = -1; Mpp = sol.Mfy; Tpp = sol.Tz;
+                lab = '(x, z)'; nM = 'Mfy'; nT = 'Tz'; nF = 'z';
+            end
+            px = []; F = [];
+            if ~isempty(pl), px = [pl.pos]; F = [pl.(fF)]; end
+            cx = []; C = [];
+            if ~isempty(pm), cx = [pm.pos]; C = sC * [pm.(fC)]; end
+            rp = [rea.pos]; rR = [rea.(fR)]; rM = sC * [rea.(fC)];
+            dist = struct('a', {}, 'b', {}, 'c', {});
+            for k = 1:numel(dl)
+                if strcmp(char(dl(k).dir), nF)
+                    dist(end + 1) = struct('a', dl(k).a, 'b', dl(k).b, 'c', dl(k).coeffs); %#ok<AGROW>
+                end
+            end
+            qint = @(d, f) integral(@(x) arrayfun(@(xx) polyval(d.c, xx - d.a) * f(xx), x), d.a, d.b);
+            sumF = sum(F) + sum(rR) + sum(arrayfun(@(d) qint(d, @(x) 1), dist));
+            sumM = sum(px .* F) + sum(C) + sum(rp .* rR) + sum(rM) + sum(arrayfun(@(d) qint(d, @(x) x), dist));
+            fsc = max([1, abs(F), abs(rR)]);
+            tolE = 1e-6 * fsc * max(1, L);
+            rows = {
+                ValidationReport.grp(sprintf('Équilibre global de la poutre, plan %s, recalculé à partir du modèle et des réactions du solveur', lab))
+                hc(sprintf('Équilibre des forces en %s (N)', nF), sprintf('\\sum F_%s=\\sum F_{ext}+\\sum R=%s\\ \\text{(attendu 0)}', nF, n(sumF)), sumF, 0, 'N', tolE)
+                hc(sprintf('Équilibre des moments du plan %s, en s = 0 (N·m)', lab), sprintf('\\sum M(0)=\\sum x_iF_i+\\int x\\,p\\,dx+\\sum C+\\sum(x_RR+M_R)=%s\\ \\text{(attendu 0)}', n(sumM)), sumM, 0, 'N·m', tolE * max(1, L))};
+            % coupes : abscisses types et extremum, décalées si elles tombent sur une charge ou un appui
+            s0 = [L * [0.1 0.25 0.5 0.75 0.9], sol.extrema.(nM).sMax];
+            posAll = [px, cx, rp];
+            for k = 1:numel(s0)
+                if any(abs(posAll - s0(k)) < 1e-9)
+                    if s0(k) + 1e-6 * L > L   % charge en s = L : couper juste avant, sinon la somme à gauche l'inclut
+                        s0(k) = s0(k) - 1e-6 * L;
+                    else
+                        s0(k) = s0(k) + 1e-6 * L;
+                    end
+                end
+            end
+            rows{end + 1, 1} = ValidationReport.grp(sprintf('Plan %s : %s et %s recalculés en sommant les actions à GAUCHE de la coupure (le solveur somme à droite)', lab, nM, nT));
+            for k = 1:numel(s0)
+                s = s0(k);
+                Mh = 0; Th = 0;
+                for i = 1:numel(px)
+                    if px(i) < s, Mh = Mh + (s - px(i)) * F(i); Th = Th - F(i); end
+                end
+                for i = 1:numel(cx)
+                    if cx(i) < s, Mh = Mh - C(i); end
+                end
+                for i = 1:numel(rp)
+                    if rp(i) < s, Mh = Mh + (s - rp(i)) * rR(i) - rM(i); Th = Th - rR(i); end
+                end
+                for i = 1:numel(dist)
+                    d = dist(i);
+                    if s > d.a
+                        bb = min(d.b, s);
+                        Mh = Mh + integral(@(x) arrayfun(@(xx) polyval(d.c, xx - d.a) * (s - xx), x), d.a, bb);
+                        Th = Th - integral(@(x) arrayfun(@(xx) polyval(d.c, xx - d.a), x), d.a, bb);
+                    end
+                end
+                Mh = sM * Mh;
+                Ms = BeamAndTrussSolver.ppEval(Mpp, s);
+                Ts = BeamAndTrussSolver.ppEval(Tpp, s);
+                tolM = 1e-6 * max(1, abs(Ms)) + 1e-6;
+                tolT = 1e-6 * max(1, abs(Ts)) + 1e-6;
+                rows{end + 1, 1} = hc(sprintf('%s en s = %.4g m', nM, s), sprintf('M(s)=\\sum_{gauche}\\left[(s-x_i)F_{i}-C_{i}\\right]+\\int(s-x)p\\,dx=%s\\,\\mathrm{kN\\cdot m}', n(Mh / 1e3)), Mh / 1e3, Ms / 1e3, 'kN·m', tolM / 1e3); %#ok<AGROW>
+                rows{end + 1, 1} = hc(sprintf('%s en s = %.4g m', nT, s), sprintf('T(s)=-\\sum_{gauche}F-\\int p\\,dx=%s\\,\\mathrm{kN}', n(Th / 1e3)), Th / 1e3, Ts / 1e3, 'kN', tolT / 1e3); %#ok<AGROW>
+            end
         end
     end
 

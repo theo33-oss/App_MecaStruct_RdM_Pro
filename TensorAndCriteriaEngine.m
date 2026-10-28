@@ -1564,15 +1564,7 @@ classdef TensorAndCriteriaEngine
 
         function tf = symbolicAvailable()
             %SYMBOLICAVAILABLE Disponibilité de la Symbolic Math Toolbox (résultat mis en cache).
-            persistent cached
-            if isempty(cached)
-                try
-                    cached = license('test', 'Symbolic_Toolbox') && ~isempty(ver('symbolic'));
-                catch
-                    cached = false;
-                end
-            end
-            tf = cached;
+            tf = DataManager.hasSymbolic();
         end
 
         function q = safeRatio(a, b)

@@ -345,11 +345,7 @@ classdef BucklingEngine
         function tf = hasSymbolic()
             %HASSYMBOLIC Vrai si la Symbolic Math Toolbox est installée et sous licence.
             %   tf = BucklingEngine.hasSymbolic()
-            persistent cached
-            if isempty(cached)
-                cached = license('test', 'Symbolic_Toolbox') && ~isempty(ver('symbolic'));
-            end
-            tf = cached;
+            tf = DataManager.hasSymbolic();
         end
     end
 
