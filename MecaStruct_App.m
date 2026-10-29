@@ -54,6 +54,7 @@ classdef MecaStruct_App < handle
         BtnVal                       % bouton « Dossier de validation » (onglets de calcul)
         BtnNote                      % bouton « Note de calcul » (Base de données uniquement)
         BtnGuide                     % bouton « Guide d'utilisation » (Base de données uniquement)
+        SectionWin                   % fenêtre « Voir la section » (une seule, fermée avec l'application)
     end
 
     properties (Constant, Access = private)
@@ -94,6 +95,9 @@ classdef MecaStruct_App < handle
 
         function delete(app)
             %DELETE Ferme proprement la fenêtre de l'application.
+            if ~isempty(app.SectionWin) && isvalid(app.SectionWin)
+                delete(app.SectionWin);
+            end
             if ~isempty(app.UIFigure) && isvalid(app.UIFigure)
                 delete(app.UIFigure);
             end
@@ -219,9 +223,40 @@ classdef MecaStruct_App < handle
             end
             F.mat.Value = D.mat;
             app.applyMaterial('Fla');
+            src = 'contour exact';
+            if isProfile
+                src = 'valeurs du catalogue';
+            end
+            info = sprintf('Section utilisée : %s (importée de Sections, %s).', ...
+                MecaStruct_App.sectionLabel(D.sec), src);
+            B.secInfo.Text = info;
+            F.secInfo.Text = info;
             B.W.Status.Text = msg;
             F.W.Status.Text = msgF;
             app.H.Sec.W.Status.Text = 'Section transmise aux onglets Poutres et Flambage.';
+        end
+
+        function fig = showBeamSection(app)
+            %SHOWBEAMSECTION Ouvre une fenêtre avec le dessin de la section utilisée par la poutre.
+            %   Les valeurs affichées sont celles des champs de l'onglet Poutres (celles du calcul).
+            B = app.H.Beam;
+            fig = [];
+            if isempty(app.BeamSection)
+                B.W.Status.Text = 'Section saisie à la main : aucune forme à dessiner. Utilisez « Importer depuis Sections » ou chargez un exemple.';
+                return
+            end
+            D = app.BeamSection;
+            if ~isempty(app.SectionWin) && isvalid(app.SectionWin)
+                delete(app.SectionWin);   % une seule fenêtre : on la redessine
+            end
+            fig = uifigure('Name', ['Section de la poutre : ' MecaStruct_App.sectionLabel(D.sec)], 'Position', [200 200 520 560], ...
+                'Visible', app.UIFigure.Visible);
+            gl = uigridlayout(fig, [2 1], 'RowHeight', {'1x', 40});
+            ax = uiaxes(gl);
+            PlotEngine.section(ax, D.sec, D.P);
+            uilabel(gl, 'Text', sprintf('Valeurs de la poutre : S = %.5g mm², Iz = %.5g mm⁴, Iy = %.5g mm⁴, Iyz = %.5g mm⁴', ...
+                B.S.Value, B.Iz.Value, B.Iy.Value, B.Iyz.Value), 'WordWrap', 'on');
+            app.SectionWin = fig;
         end
 
         function computeBeam(app)
@@ -2088,7 +2123,7 @@ classdef MecaStruct_App < handle
             S = struct('W', W);
             types = GeometryEngine.sectionTypes();
             types = types(~strcmp({types.type}, 'composite'));
-            app.addRow(g, 'Géométrie (dimensions en mm)', 'title');
+            app.addRow(g, '1. Géométrie (dimensions en mm)', 'title');
             S.type = app.addRow(g, 'Type de section', 'drop', {types.label}, {types.type});
             S.type.ValueChangedFcn = app.cbk(@() app.onSectionType(), 'Sections');
             dims = {'b', 'b — largeur selon z (mm)'; 'h', 'h — hauteur selon y (mm)'; 'D', 'D — diamètre extérieur (mm)'; ...
@@ -2103,7 +2138,7 @@ classdef MecaStruct_App < handle
             S.prof = app.addRow(g, 'Profilé du catalogue', 'drop', {'-'});
             S.mode = app.addRow(g, 'Méthode intégrale', 'drop', {'symbolique (int)', 'numérique (integral2)'}, {'symbolique', 'numerique'});
             S.mat = app.addRow(g, 'Matériau', 'drop', cellstr(app.DM.listMaterials()));
-            app.addRow(g, 'Efforts pour σ(y) et τ(y)', 'title');
+            app.addRow(g, '2. Efforts pour σ(y) et τ(y) (facultatif)', 'title');
             app.addRow(g, MecaStruct_App.effortHelp(), 'note', 150);
             S.N = app.addRow(g, 'N : traction > 0 (kN)', 'num');
             S.Mfz = app.addRow(g, 'Mfz : plan (x,y) (kN·m)', 'num');
@@ -2113,15 +2148,20 @@ classdef MecaStruct_App < handle
             S.Mfz.Tooltip = 'Moment de flexion autour de z. Mfz > 0 : fibres du haut (y > 0) comprimées, fibres du bas tendues.';
             S.Mfy.Tooltip = 'Moment de flexion autour de y. Mfy > 0 : fibres z > 0 tendues.';
             S.Ty.Tooltip = 'Effort tranchant selon y (pour la répartition de Jourawski).';
-            app.addRow(g, 'Reprendre les efforts de la poutre', 'title');
+            app.addRow(g, '… ou reprendre les efforts de la poutre calculée', 'title');
             S.s0 = app.addRow(g, 's sur la poutre (m)', 'num');
             S.s0.Tooltip = 'Abscisse de la coupure dans l''onglet Poutres (de 0 à L).';
-            app.addRow(g, '', 'buttons', {'Lire en s', app.cbk(@() app.loadFromBeam('Sec', 'abscisse'), 'Sections'), ...
-                'Point le plus sollicité', app.cbk(@() app.loadFromBeam('Sec', 'max'), 'Sections')});
+            hb = app.addRow(g, '', 'buttons', {'Efforts en s', app.cbk(@() app.loadFromBeam('Sec', 'abscisse'), 'Sections'), ...
+                'Efforts au point critique', app.cbk(@() app.loadFromBeam('Sec', 'max'), 'Sections')});
+            hb(1).Tooltip = 'Remplit N, Mfz, Mfy, Ty avec les efforts de la poutre à l''abscisse s.';
+            hb(2).Tooltip = 'Remplit N, Mfz, Mfy, Ty avec les efforts de la section la plus sollicitée de la poutre.';
             S.Kt = app.addRow(g, 'Kt (-)', 'num');
-            S.btnCalc = app.addRow(g, 'Calculer', 'button', app.cbk(@() app.computeSection(), 'Sections'));
-            app.addRow(g, 'Utiliser pour la poutre / le flambage', 'button', app.cbk(@() app.useSectionForBeam(), 'Sections'));
-            app.addRow(g, 'Recharger l''exemple', 'button', app.cbk(@() app.loadExample('Sections'), 'Sections'));
+            app.addRow(g, '3. Calcul et transfert', 'title');
+            S.btnCalc = app.addRow(g, 'Calculer la section', 'button', app.cbk(@() app.computeSection(), 'Sections'));
+            hu = app.addRow(g, 'Envoyer vers Poutres et Flambage →', 'button', app.cbk(@() app.useSectionForBeam(), 'Sections'));
+            hu.Tooltip = 'Recalcule puis recopie S, Iz, Iy, Ix, Iyz, ky, kz, fibres extrêmes et matériau dans Poutres et Flambage.';
+            hr = app.addRow(g, 'Recharger l''exemple', 'button', app.cbk(@() app.loadExample('Sections'), 'Sections'));
+            hr.Tooltip = 'Remet les dimensions et efforts de l''exemple de l''onglet.';
             app.addRow(g, ['Repère O1 au coin bas-gauche, z horizontal, y vertical. Méthode A : formules fermées + ' ...
                 'Huygens ; méthode B : intégrales doubles ; tabulée : catalogue (profilés).'], 'note', 64);
             app.H.Sec = S;
@@ -2188,6 +2228,9 @@ classdef MecaStruct_App < handle
             B.G = app.addRow(g, 'G (GPa)', 'num');
             B.Re = app.addRow(g, 'Re (MPa)', 'num');
             app.addRow(g, 'Section', 'title');
+            B.secInfo = app.addRow(g, '', 'note', 40);
+            B.secInfo.FontAngle = 'normal';
+            B.secInfo.FontWeight = 'bold';
             B.S = app.addRow(g, 'S (mm²)', 'num');
             B.Iz = app.addRow(g, 'Iz — flexion (x,y) (mm⁴)', 'num');
             B.Iy = app.addRow(g, 'Iy — flexion (x,z) (mm⁴)', 'num');
@@ -2197,10 +2240,13 @@ classdef MecaStruct_App < handle
             B.kz = app.addRow(g, 'kz — section réduite, tranchant Tz (-)', 'num');
             B.vy = app.addRow(g, 'Fibre extrême |y|max (mm)', 'num');
             B.vz = app.addRow(g, 'Fibre extrême |z|max (mm)', 'num');
-            for f = {'S', 'Iz', 'Iy', 'Iyz', 'vy', 'vz'}
+            for f = {'S', 'Iz', 'Iy', 'Ix', 'Iyz', 'ky', 'kz', 'vy', 'vz'}
                 B.(f{1}).ValueChangedFcn = @(~, ~) app.markBeamManual();
             end
-            app.addRow(g, 'Reprendre la section de l''onglet Sections', 'button', app.cbk(@() app.useSectionForBeam(), 'Poutres'));
+            hb = app.addRow(g, '', 'buttons', {'← Importer depuis Sections', app.cbk(@() app.useSectionForBeam(), 'Poutres'), ...
+                'Voir la section', app.cbk(@() app.showBeamSection(), 'Poutres')});
+            hb(1).Tooltip = 'Recopie S, Iz, Iy, Ix, Iyz, ky, kz, fibres extrêmes et matériau depuis l''onglet Sections.';
+            hb(2).Tooltip = 'Dessine la section utilisée par la poutre (contour, centre de gravité, axes).';
             app.addRow(g, 'Appuis', 'title');
             B.sup = app.addRow(g, '', 'table', 110, {'Position (m)', 'Type', 'Nom'}, {'numeric', app.SupportTypes, 'char'});
             app.addRow(g, '', 'buttons', {'Ajouter un appui', app.cbk(@() app.addTableRow(app.H.Beam.sup, {0, 'appui_simple', ''}), 'Poutres'), ...
@@ -2234,6 +2280,7 @@ classdef MecaStruct_App < handle
         function markBeamManual(app)
             app.BeamUsesSection = false;
             app.BeamSection = [];
+            app.H.Beam.secInfo.Text = 'Section utilisée : valeurs saisies à la main (aucune forme associée).';
         end
 
         function loadBeamExample(app, variant)
@@ -2259,7 +2306,8 @@ classdef MecaStruct_App < handle
             B.vy.Value = p.h / 2 * 1e3;
             B.vz.Value = p.b / 2 * 1e3;
             app.BeamUsesSection = false;
-            app.BeamSection = [];
+            app.BeamSection = struct('sec', GeometryEngine.fromProfile(p), 'P', P, 'mat', B.mat.Value);
+            B.secInfo.Text = 'Section utilisée : profilé IPE 300 (exemple, valeurs du catalogue).';
             B.pm.Data = cell(0, 5);
             switch variant
                 case 'hyperstatique'
@@ -2629,8 +2677,8 @@ classdef MecaStruct_App < handle
             app.addRow(g, 'Reprendre les efforts de la poutre', 'title');
             F.s0 = app.addRow(g, 's sur la poutre (m)', 'num');
             F.s0.Tooltip = 'Abscisse de la coupure dans l''onglet Poutres (de 0 à L).';
-            app.addRow(g, '', 'buttons', {'Lire en s', app.cbk(@() app.loadFromBeam('Fle', 'abscisse'), 'Flexion'), ...
-                'Point le plus sollicité', app.cbk(@() app.loadFromBeam('Fle', 'max'), 'Flexion')});
+            app.addRow(g, '', 'buttons', {'Efforts en s', app.cbk(@() app.loadFromBeam('Fle', 'abscisse'), 'Flexion'), ...
+                'Efforts au point critique', app.cbk(@() app.loadFromBeam('Fle', 'max'), 'Flexion')});
             app.addRow(g, 'Kt, matériau et sécurité', 'title');
             F.Kt = app.addRow(g, 'Kt (-)', 'num');
             F.mat = app.addRow(g, 'Matériau', 'drop', mats);
@@ -2657,11 +2705,14 @@ classdef MecaStruct_App < handle
             g = W.In;
             F = struct('W', W);
             app.addRow(g, 'Section', 'title');
+            F.secInfo = app.addRow(g, '', 'note', 40);
+            F.secInfo.FontAngle = 'normal';
+            F.secInfo.FontWeight = 'bold';
             F.fam = app.addRow(g, 'Famille de profilé', 'drop', cellstr(app.DM.listProfileFamilies()));
             F.fam.ValueChangedFcn = app.cbk(@() app.onFamilyChange('Fla'), 'Flambage');
             F.prof = app.addRow(g, 'Profilé', 'drop', {'-'});
             app.addRow(g, 'Charger le profilé', 'button', app.cbk(@() app.loadProfileForBuckling(), 'Flambage'));
-            app.addRow(g, 'Reprendre la section de l''onglet Sections', 'button', app.cbk(@() app.useSectionForBeam(), 'Flambage'));
+            app.addRow(g, '← Importer depuis Sections', 'button', app.cbk(@() app.useSectionForBeam(), 'Flambage'));
             F.S = app.addRow(g, 'S (mm²)', 'num');
             F.Iz = app.addRow(g, 'Iz (mm⁴)', 'num');
             F.Iy = app.addRow(g, 'Iy (mm⁴)', 'num');
@@ -2688,6 +2739,7 @@ classdef MecaStruct_App < handle
             F.Iz.Value = p.Iz * 1e12;
             F.Iy.Value = p.Iy * 1e12;
             F.W.Status.Text = sprintf('Profilé %s chargé (valeurs du catalogue).', p.Name);
+            F.secInfo.Text = sprintf('Section utilisée : profilé %s (valeurs du catalogue).', p.Name);
         end
 
         %% ------------------------------------- Tenseurs ---------------------------------------
@@ -3057,7 +3109,7 @@ classdef MecaStruct_App < handle
             s = ['Efforts au point étudié, repère de la poutre : x = ligne moyenne, y vertical vers le haut, z horizontal. ' ...
                 'N > 0 : traction. Mfz (charges verticales) > 0 : fibres du haut comprimées, fibres du bas tendues ' ...
                 '(poutre sur 2 appuis chargée vers le bas). Mfy (charges horizontales) > 0 : fibres z > 0 tendues. ' ...
-                'Pour une poutre déjà calculée : « Lire en s » ou « Point le plus sollicité » remplit N, Mfz, Mfy.'];
+                'Pour une poutre déjà calculée : « Efforts en s » ou « Efforts au point critique » remplit N, Mfz, Mfy.'];
         end
 
         function T = unitTable()

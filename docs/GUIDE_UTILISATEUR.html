@@ -143,7 +143,7 @@
 <!-- ============================================================ -->
 <h2 id="sections">5. Onglet Sections</h2>
 <figure><img src="img/02_sections.png" alt="Onglet Sections"><figcaption>Profil en I de 100 × 200 mm (âme de 8 mm, ailes de 12 mm). Le rapport compare les méthodes analytique, intégrale et catalogue.</figcaption></figure>
-<p><strong>Utilisation.</strong> Choisissez le type de section (rectangle, disque, couronne, I, T, U, L, rectangle creux ou profilé du catalogue), entrez les dimensions en mm, puis cliquez sur <em>Calculer</em>. Le bouton <em>Utiliser pour la poutre / le flambage</em> envoie la section aux autres onglets.</p>
+<p><strong>Utilisation.</strong> Choisissez le type de section (rectangle, disque, couronne, I, T, U, L, rectangle creux ou profilé du catalogue), entrez les dimensions en mm, puis cliquez sur <em>Calculer</em>. Le bouton <em>Envoyer vers Poutres et Flambage</em> envoie la section aux autres onglets.</p>
 <h3>Rappels</h3>
 <ul>
   <li><strong>Aire</strong> : $S = \iint dS$.</li>
@@ -168,7 +168,7 @@ Ces valeurs correspondent au rapport de l'application.</div>
 <p><strong>Utilisation.</strong></p>
 <ol>
   <li>Choisissez un exemple d'école (appui-appui, console, hyperstatique, deux travées) ou partez de zéro.</li>
-  <li>Entrez la longueur L, le matériau et la section. <em>Reprendre la section de l'onglet Sections</em> recopie S, Iz, Iy, etc.</li>
+  <li>Entrez la longueur L, le matériau et la section. <em>Importer depuis Sections</em> recopie S, Iz, Iy, etc. Le bandeau en gras sous « Section » indique quelle section est utilisée (exemple, import ou valeurs à la main) ; <em>Voir la section</em> la dessine.</li>
   <li>Remplissez les tableaux <strong>Appuis</strong> (position et type), <strong>Forces ponctuelles</strong>, <strong>Couples</strong> et <strong>Charges réparties</strong>. Une force vers le bas est négative ($F_y &lt; 0$).</li>
   <li>Cliquez sur <em>Calculer</em>, puis consultez les onglets Schéma, Diagrammes, Déformée et Équations par tronçon. Côté rapport : Réactions, Flèche (4 méthodes) et Énergie.</li>
 </ol>
@@ -366,7 +366,7 @@ Pour un vrai dimensionnement, ajoutez votre propre matériau dans la Base de don
 <h2 id="pieges">16. Pièges fréquents</h2>
 <ul>
   <li><strong>Limite : poutre hyperstatique avec $I_{yz}\neq0$.</strong> Pour une section sans axes principaux (une cornière, par exemple) sur une poutre hyperstatique, les réactions sont calculées plan par plan : le couplage y–z est ignoré et les résultats ne sont pas fiables. L'application et le dossier de validation l'affichent en rouge. Saisissez la section dans ses axes principaux ($I_{yz}=0$). En isostatique, tout est traité exactement.</li>
-  <li><strong>Champs $I_{yz}$ et $k_z$ de l'onglet Poutres.</strong> « Reprendre la section » les remplit. $k_z$ s'applique à l'effort tranchant selon z, $I_{yz}$ à la flexion déviée.</li>
+  <li><strong>Champs $I_{yz}$ et $k_z$ de l'onglet Poutres.</strong> « Importer depuis Sections » les remplit. $k_z$ s'applique à l'effort tranchant selon z, $I_{yz}$ à la flexion déviée.</li>
   <li><strong>Iz et Iy inversés par rapport aux catalogues.</strong> Dans l'application, l'axe fort d'un I debout est $z$ (flexion dans le plan x, y). Les catalogues Eurocode appellent cet axe $y$. Donc $I_z$(application) = $I_y$(catalogue).</li>
   <li><strong>Signes des charges</strong> : une force vers le bas s'écrit $F_y &lt; 0$, et une charge répartie vers le bas aussi.</li>
   <li><strong>Unités</strong> : sections en mm mais longueurs de poutre en m. En cas de doute, regardez la ligne « Données (SI) » du rapport.</li>

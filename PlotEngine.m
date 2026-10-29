@@ -423,6 +423,13 @@ classdef PlotEngine
                     [vMax, iM] = max(v); sMax = s(iM);
                     [vMin, im] = min(v); sMin = s(im);
                 end
+                lo = min([v 0]);
+                hi = max([v 0]);
+                if hi - lo == 0
+                    hi = 1; lo = -1;
+                end
+                ylim(ax, [lo - 0.30 * (hi - lo), hi + 0.30 * (hi - lo)]);   % avant les étiquettes : elles s'en servent
+                xlim(ax, [0 L]);
                 tol = 1e-9 * span;
                 if abs(vMax) > tol
                     peExtremum(ax, sMax, vMax, L, 'max', info.(c){3}, peUnitTex(c), cPos);
@@ -430,13 +437,6 @@ classdef PlotEngine
                 if abs(vMin) > tol && abs(vMin - vMax) > tol
                     peExtremum(ax, sMin, vMin, L, 'min', info.(c){3}, peUnitTex(c), cNeg);
                 end
-                lo = min([v 0]);
-                hi = max([v 0]);
-                if hi - lo == 0
-                    hi = 1; lo = -1;
-                end
-                ylim(ax, [lo - 0.30 * (hi - lo), hi + 0.30 * (hi - lo)]);
-                xlim(ax, [0 L]);
                 title(ax, info.(c){1}, 'Interpreter', 'latex');
                 ylabel(ax, info.(c){2}, 'Interpreter', 'latex');
                 if k == n
@@ -512,7 +512,7 @@ classdef PlotEngine
                 ylabel(ax, ['$' aName '$ (mrad)'], 'Interpreter', 'latex');
                 xlabel(ax, '$s$ (m)', 'Interpreter', 'latex');
                 if ~isempty(hh)
-                    legend(ax, hh, lab, 'Interpreter', 'latex', 'Location', 'best');
+                    legend(ax, hh, lab, 'Interpreter', 'latex', 'Location', 'southoutside', 'NumColumns', 3);   % hors du tracé : ne cache pas la courbe
                 end
                 hold(ax, 'off');
             end
@@ -561,14 +561,7 @@ classdef PlotEngine
                     vf = interp1(s, 1e3 * d.integration.v(:).', sf);
                     plot(ax, sf, vf, 'p', 'Color', cS, 'MarkerFaceColor', cS, 'MarkerSize', 12);
                     plot(ax, [sf sf], [0 vf], ':', 'Color', cS, 'LineWidth', 1.2);
-                    % étiquette à mi-hauteur de la cote verticale, côté le plus dégagé
-                    if sf > 0.5 * L
-                        lbl = sprintf('$f_{max} = %s$ mm en $s = %s$ m  ', peNum(abs(vf)), peNum(sf));
-                    else
-                        lbl = sprintf('  $f_{max} = %s$ mm en $s = %s$ m', peNum(abs(vf)), peNum(sf));
-                    end
-                    text(ax, sf, vf / 2, lbl, 'Interpreter', 'latex', 'Color', cS, 'VerticalAlignment', 'middle', ...
-                        'HorizontalAlignment', peHAlign(sf, 0.84 * L), 'FontSize', 11, 'BackgroundColor', ax.Color);
+                    lbl = sprintf('$f_{max} = %s$ mm en $s = %s$ m', peNum(abs(vf)), peNum(sf));
                 end
                 lo = min(vAll); hi = max(vAll);
                 if hi - lo == 0
@@ -576,6 +569,12 @@ classdef PlotEngine
                 end
                 ylim(ax, [lo - 0.3 * (hi - lo), hi + 0.3 * (hi - lo)]);
                 xlim(ax, [0 L]);
+                if exist('lbl', 'var')
+                    % étiquette sous le minimum de la flèche, dans la marge libre : aucun marqueur ni courbe dessous
+                    yl = ylim(ax);
+                    text(ax, sf, vf - 0.06 * (yl(2) - yl(1)), lbl, 'Interpreter', 'latex', 'Color', cS, 'VerticalAlignment', 'top', ...
+                        'HorizontalAlignment', 'center', 'FontSize', 11, 'BackgroundColor', ax.Color, 'Margin', 1);
+                end
                 title(ax, [peTx('Déformée') ' $' vName '(s)$'], 'Interpreter', 'latex');
                 ylabel(ax, ['$' vName '$ (mm)'], 'Interpreter', 'latex');
                 xlabel(ax, '$s$ (m)', 'Interpreter', 'latex');
@@ -762,8 +761,9 @@ classdef PlotEngine
                 tM = jour.tauMax / 1e6;
                 yM = jour.yAtMax * 1e3;
                 plot(ax, tM, yM, 'o', 'Color', [0.49 0.18 0.56], 'MarkerFaceColor', [0.49 0.18 0.56], 'MarkerSize', 7);
-                text(ax, tM, yM, sprintf('  $\\tau_{max} = %s$ MPa', peNum(tM)), 'Interpreter', 'latex', ...
-                    'Color', fg, 'HorizontalAlignment', peSignAlign(tM), 'VerticalAlignment', 'bottom', 'FontSize', 10);
+                text(ax, tM, yM + 0.05 * (yTopS - yBotS), sprintf('$\\tau_{max} = %s$ MPa', peNum(tM)), 'Interpreter', 'latex', ...
+                    'Color', fg, 'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', 'FontSize', 10, ...
+                    'BackgroundColor', ax.Color, 'Margin', 0.5);
                 tAbs = max(abs([t tM]));
                 if tAbs == 0
                     tAbs = 1;
@@ -856,19 +856,23 @@ classdef PlotEngine
                 end
             end
             hD = plot(ax, lD, sD, '-', 'Color', fg, 'LineWidth', 2.5);
-            xline(ax, lc, '-', sprintf('$\\lambda = %s$', peNum(lc)), 'Interpreter', 'latex', 'Color', fg, ...
-                'LabelVerticalAlignment', 'bottom', 'HandleVisibility', 'off');
-            xline(ax, ll, '-', sprintf('$\\lambda_{lim} = %s$', peNum(ll)), 'Interpreter', 'latex', 'Color', fg, ...
-                'LabelVerticalAlignment', 'bottom', 'HandleVisibility', 'off');
+            % étiquettes des seuils au pied de la droite, sur fond d'axe : elles ne traversent ni courbe ni droite
+            bg = {'BackgroundColor', ax.Color, 'Margin', 0.5};
+            xline(ax, lc, '-', 'HandleVisibility', 'off', 'Color', fg);
+            xline(ax, ll, '-', 'HandleVisibility', 'off', 'Color', fg);
+            text(ax, lc, 0.02 * yMax, sprintf('$\\lambda = %s$', peNum(lc)), 'Interpreter', 'latex', 'Color', fg, 'Rotation', 90, ...
+                'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 10);   % à droite de la droite (texte tourné)
+            text(ax, ll, 0.02 * yMax, sprintf('$\\lambda_{lim} = %s$', peNum(ll)), 'Interpreter', 'latex', 'Color', fg, 'Rotation', 90, ...
+                'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 10);
             hh = [hP hE hR hD];
             lab = {'Palier $\sigma = R_e$', 'Euler $\frac{\pi^2 E}{\lambda^2}$', ...
                 'Rankine $\frac{R_e}{1+(\lambda/\lambda_{lim})^2}$', 'Dimensionnement'};
             if ~isempty(b) && isstruct(b) && isfield(b, 'lambda')
                 sc = b.Pcrit / b.S / 1e6;
                 hc = plot(ax, b.lambda, sc, 'p', 'Color', [0.85 0.15 0.15], 'MarkerFaceColor', [0.85 0.15 0.15], 'MarkerSize', 13);
-                text(ax, b.lambda, sc, sprintf('  $\\lambda = %s$, $\\sigma_{cr} = %s$ MPa', peNum(b.lambda), peNum(sc)), ...
+                text(ax, b.lambda, sc + 0.05 * yMax, sprintf('$\\lambda = %s$, $\\sigma_{cr} = %s$ MPa', peNum(b.lambda), peNum(sc)), ...
                     'Interpreter', 'latex', 'Color', fg, 'VerticalAlignment', 'bottom', ...
-                    'HorizontalAlignment', peHAlign(b.lambda, lMax), 'FontSize', 10);
+                    'HorizontalAlignment', peHAlign(b.lambda, lMax), 'FontSize', 10, bg{:});
                 hh(end+1) = hc;
                 rg = char(b.regime);
                 lab{end+1} = sprintf('Point critique (%s)', [upper(rg(1)) rg(2:end)]);
@@ -876,9 +880,9 @@ classdef PlotEngine
                     sa = b.sigmaApplied / 1e6;
                     ha = plot(ax, b.lambda, sa, 'o', 'Color', [0.10 0.55 0.20], 'MarkerFaceColor', [0.10 0.55 0.20], 'MarkerSize', 9);
                     plot(ax, [b.lambda b.lambda], [sa sc], ':', 'Color', [0.10 0.55 0.20], 'LineWidth', 1.2, 'HandleVisibility', 'off');
-                    text(ax, b.lambda, sa, sprintf('  $\\sigma = P/S = %s$ MPa', peNum(sa)), 'Interpreter', 'latex', ...
+                    text(ax, b.lambda, sa - 0.05 * yMax, sprintf('$\\sigma = P/S = %s$ MPa', peNum(sa)), 'Interpreter', 'latex', ...
                         'Color', [0.10 0.55 0.20], 'VerticalAlignment', 'top', 'HorizontalAlignment', peHAlign(b.lambda, lMax), ...
-                        'FontSize', 10);
+                        'FontSize', 10, bg{:});
                     hh(end+1) = ha;
                     lab{end+1} = 'Point de fonctionnement';
                 end
@@ -935,20 +939,24 @@ classdef PlotEngine
             plot(ax, [A(1) B(1)], [A(2) B(2)], '-', 'Color', fg, 'LineWidth', 1);
             hA = plot(ax, A(1), A(2), 'o', 'Color', [0.85 0.15 0.15], 'MarkerFaceColor', [0.85 0.15 0.15], 'MarkerSize', 8);
             hB = plot(ax, B(1), B(2), 's', 'Color', [0.10 0.55 0.20], 'MarkerFaceColor', [0.10 0.55 0.20], 'MarkerSize', 8);
-            text(ax, A(1), A(2), ['  ' Alab], 'Interpreter', 'latex', 'Color', [0.85 0.15 0.15], 'FontSize', 10, ...
-                'VerticalAlignment', 'bottom');
-            text(ax, B(1), B(2), ['  ' Blab], 'Interpreter', 'latex', 'Color', [0.10 0.55 0.20], 'FontSize', 10, ...
-                'VerticalAlignment', 'top');
+            % étiquettes sur fond d'axe et décalées des marqueurs, axes et droites : aucune superposition
+            bg = {'BackgroundColor', ax.Color, 'Margin', 0.5};
+            % A et B : étiquette radiale, à l'extérieur du cercle (ne coupe ni le cercle ni les droites)
+            for q = {A, Alab, [0.85 0.15 0.15]; B, Blab, [0.10 0.55 0.20]}.'
+                u = (q{1} - [c 0]) / max(R, eps);
+                text(ax, q{1}(1) + 0.05 * ext * u(1), q{1}(2) + 0.05 * ext * u(2), q{2}, 'Interpreter', 'latex', 'Color', q{3}, ...
+                    'FontSize', 10, 'VerticalAlignment', peVAlign(-u(2)), 'HorizontalAlignment', peSignAlign(u(1)));
+            end
             hD = plot(ax, c, 0, '+', 'Color', fg, 'MarkerSize', 10, 'LineWidth', 1.5);
-            text(ax, c, 0, sprintf('$\\delta = %s$', peNum(c)), 'Interpreter', 'latex', 'Color', fg, ...
-                'VerticalAlignment', 'top', 'HorizontalAlignment', 'center', 'FontSize', 10);
+            text(ax, c, -0.06 * ext, sprintf('$\\delta = %s$', peNum(c)), 'Interpreter', 'latex', 'Color', fg, ...
+                'VerticalAlignment', 'top', 'HorizontalAlignment', 'center', 'FontSize', 10, bg{:});
             plot(ax, [c c + R * cos(pi / 4)], [0 R * sin(pi / 4)], '-', 'Color', fg, 'LineWidth', 0.8);
             text(ax, c + 0.55 * R * cos(pi / 4), 0.55 * R * sin(pi / 4), sprintf('$\\rho = %s$', peNum(R)), ...
-                'Interpreter', 'latex', 'Color', fg, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'bottom', 'FontSize', 10);
+                'Interpreter', 'latex', 'Color', fg, 'HorizontalAlignment', 'right', 'VerticalAlignment', 'bottom', 'FontSize', 10, bg{:});
             h1 = plot(ax, [c + R, c - R], [0 0], 'd', 'Color', fg, 'MarkerFaceColor', [0.93 0.69 0.13], 'MarkerSize', 8);
-            text(ax, c + R, 0, sprintf('  $%s = %s$', n1, peNum(c + R)), 'Interpreter', 'latex', 'Color', fg, ...
-                'VerticalAlignment', 'bottom', 'FontSize', 10);
-            text(ax, c - R, 0, sprintf('$%s = %s$  ', n2, peNum(c - R)), 'Interpreter', 'latex', 'Color', fg, ...
+            text(ax, c + R + 0.03 * ext, 0.05 * ext, sprintf('$%s = %s$', n1, peNum(c + R)), 'Interpreter', 'latex', 'Color', fg, ...
+                'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', 'FontSize', 10);
+            text(ax, c - R - 0.03 * ext, 0.05 * ext, sprintf('$%s = %s$', n2, peNum(c - R)), 'Interpreter', 'latex', 'Color', fg, ...
                 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'right', 'FontSize', 10);
             hh = [hC hA hB hD h1];
             lab = {['Cercle de Mohr (' un ')'], '$A$', '$B$', '$\delta$', ['$' n1 '$, $' n2 '$']};
@@ -965,7 +973,7 @@ classdef PlotEngine
                 plot(ax, [c A(1)], [0 A(2)], '--', 'Color', [0.85 0.15 0.15], 'LineWidth', 1);
                 am = (a0 + a1) / 2;
                 text(ax, c + 0.42 * R * cos(am), 0.42 * R * sin(am), sprintf('$2\\theta = %s^\\circ$', peNum(2 * theta * 180 / pi)), ...
-                    'Interpreter', 'latex', 'Color', [0.49 0.18 0.56], 'FontSize', 10);
+                    'Interpreter', 'latex', 'Color', [0.49 0.18 0.56], 'FontSize', 10, bg{:});
                 hF = plot(ax, Pf(1), Pf(2), 'p', 'Color', [0.49 0.18 0.56], 'MarkerFaceColor', [0.49 0.18 0.56], 'MarkerSize', 13);
                 if Pf(1) >= c
                     ha = 'right';
@@ -978,14 +986,14 @@ classdef PlotEngine
                 else
                     va = 'top';
                 end
-                text(ax, Pf(1), Pf(2) + up * 0.05 * ext, sprintf('$%s = %s$, $%s = %s$', sN, peNum(Pf(1)), tN, peNum(Pf(2))), ...
+                text(ax, Pf(1), Pf(2) + up * 0.09 * ext, sprintf('$%s = %s$, $%s = %s$', sN, peNum(Pf(1)), tN, peNum(Pf(2))), ...
                     'Interpreter', 'latex', 'Color', [0.49 0.18 0.56], 'FontSize', 10, 'VerticalAlignment', va, ...
-                    'HorizontalAlignment', ha);
+                    'HorizontalAlignment', ha, bg{:});
                 hh(end+1) = hF;
                 lab{end+1} = sprintf('Facette $\\theta = %s^\\circ$', peNum(theta * 180 / pi));
             end
             axis(ax, 'equal');
-            xl = [min(0, c - R) - 0.25 * ext, max(0, c + R) + 0.45 * ext];
+            xl = [min(0, c - R) - 0.65 * ext, max(0, c + R) + 0.65 * ext];   % marges pour les étiquettes σ1, σ2, A, B hors du cercle
             yl = 1.45 * max(R, 0.2 * ext) * [-1 1];
             xlim(ax, xl);
             ylim(ax, yl);
@@ -1038,23 +1046,28 @@ classdef PlotEngine
             tn = {'\sigma_I', '\sigma_{II}', '\sigma_{III}'};
             va = {'top', 'bottom', 'top'};
             for j = 1:3
-                text(ax, p(j), 0, sprintf('$%s = %s$', tn{j}, peNum(p(j))), 'Interpreter', 'latex', 'Color', fg, ...
-                    'VerticalAlignment', va{j}, 'HorizontalAlignment', 'center', 'FontSize', 10);
+                if j == 2      % contraintes extrêmes : à l'extérieur du grand cercle ; la médiane, au point de tangence, sur fond d'axe
+                    text(ax, p(j), 0.06 * ext, sprintf('$%s = %s$', tn{j}, peNum(p(j))), 'Interpreter', 'latex', 'Color', fg, ...
+                        'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center', 'FontSize', 10, 'BackgroundColor', ax.Color, 'Margin', 0.5);
+                else
+                    text(ax, p(j) + (2 - j) * 0.03 * ext, 0.05 * ext, sprintf('$%s = %s$', tn{j}, peNum(p(j))), 'Interpreter', 'latex', ...
+                        'Color', fg, 'VerticalAlignment', 'bottom', 'HorizontalAlignment', peSignAlign(2 - j), 'FontSize', 10);
+                end
             end
             if ra(3) > 0
                 plot(ax, [ce(3) ce(3)], [0 ra(3)], ':', 'Color', fg, 'LineWidth', 1);
                 text(ax, ce(3), ra(3), sprintf('$\\tau_{max} = %s$ MPa', peNum(ra(3))), 'Interpreter', 'latex', ...
-                    'Color', fg, 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center', 'FontSize', 10);
+                    'Color', fg, 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center', 'FontSize', 10, 'BackgroundColor', ax.Color, 'Margin', 0.5);
             end
             if ~isempty(point)
                 q = point(:).' * k;
                 hq = plot(ax, q(1), q(2), 'p', 'Color', [0.85 0.15 0.15], 'MarkerFaceColor', [0.85 0.15 0.15], 'MarkerSize', 13);
-                text(ax, q(1), q(2), sprintf('  $(%s, %s)$', peNum(q(1)), peNum(q(2))), 'Interpreter', 'latex', ...
-                    'Color', [0.85 0.15 0.15], 'FontSize', 10, 'VerticalAlignment', 'bottom');
+                text(ax, q(1), q(2) + 0.06 * ext, sprintf('$(%s, %s)$', peNum(q(1)), peNum(q(2))), 'Interpreter', 'latex', ...
+                    'Color', [0.85 0.15 0.15], 'FontSize', 10, 'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'center', 'BackgroundColor', ax.Color, 'Margin', 0.5);
                 hh(end+1) = hq; lab{end+1} = 'Facette';
             end
             axis(ax, 'equal');
-            xlim(ax, [min(0, p(3)) - 0.2 * ext, max(0, p(1)) + 0.2 * ext]);
+            xlim(ax, [min(0, p(3)) - 0.6 * ext, max(0, p(1)) + 0.6 * ext]);
             ylim(ax, 1.3 * max(ra(3), 0.2 * ext) * [-1 1]);
             xlabel(ax, '$\sigma_n$ (MPa)', 'Interpreter', 'latex');
             ylabel(ax, '$\tau$ (MPa)', 'Interpreter', 'latex');
@@ -1102,8 +1115,9 @@ classdef PlotEngine
                 q = point(:).' * k;
                 hq = plot(ax, q(1), q(2), 'p', 'Color', [0.49 0.18 0.56], 'MarkerFaceColor', [0.49 0.18 0.56], 'MarkerSize', 14);
                 plot(ax, [0 q(1)], [0 q(2)], '--', 'Color', [0.49 0.18 0.56], 'HandleVisibility', 'off');
-                text(ax, q(1), q(2), sprintf('  $(%s, %s)$', peNum(q(1)), peNum(q(2))), 'Interpreter', 'latex', ...
-                    'Color', [0.49 0.18 0.56], 'FontSize', 10, 'VerticalAlignment', 'bottom');
+                text(ax, q(1), q(2) - 0.07 * ext, sprintf('$(%s, %s)$', peNum(q(1)), peNum(q(2))), 'Interpreter', 'latex', ...
+                    'Color', [0.49 0.18 0.56], 'FontSize', 10, 'VerticalAlignment', 'top', 'HorizontalAlignment', 'center', ...
+                    'BackgroundColor', ax.Color, 'Margin', 0.5);
                 hh(end+1) = hq;
                 lab{end+1} = '\''{E}tat de contrainte $(\sigma_1, \sigma_2)$';
             end
@@ -1635,14 +1649,18 @@ end
 function peExtremum(ax, s, v, L, kind, nameTex, unitTex, col)
 % Marque et annote un extremum d'un diagramme.
 plot(ax, s, v, 'o', 'Color', col, 'MarkerFaceColor', col, 'MarkerSize', 6, 'HandleVisibility', 'off');
+% Étiquette décalée hors de la courbe (5 % de la hauteur de l'axe) et sur fond d'axe : rien ne la traverse.
+yl = ylim(ax);
+off = 0.05 * (yl(2) - yl(1));
 if strcmp(kind, 'max')
     va = 'bottom';
 else
     va = 'top';
+    off = -off;
 end
-text(ax, s, v, sprintf(' ${%s}_{%s} = %s$ %s en $s = %s$ m ', nameTex, kind, peNum(v), unitTex, peNum(s)), ...
+text(ax, s, v + off, sprintf(' ${%s}_{%s} = %s$ %s en $s = %s$ m ', nameTex, kind, peNum(v), unitTex, peNum(s)), ...
     'Interpreter', 'latex', 'Color', col, 'FontSize', 9, 'VerticalAlignment', va, ...
-    'HorizontalAlignment', peHAlign(s, L));
+    'HorizontalAlignment', peHAlign(s, L), 'BackgroundColor', ax.Color, 'Margin', 1);
 end
 
 function peDim(ax, p1, p2, txt, where, col, hs)
@@ -1660,7 +1678,7 @@ switch where
     otherwise
         args = {'HorizontalAlignment', 'left', 'VerticalAlignment', 'middle'};
 end
-text(ax, m(1), m(2), txt, 'Interpreter', 'latex', 'Color', col, 'FontSize', 10, args{:});
+text(ax, m(1), m(2), txt, 'Interpreter', 'latex', 'Color', col, 'FontSize', 10, 'BackgroundColor', ax.Color, 'Margin', 0.5, args{:});
 end
 
 function ps = peCirclePoly(c, r)

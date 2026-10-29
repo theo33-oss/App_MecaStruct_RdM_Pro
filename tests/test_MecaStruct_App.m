@@ -76,7 +76,7 @@ verifyTrue(testCase, contains(F.W.Status.Text, 'Attention'));
 app.computeBending();
 txt = strjoin(app.H.Fle.W.Report.Value, ' ');
 verifyTrue(testCase, contains(txt, 'fibres du haut'));
-% saisies de la poutre modifiées sans recalcul : « Lire en s » relit la poutre à jour
+% saisies de la poutre modifiées sans recalcul : « Efforts en s » relit la poutre à jour
 app.H.Beam.dl.Data = {0, 6, 'y', 'uniforme', '-20', 'q'};
 F.s0.Value = 3;
 app.loadFromBeam('Fle', 'abscisse');
@@ -86,7 +86,7 @@ verifyError(testCase, @() app.loadFromBeam('Sec', 'abscisse'), 'MecaStruct:App:i
 end
 
 function testPointLePlusSollicitSurSaut(testCase)
-% couple de 20 kN·m en s = 4 sur 6 m : Mfz saute de −13,33 à +6,67 ; « Point le plus sollicité » doit
+% couple de 20 kN·m en s = 4 sur 6 m : Mfz saute de −13,33 à +6,67 ; « Efforts au point critique » doit
 % lire 13,33 kN·m (côté retenu par la vérification), pas la limite à droite
 app = testCase.TestData.app;
 app.loadExample('Poutres', 'isostatique');
@@ -506,4 +506,24 @@ app.exportCurrentPlot('Base de données', f3);
 verifyTrue(testCase, isfile(f3));
 d = dir(f3);
 verifyGreaterThan(testCase, d.bytes, 1000);
+end
+
+%% ------------------------------------------------------------------------------------------
+function testInfoSectionPoutre(testCase)
+% bandeau « Section utilisée » de l'onglet Poutres et fenêtre « Voir la section »
+app = testCase.TestData.app;
+B = app.H.Beam;
+app.loadExample('Poutres');
+verifyTrue(testCase, contains(B.secInfo.Text, 'IPE 300'));
+S = app.H.Sec;
+S.type.Value = 'disque'; S.D.Value = 60;
+app.useSectionForBeam();
+verifyTrue(testCase, contains(B.secInfo.Text, 'disque'));
+verifyTrue(testCase, contains(app.H.Fla.secInfo.Text, 'disque'));
+fig = app.showBeamSection();
+verifyTrue(testCase, isvalid(fig));
+delete(fig);
+B.ky.Value = 2; B.ky.ValueChangedFcn([], []);
+verifyTrue(testCase, contains(B.secInfo.Text, 'main'));
+verifyEmpty(testCase, app.showBeamSection());
 end

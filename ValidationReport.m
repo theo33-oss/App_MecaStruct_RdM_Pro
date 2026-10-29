@@ -26,6 +26,13 @@ classdef ValidationReport
             end
             m = ValidationReport.meta(key);
             errs = {};
+            % thème clair dès le recalcul : couleurs de texte et de fond figées au tracé (gris clair invisible, fonds noirs)
+            try
+                th0 = app.UIFigure.Theme;
+                app.UIFigure.Theme = 'light';
+                clTheme = onCleanup(@() ValidationReport.restoreTheme(app, th0)); %#ok<NASGU>
+            catch
+            end
             for k = 1:numel(m.calls)
                 try
                     app.(m.calls{k})();
@@ -205,11 +212,12 @@ classdef ValidationReport
                     case 'matlab.ui.control.Label'
                         col = c.Layout.Column;
                         if numel(col) == 2 || ~isempty(strfind(c.FontWeight, 'bold')) %#ok<STREMP>
-                            if strcmp(c.FontWeight, 'bold')
+                            if strcmp(c.FontWeight, 'bold') && ~contains(c.Text, 'Calcul et transfert')   % titre d'étape de l'interface : sans objet dans le dossier
                                 if open
                                     html = [html '</table>']; %#ok<AGROW>
                                 end
-                                html = [html '<h3>' e(c.Text) '</h3><table class="kv">']; %#ok<AGROW>
+                                ttl = regexprep(c.Text, '^(\d+\.\s*|…\s*ou\s*)', '');   % numéros d'étapes de l'interface ≠ numéros du dossier
+                                html = [html '<h3>' e([upper(ttl(1:min(1, end))) ttl(2:end)]) '</h3><table class="kv">']; %#ok<AGROW>
                                 open = true;
                                 lastLabel = '';
                             end
@@ -467,7 +475,9 @@ classdef ValidationReport
                 axs = W.Axes{k};
                 for j = 1:numel(axs)
                     ax = axs(j);
-                    if ~isgraphics(ax) || ~strcmp(char(ax.Visible), 'on') || isempty(ax.Children)
+                    % axe inutilisé = axe vidé (cla) ; axe de pur texte = équations déjà données au §6 ;
+                    % la propriété Visible n'est pas fiable (« off » sur un axe tracé selon la sélection d'onglet)
+                    if ~isgraphics(ax) || isempty(ax.Children) || all(arrayfun(@(c) isa(c, 'matlab.graphics.primitive.Text'), ax.Children))
                         continue
                     end
                     f = fullfile(tmp, sprintf('p%d_%d.png', k, j));
@@ -1558,6 +1568,8 @@ classdef ValidationReport
                 '.rsec{font-weight:bold;color:#14406e;margin-top:10px;border-bottom:1px solid #cfd6df}.rln{white-space:pre-wrap}' ...
                 '.comment{border:1px solid #9aa5b4;min-height:90px;border-radius:4px}' ...
                 'mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}' ...
+                '.rep{overflow-x:auto}.rln{overflow-wrap:anywhere}figure img{height:auto;display:block;margin:0 auto}' ...
+                '@media(max-width:760px){table{display:block;overflow-x:auto}.hand{table-layout:auto}td.rv{white-space:normal}h2{flex-wrap:wrap}}' ...
                 '@media print{h2{break-after:avoid}table,figure,.eqblock{break-inside:avoid}h2 a.top{display:none}}'];
         end
     end
