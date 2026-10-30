@@ -45,7 +45,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E11 — truss_solver.py
   Port de solveTruss (btsSolveTruss, btsTrussProp, btsTrussNames, btsTrussReport) : nœuds et rigidités, 2D/3D, mécanisme. _linEq et _joinNums repris de beam_solver, _num et _texNum de pp. Écarts : lsqminnorm → np.linalg.lstsq ; rcond(Kff) < 1e-14 approché par cond2(Kff) > 1e14.
   pytest 547 passed (10 nouveaux : 4 cas golden truss dont l'erreur de mécanisme, portage des tests 739–890) ; ruff check et ruff format --check verts. Golden et tolérances inchangés.
-- [ ] E12 — solicitations.py
+- [x] E12 — solicitations.py
+  Port de traction, shear, jourawski, bearing, keyDesign, pinDesign, torsion, bendingStress et seCastigliano (quad epsrel 1e-12, ∂U/∂F par différence centrée). Écarts : methodUsed = 'numérique' (MATLAB écrit 'symbolique' quand SymPy est là ; golden ignore ce champ) ; checkLatex (rendu) remplacé par ASCII + accolades équilibrées ; seTp, seIf, seRx, seGauss reportés à E13.
+  pytest 579 passed (32 nouveaux : tests portés des 8 fonctions MATLAB + 14 cas golden) ; ruff check verts. Golden et tolérances inchangés.
 - [ ] E13 — deflection.py
 - [ ] E14 — buckling.py
 - [ ] E15 — tensors.py
