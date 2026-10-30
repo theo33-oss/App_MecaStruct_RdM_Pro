@@ -42,7 +42,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   Port de btsIntegralMethod (numérique par np.polyint ; symbolique par SymPy exact, même résultat), methodCheck, internalIntegral (6 pp + methodUsed, closure), equations, btsBeamReport découpé en aides `_rep*`. `_provisoire_E10` supprimé ; useSymbolic vaut faux par défaut (fiche), test_options adapté.
   pytest 537 passed ; ruff check et ruff format --check verts. Golden et tolérances inchangés (seules sMin/sMax restent ignorés dans le test golden) ; golden_beam.json ne contient ni internalIntegral ni equations : coupures ≡ intégrale est testé par test_coupures_egales_integrale.
   Rapports de appui_appui_uniforme et bi_encastree_uniforme relus : en français ; Ménabréa ≡ intégration à 5e-17 sur le second.
-- [ ] E11 — truss_solver.py
+- [x] E11 — truss_solver.py
+  Port de solveTruss (btsSolveTruss, btsTrussProp, btsTrussNames, btsTrussReport) : nœuds et rigidités, 2D/3D, mécanisme. _linEq et _joinNums repris de beam_solver, _num et _texNum de pp. Écarts : lsqminnorm → np.linalg.lstsq ; rcond(Kff) < 1e-14 approché par cond2(Kff) > 1e14.
+  pytest 547 passed (10 nouveaux : 4 cas golden truss dont l'erreur de mécanisme, portage des tests 739–890) ; ruff check et ruff format --check verts. Golden et tolérances inchangés.
 - [ ] E12 — solicitations.py
 - [ ] E13 — deflection.py
 - [ ] E14 — buckling.py
