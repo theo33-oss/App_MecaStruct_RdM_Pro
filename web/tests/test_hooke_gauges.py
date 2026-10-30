@@ -88,9 +88,9 @@ def _nombres(x):
         yield float(x)
 
 
-def _plus_grande_valeur(x) -> float:
-    """Plus grande valeur absolue finie d'une sortie attendue (0 si aucune)."""
-    return max((abs(v) for v in _nombres(x) if math.isfinite(v)), default=0.0)
+def _valeurs_finies(x) -> list[float]:
+    """Valeurs absolues finies d'une sortie attendue (scalaire, liste ou matrice)."""
+    return [abs(v) for v in _nombres(x) if math.isfinite(v)]
 
 
 def _est_matrice(x) -> bool:
@@ -98,48 +98,192 @@ def _est_matrice(x) -> bool:
     return isinstance(x, list) and any(isinstance(v, list) for v in x)
 
 
-def _champs(bloc, max_parent, chemin=()):
-    """Champs d'un bloc de résultats, chacun avec sa tolérance abs_ (règle par bloc, voir verifier_golden).
+# Familles physiques, classées par NOM de champ (jamais par le dictionnaire qui le contient). Servent aux champs
+# attendus à 0 et aux champs nuls en théorie : tolérance = 1e-12 × max de la famille dans le même cas.
+# Les noms 'sigma', 'tau', 'sigma1', 'sigma2' et 'tauMax2D' existent dans strain2D et stress2D : le dictionnaire
+# départage alors (voir _famille_champ). La famille angle n'a pas de règle « nul en théorie ».
+_NOMS_DEFORMATION = {
+    "exx",
+    "eyy",
+    "ezz",
+    "gxy",
+    "exy",
+    "epsI",
+    "epsII",
+    "eps",
+    "eps1",
+    "eps2",
+    "gammaHalf",
+    "gamma",
+    "gammaMax",
+    "gammaMax2D",
+    "readings",
+    "center",
+}
+_NOMS_CONTRAINTE = {
+    "sxx",
+    "syy",
+    "szz",
+    "sxy",
+    "sigma",
+    "sigmaI",
+    "sigmaII",
+    "sigmaVM",
+    "sigmaTresca",
+    "sigma1",
+    "sigma2",
+    "tau",
+    "tauMax2D",
+    "tauMax3D",
+    "principal3D",
+    "centerStress",
+    "radiusStress",
+}
+_NOMS_SOUPLESSE = {"S", "Sred"}
+_NOMS_RAIDEUR = {"C", "Cred", "Qred", "G"}
+_NOMS_ANGLE = {"theta", "thetaP", "thetaTauMax", "anglesDeg"}
+# Sortie matricielle de premier niveau : famille du cas (son nom de fonction)
+_FAMILLE_DU_CAS = {
+    "complianceIsotropic": "souplesse",
+    "complianceOrthotropic": "souplesse",
+    "stiffnessIsotropic": "raideur",
+    "stiffnessOrthotropic": "raideur",
+}
+# Famille de chaque entrée positionnelle des cas qui sont des listes (ν n'est pas pris en compte)
+_FAMILLES_ENTREES = {
+    "planeStress": ("contrainte", "contrainte", "contrainte", "raideur"),
+    "planeStrain": ("deformation", "deformation", "deformation", "raideur"),
+    "rosette45": ("deformation", "deformation", "deformation", "raideur"),
+    "rosette60": ("deformation", "deformation", "deformation", "raideur"),
+}
+_FAMILLES = ("deformation", "contrainte", "souplesse", "raideur", "angle")
 
-    Renvoie (chemin, valeur attendue, abs_). Un sous-dictionnaire est parcouru avec son propre bloc.
+
+# Un champ dont la plus grande valeur attendue est inférieure à SEUIL_NUL × l'échelle de sa famille est traité comme
+# nul en théorie : son écart n'est que du bruit d'arrondi (ex. stress2D.tau, attendu ±3,7e-9 pour une échelle de 1e8)
+SEUIL_NUL = 1e-9
+
+
+def _famille(nom: str) -> str | None:
+    """Famille physique d'un champ d'après son seul nom (None si le nom n'appartient à aucune famille)."""
+    if nom in _NOMS_ANGLE:
+        return "angle"
+    if nom in _NOMS_DEFORMATION:
+        return "deformation"
+    if nom in _NOMS_CONTRAINTE:
+        return "contrainte"
+    if nom in _NOMS_SOUPLESSE:
+        return "souplesse"
+    if nom in _NOMS_RAIDEUR:
+        return "raideur"
+    return None
+
+
+def _famille_champ(identifiant: str, chemin) -> str | None:
+    """Famille d'un champ, par ordre de priorité :
+    1. angle, reconnu par son nom (theta, thetaP, thetaTauMax, anglesDeg), quel que soit le dictionnaire ;
+    2. déformation si le chemin passe par strain2D, contrainte s'il passe par stress2D ;
+    3. sinon le nom du champ seul (souplesse, raideur, déformation, contrainte).
+    Une matrice de premier niveau prend la famille de son cas.
     """
-    max_bloc = _plus_grande_valeur(bloc)
-    for cle, val in bloc.items():
-        if cle in DEFAULT_IGNORE:
+    if not chemin:
+        return _FAMILLE_DU_CAS.get(identifiant)
+    nom = chemin[-1]
+    if nom in _NOMS_ANGLE:
+        return "angle"
+    if "strain2D" in chemin:
+        return "deformation"
+    if "stress2D" in chemin:
+        return "contrainte"
+    return _famille(nom)
+
+
+def _feuilles(x, chemin=()):
+    """(chemin, valeur) de chaque champ d'une sortie : dictionnaires parcourus, listes et scalaires gardés entiers."""
+    if isinstance(x, dict):
+        for cle, val in x.items():
+            if cle not in DEFAULT_IGNORE:
+                yield from _feuilles(val, chemin + (cle,))
+    else:
+        yield chemin, x
+
+
+def _tolerances(identifiant):
+    """Tolérance abs_ de chaque champ d'un cas golden (règle par champ, voir verifier_golden).
+
+    Renvoie une liste de (chemin, valeur attendue, abs_, étiquette). Étiquettes : 'propre' (champ non nul au-dessus
+    du seuil, tolérance 1e-12 × son propre max), 'residu' (checkResidual, 1e-9), 'NaN' (égalité stricte), 'angle'
+    (1e-12 × son propre max, ou 1e-12 si nul), 'deformation (nul)' / 'contrainte (nul en théorie)' etc. (champ
+    exactement nul ou nul en théorie : tolérance 1e-12 × max de la famille dans le même cas).
+    """
+    cas = get_case(GOLDEN, identifiant)
+    feuilles = list(_feuilles(cas["sortie"]))
+    familles = {f: [] for f in _FAMILLES}
+    for chemin, val in feuilles:
+        famille = _famille_champ(identifiant, chemin)
+        if famille and not isinstance(val, str):
+            familles[famille] += _valeurs_finies(val)
+    for position, famille in enumerate(_FAMILLES_ENTREES.get(identifiant, ())):
+        familles[famille].append(abs(float(cas["entrees"][position])))
+
+    lignes = []
+    for chemin, val in feuilles:
+        if isinstance(val, str) or val is None or isinstance(val, bool):
+            lignes.append((chemin, val, 0.0, "texte"))
             continue
-        if isinstance(val, dict):
-            yield from _champs(val, max_bloc, chemin + (cle,))
-        elif isinstance(val, str) or val is None:
-            yield chemin + (cle,), val, 0.0
-        elif cle == "checkResidual":
-            yield chemin + (cle,), val, 1e-9
-        elif _est_matrice(val):
-            yield chemin + (cle,), val, 1e-12 * (_plus_grande_valeur(val) or max_bloc or max_parent)
-        else:
-            yield chemin + (cle,), val, 1e-12 * (max_bloc or max_parent)
+        if chemin and chemin[-1] == "checkResidual":
+            lignes.append((chemin, val, 1e-9, "residu"))
+            continue
+        valeurs = _valeurs_finies(val)
+        if not valeurs:
+            lignes.append((chemin, val, 0.0, "NaN"))
+            continue
+        famille = _famille_champ(identifiant, chemin)
+        if famille == "angle":
+            # Pas de règle « nul en théorie » pour les angles : 1e-12 × leur propre échelle (1e-12 si nul)
+            lignes.append((chemin, val, 1e-12 * (max(valeurs) or 1.0), "angle"))
+            continue
+        echelle_famille = max(familles[famille], default=0.0) if famille else 0.0
+        if max(valeurs) > 0 and max(valeurs) >= SEUIL_NUL * echelle_famille:
+            lignes.append((chemin, val, 1e-12 * max(valeurs), "propre"))
+            continue
+        # Champ nul en théorie (ou exactement nul) : tolérance = 1e-12 × échelle de sa famille dans le cas
+        assert famille and echelle_famille > 0, f"{identifiant}.{'.'.join(chemin)} : pas de famille d'échelle"
+        etat = "nul" if max(valeurs) == 0 else "nul en théorie"
+        lignes.append((chemin, val, 1e-12 * echelle_famille, f"{famille} ({etat})"))
+    return lignes
 
 
 def verifier_golden(identifiant, actual):
-    """Comparaison à un cas golden : rel = 1e-9 et abs_ par bloc.
+    """Comparaison à un cas golden : rel = 1e-9 et abs_ par champ.
 
-    Règle (autorisée par Théo pour E16) : pour chaque champ, abs_ = 1e-12 × plus grande valeur absolue attendue du
-    plus petit bloc qui le contient. Ce bloc est la matrice elle-même si le champ est une matrice, sinon le
-    dictionnaire de résultats qui porte le champ (sous-dictionnaires compris). Un résidu sans unité (checkResidual)
-    reçoit abs_ = 1e-9. Si le bloc est entièrement nul, on prend le bloc parent.
+    Règle (autorisée par Théo pour E16, code de test seulement) :
+    - champ non nul au-dessus du seuil (scalaire, vecteur ou matrice) : abs_ = 1e-12 × plus grande valeur absolue de
+      ce champ ;
+    - champ nul en théorie, c'est-à-dire dont la plus grande valeur attendue est inférieure à 1e-9 × l'échelle de sa
+      famille dans le cas (ex. stress2D.tau de rosette60, attendu ±3,7e-9 pour des contraintes de 1e8 Pa, écart de
+      signe dû à l'arrondi) : abs_ = 1e-12 × l'échelle de la famille. Les champs exactement nuls suivent la même règle.
+      La famille se détermine par le nom du champ seul : déformations (exx, eyy, ezz, gxy, exy, epsI, epsII, eps,
+      eps1, eps2, gammaHalf, gamma, gammaMax, gammaMax2D, readings, centre de Mohr), contraintes (sxx, syy, szz, sxy,
+      sigma, sigmaI, sigmaII, sigmaVM, sigmaTresca, sigma1, sigma2, tau, tauMax2D, tauMax3D, principal3D, centerStress,
+      radiusStress), souplesse (S, Sred), raideur (C, Cred, Qred, G). Une matrice de premier niveau prend la famille de
+      son cas (complianceIsotropic : souplesse ; stiffnessIsotropic : raideur, etc.). Les entrées de même famille
+      comptent aussi (E est une raideur, planeStrain et rosette : e1, e2, e3 sont des déformations) ;
+    - angle (theta, thetaP, thetaTauMax, anglesDeg) : pas de règle « nul en théorie » ; abs_ = 1e-12 × leur propre
+      échelle, ou 1e-12 si leur valeur attendue est nulle ;
+    - checkResidual, résidu sans unité : abs_ = 1e-9.
+    Priorité de classement (_famille_champ) : angle par nom, puis dictionnaire strain2D (déformation) ou stress2D
+    (contrainte), puis nom seul. Les noms partagés sigma, tau, sigma1, sigma2 et tauMax2D sont ainsi départagés par
+    le dictionnaire, ce qui ne s'applique qu'à ces champs.
 
     Pourquoi la règle par cas (1e-12 × plus grande valeur du cas) est trop large : une seule grande valeur fixe la
-    tolérance absolue de tous les champs du cas. Dans planeStress, la matrice Qred vaut 2,3e11 : la tolérance
-    devient 0,23 et exx ≈ 4e-4 ou ezz ≈ 2e-4 pourraient s'écarter de 0,2 sans être vus. La règle par bloc évite cela
-    pour les matrices (Sred, Cred, Qred) et pour les sous-dictionnaires (strain2D, stress2D).
-    Limite connue : un champ scalaire ou vecteur placé directement dans un dictionnaire qui mélange contraintes et
-    déformations (planeStress, planeStrain, rosette45, rosette60) garde la tolérance de tout ce dictionnaire.
+    tolérance de tous les champs du cas. Dans planeStress, Qred vaut 2,3e11 : la tolérance devient 0,23 et exx ≈ 4e-4
+    pourrait s'écarter de 0,2 sans être vu. La règle par bloc (matrice ou dictionnaire entier) était aussi trop
+    large pour les champs placés directement dans un dictionnaire mêlant contraintes et déformations : dans rosette45,
+    le dictionnaire entier contient des contraintes de 1,3e8 Pa, donc exy (1e-4) avait une tolérance de 1,3e-4. La
+    règle par champ donne à chaque champ l'échelle de sa propre valeur.
     """
-    cas = get_case(GOLDEN, identifiant)
-    sortie = cas["sortie"]
-    if not isinstance(sortie, dict):
-        assert_matches(actual, sortie, rel=1e-9, abs_=1e-12 * _plus_grande_valeur(sortie))
-        return
-    for chemin, attendu, tol in _champs(sortie, 0.0):
+    for chemin, attendu, tol, _ in _tolerances(identifiant):
         obtenu = actual
         for cle in chemin:
             obtenu = obtenu[cle]
