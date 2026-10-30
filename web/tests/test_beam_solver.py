@@ -1,17 +1,20 @@
-"""Tests de beam_solver, sous-étapes E08a et E08b.
+"""Tests de beam_solver, sous-étapes E08a, E08b et E08c.
 
 E08a : options, normalisation du modèle, Gauss, matrices de coefficients, coupures. Portage de testInvalidInputs et de
 la partie normalisation de testNormalizationAndDefaults (tests/test_BeamAndTrussSolver.m) ; les erreurs passent ici par
 _normalizeModel et _beamOpts.
-E08b : sous-problèmes, Ménabréa, extrema, solveBeam (structure du résultat, mécanisme, E09). Les cas d'école de MATLAB
-et les golden viennent en E08c.
+E08b : sous-problèmes, Ménabréa, extrema, solveBeam (structure du résultat, mécanisme, E09).
+E08c : cas d'école de MATLAB (isostatiques et hyperstatiques par Ménabréa) et golden_beam.json hors ressort, tassement,
+rotule et thermique (E09). Non portés : methodCheck, hyperCheck, equations, reactionsIntegration (E09 et E10).
 """
 
 import copy
 import math
+import time
 
 import numpy as np
 import pytest
+from scipy.integrate import quad
 
 from mecastruct.core.beam_solver import (
     _actions,
@@ -40,7 +43,8 @@ from mecastruct.core.beam_solver import (
 )
 from mecastruct.core.data_manager import hasSymbolic
 from mecastruct.core.errors import MecaStructError
-from mecastruct.core.pp import PP, ppEval
+from mecastruct.core.pp import PP, ppDerivative, ppEval, ppIntegrate, ppScale
+from tests.golden_tools import assert_matches, case_ids, get_case
 
 COUPURES_MENABREA = {"hyperMethod": "menabrea", "internalMethod": "coupures"}
 MECANISME = "MecaStruct:Beam:mechanism"
@@ -452,3 +456,352 @@ def test_bendDisp_condText_reactionDiff():
     assert _reactionDiff(
         np.array([10.0, 0.0]), np.array([10.1, 0.0]), unk, True, np.array([100.0, 400.0])
     ) == pytest.approx(1e-3)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# E08c : cas d'école de tests/test_BeamAndTrussSolver.m (OPTS : Ménabréa et coupures seulement)
+# ---------------------------------------------------------------------------------------------------------------------
+
+OPTS = COUPURES_MENABREA
+EI = 210e9 * 8e-6
+
+
+def addF(m, pos, Fx, Fy, Fz):
+    m["pointLoads"].append({"pos": pos, "Fx": Fx, "Fy": Fy, "Fz": Fz, "name": f"F{len(m['pointLoads']) + 1}"})
+    return m
+
+
+def addC(m, pos, Mx, My, Mz):
+    m["pointMoments"].append({"pos": pos, "Mx": Mx, "My": My, "Mz": Mz, "name": f"C{len(m['pointMoments']) + 1}"})
+    return m
+
+
+def col(sol, champ):
+    """Valeurs d'un champ des réactions, dans l'ordre des appuis ([sol.reactions.Ry] de MATLAB)."""
+    return [r[champ] for r in sol["reactions"]]
+
+
+def deflectionAt(sol, EI, conds, sEval):
+    """Flèche par double intégration (ppIntegrate) : E I v'' = Mfz, v = I2 + C1 + C2 s ; renvoie (v, résidu).
+
+    conds : lignes (s, type), type 0 : v(s) = 0, type 1 : v'(s) = 0.
+    """
+    I1 = ppIntegrate(ppScale(sol["Mfz"], 1 / EI), 0.0)
+    I2 = ppIntegrate(I1, 0.0)
+    A = np.zeros((len(conds), 2))
+    b = np.zeros(len(conds))
+    for k, (s, typ) in enumerate(conds):
+        if typ == 0:
+            A[k] = [1.0, s]
+            b[k] = -ppEval(I2, s)
+        else:
+            A[k] = [0.0, 1.0]
+            b[k] = -ppEval(I1, s)
+    C = np.linalg.solve(A, b) if len(conds) == 2 else np.linalg.lstsq(A, b, rcond=None)[0]
+    v = ppEval(I2, sEval) + C[0] + C[1] * sEval
+    scale = np.max(np.abs(ppEval(I2, np.linspace(0, sol["model"]["L"], 21))))
+    return v, np.max(np.abs(A @ C - b)) / max(scale, np.finfo(float).tiny)
+
+
+def test_SimplySupportedCentralLoad():
+    L, P = 4.0, 1e4
+    m = addF(addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "appui_simple", "B"), L / 2, 0, -P, 0)
+    sol = solveBeam(m, OPTS)
+    assert sol["isostatic"]
+    assert [sol["h"][k] for k in ("axial", "xy", "xz", "torsion", "total", "plan2D")] == [0] * 6
+    assert col(sol, "Ry") == pytest.approx([P / 2, P / 2], rel=1e-12)
+    assert [r[c] for r in sol["reactions"] for c in ("Rx", "Rz", "Mz")] == [0] * 6
+    assert sol["extrema"]["Mfz"]["max"] == pytest.approx(P * L / 4, rel=1e-12)
+    assert sol["extrema"]["Mfz"]["sMax"] == pytest.approx(L / 2, abs=1e-12)
+    assert ppEval(sol["Mfz"], L / 2) == pytest.approx(P * L / 4, rel=1e-12)
+    # saut de Ty : Ty(a-) = Ty(a+) + Fy
+    assert ppEval(sol["Ty"], L / 2, "left") == pytest.approx(ppEval(sol["Ty"], L / 2, "right") - P, rel=1e-12)
+    assert ppEval(sol["Ty"], 1.0) == pytest.approx(-P / 2, rel=1e-12)
+    v, _ = deflectionAt(sol, EI, [(0, 0), (L, 0)], L / 2)  # flèche : PL³/(48EI)
+    assert v == pytest.approx(-P * L**3 / (48 * EI), rel=1e-10)
+    assert sol["menabrea"] == {} and sol["reactionsMenabrea"] == [] and sol["reactionsIntegration"] == []
+    assert list(sol["breaks"]) == [0.0, L / 2, L]
+
+
+def test_CantileverTipLoad():
+    L, P = 3.0, 2e3
+    sol = solveBeam(addF(addSup(baseModel(L), 0, "encastrement", "A"), L, 0, -P, 0), OPTS)
+    assert sol["isostatic"] and sol["h"]["total"] == 0
+    assert ppEval(sol["Mfz"], 0.0) == pytest.approx(-P * L, rel=1e-12)
+    assert sol["reactions"][0]["Ry"] == pytest.approx(P, rel=1e-12)
+    assert sol["reactions"][0]["Mz"] == pytest.approx(P * L, rel=1e-12)
+    assert sol["extrema"]["Mfz"]["min"] == pytest.approx(-P * L, rel=1e-12)
+    assert sol["extrema"]["Mfz"]["sMin"] == 0
+    v, _ = deflectionAt(sol, EI, [(0, 0), (0, 1)], L)
+    assert v == pytest.approx(-P * L**3 / (3 * EI), rel=1e-10)
+
+
+def test_SimplySupportedUniform():
+    L, q = 6.0, 5e3
+    m = addQ(addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "appui_simple", "B"), 0, L, "y", -q)
+    sol = solveBeam(m, OPTS)
+    assert col(sol, "Ry") == pytest.approx([q * L / 2, q * L / 2], rel=1e-12)
+    assert sol["extrema"]["Mfz"]["max"] == pytest.approx(q * L**2 / 8, rel=1e-12)
+    assert sol["extrema"]["Mfz"]["sMax"] == pytest.approx(L / 2, rel=1e-10)
+    v, _ = deflectionAt(sol, EI, [(0, 0), (L, 0)], L / 2)
+    assert v == pytest.approx(-5 * q * L**4 / (384 * EI), rel=1e-10)
+    # relations différentielles : dTy/ds = -py et Ty = -dMfz/ds
+    t = np.array([0.4, 2.2, 5.1])
+    assert ppEval(ppDerivative(sol["Ty"]), t) == pytest.approx(q * np.ones(3), rel=1e-12)
+    assert ppEval(ppDerivative(sol["Mfz"]), t) == pytest.approx(-ppEval(sol["Ty"], t), rel=1e-12)
+
+
+def test_ProppedCantileverUniform():
+    L, q = 5.0, 1e3
+    m = addQ(addSup(addSup(baseModel(L), 0, "encastrement", "A"), L, "appui_simple", "B"), 0, L, "y", -q)
+    sol = solveBeam(m, OPTS)
+    assert not sol["isostatic"] and sol["h"]["xy"] == 1 and sol["h"]["plan2D"] == 1
+    A, B = sol["reactions"]
+    assert B["Ry"] == pytest.approx(3 * q * L / 8, rel=1e-12)
+    assert A["Ry"] == pytest.approx(5 * q * L / 8, rel=1e-12)
+    assert A["Mz"] == pytest.approx(q * L**2 / 8, rel=1e-12)
+    assert ppEval(sol["Mfz"], 0.0) == pytest.approx(-q * L**2 / 8, rel=1e-12)
+    assert sol["extrema"]["Mfz"]["max"] == pytest.approx(9 * q * L**2 / 128, rel=1e-12)
+    assert sol["extrema"]["Mfz"]["sMax"] == pytest.approx(5 * L / 8, rel=1e-10)
+    # Ménabréa : système de base console, X = Y_B
+    men = sol["menabrea"]["xy"]
+    assert men["unknowns"] == ["Y_B"]
+    assert men["X"] == pytest.approx(3 * q * L / 8, rel=1e-12)
+    assert men["delta"] == pytest.approx(L**3 / (3 * EI), rel=1e-12)
+    assert men["rhs"] == pytest.approx(q * L**4 / (8 * EI), rel=1e-12)
+    assert sol["reactionsMenabrea"][0]["Mz"] == pytest.approx(q * L**2 / 8, rel=1e-12)
+    # compatibilité cinématique : v(0) = v'(0) = v(L) = 0 vérifiées ensemble
+    _, res = deflectionAt(sol, EI, [(0, 0), (0, 1), (L, 0)], L / 2)
+    assert res < 1e-12
+
+
+def test_TwoEqualSpansUniform():
+    L, q = 4.0, 2e3
+    m = addSup(addSup(addSup(baseModel(2 * L), 0, "pivot", "A"), L, "appui_simple", "B"), 2 * L, "appui_simple", "C")
+    sol = solveBeam(addQ(m, 0, 2 * L, "y", -q), OPTS)
+    assert sol["h"]["xy"] == 1
+    assert col(sol, "Ry") == pytest.approx([3 * q * L / 8, 5 * q * L / 4, 3 * q * L / 8], rel=1e-12)
+    assert ppEval(sol["Mfz"], L) == pytest.approx(-q * L**2 / 8, rel=1e-12)
+    assert sol["menabrea"]["xy"]["unknowns"] == ["Y_B"]
+    _, res = deflectionAt(sol, EI, [(0, 0), (L, 0), (2 * L, 0)], L / 2)
+    assert res < 1e-12
+
+
+def test_FixedFixedUniform():
+    L, q = 4.0, 3e3
+    m = addQ(addSup(addSup(baseModel(L), 0, "encastrement", "A"), L, "encastrement", "B"), 0, L, "y", -q)
+    sol = solveBeam(m, OPTS)
+    assert [sol["h"][k] for k in ("axial", "xy", "xz", "torsion", "total")] == [1, 2, 2, 1, 6]
+    assert ppEval(sol["Mfz"], np.array([0.0, L / 2, L])) == pytest.approx(
+        [-q * L**2 / 12, q * L**2 / 24, -q * L**2 / 12], rel=1e-11
+    )
+    assert col(sol, "Ry") == pytest.approx([q * L / 2, q * L / 2], rel=1e-12)
+    assert col(sol, "Mz") == pytest.approx([q * L**2 / 12, -q * L**2 / 12], rel=1e-11)
+    v, _ = deflectionAt(sol, EI, [(0, 0), (0, 1)], L / 2)
+    assert v == pytest.approx(-q * L**4 / (384 * EI), rel=1e-10)
+    _, res = deflectionAt(sol, EI, [(0, 0), (0, 1), (L, 0), (L, 1)], L / 2)
+    assert res < 1e-12
+    men = sol["menabrea"]["xy"]
+    assert sorted(men["unknowns"]) == ["Mz_B", "Y_B"] and np.shape(men["delta"]) == (2, 2)
+
+
+def test_AxialBarFixedFixed():
+    L, F = 4.0, 6e3
+    m = addF(addSup(addSup(baseModel(L), 0, "encastrement", "A"), L, "encastrement", "B"), L / 2, F, 0, 0)
+    sol = solveBeam(m, OPTS)
+    assert sol["h"]["axial"] == 1
+    assert col(sol, "Rx") == pytest.approx([-F / 2, -F / 2], rel=1e-12)
+    assert ppEval(sol["N"], np.array([1.0, 3.0])) == pytest.approx([F / 2, -F / 2], rel=1e-12)
+    men = sol["menabrea"]["axial"]
+    assert men["unknowns"] == ["X_B"] and men["X"] == pytest.approx(-F / 2, rel=1e-12)
+    # position quelconque : répartition selon les raideurs
+    a = 1.0
+    m2 = addF(addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "rotule", "B"), a, F, 0, 0)
+    sol2 = solveBeam(m2, OPTS)
+    assert col(sol2, "Rx") == pytest.approx([-F * (L - a) / L, -F * a / L], rel=1e-12)
+    assert sol2["h"]["axial"] == 1 and sol2["h"]["xy"] == 0
+
+
+def test_LoadsInPlaneXZ():
+    L, P, q, C0, a = 4.0, 8e3, 2e3, 5e3, 1.0
+    # (a) force Fz centrée sur poutre sur deux appuis
+    m = addF(addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "appui_simple", "B"), L / 2, 0, 0, -P)
+    sol = solveBeam(m, OPTS)
+    assert col(sol, "Rz") == pytest.approx([P / 2, P / 2], rel=1e-12)
+    assert ppEval(sol["Mfy"], L / 2) == pytest.approx(-P * L / 4, rel=1e-12)
+    assert ppEval(sol["Tz"], 1.0) == pytest.approx(-P / 2, rel=1e-12)
+    t = np.array([0.5, 1.7, 2.6, 3.9])
+    assert ppEval(ppDerivative(sol["Mfy"]), t) == pytest.approx(ppEval(sol["Tz"], t), rel=1e-12)
+    assert sol["extrema"]["Mfz"]["max"] == 0
+    # (b) encastrée-appuyée dans le plan xz, charge pz uniforme
+    m = addQ(addSup(addSup(baseModel(L), 0, "encastrement", "A"), L, "appui_simple", "B"), 0, L, "z", -q)
+    sol = solveBeam(m, OPTS)
+    assert sol["h"]["xz"] == 1
+    assert sol["reactions"][1]["Rz"] == pytest.approx(3 * q * L / 8, rel=1e-12)
+    assert sol["reactions"][0]["My"] == pytest.approx(-q * L**2 / 8, rel=1e-12)
+    assert ppEval(sol["Mfy"], 0.0) == pytest.approx(q * L**2 / 8, rel=1e-12)
+    # flèche w : E Iy w'' = -Mfy, w(L) = 0 pour la console équivalente
+    EIy = 210e9 * 3e-6
+    I2 = ppIntegrate(ppIntegrate(ppScale(sol["Mfy"], -1 / EIy)))
+    wmax = np.max(np.abs(ppEval(I2, np.linspace(0, L, 41))))
+    assert wmax > 0
+    assert ppEval(I2, L) == pytest.approx(0.0, abs=1e-12 * wmax)
+    # (c) couple My sur poutre sur deux appuis
+    m = addC(addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "appui_simple", "B"), a, 0, C0, 0)
+    sol = solveBeam(m, OPTS)
+    assert col(sol, "Rz") == pytest.approx([-C0 / L, C0 / L], rel=1e-12)
+    assert ppEval(sol["Mfy"], a, "left") - ppEval(sol["Mfy"], a, "right") == pytest.approx(C0, rel=1e-12)
+
+
+def test_Torsion():
+    L, C, a = 4.0, 900.0, 1.0
+    sol = solveBeam(addC(addSup(baseModel(L), 0, "encastrement", "A"), L, C, 0, 0), OPTS)
+    assert sol["reactions"][0]["Mx"] == pytest.approx(-C, rel=1e-12)
+    assert ppEval(sol["Mt"], np.array([0.0, 2.0, L])) == pytest.approx([C, C, C], rel=1e-12)
+    assert sol["h"]["torsion"] == 0
+    # arbre bi-encastré : couple en a
+    m = addC(addSup(addSup(baseModel(L), 0, "encastrement", "A"), L, "encastrement", "B"), a, C, 0, 0)
+    sol = solveBeam(m, OPTS)
+    assert sol["h"]["torsion"] == 1
+    assert col(sol, "Mx") == pytest.approx([-C * (L - a) / L, -C * a / L], rel=1e-12)
+    assert ppEval(sol["Mt"], np.array([0.5, 2.0])) == pytest.approx([C * (L - a) / L, -C * a / L], rel=1e-12)
+    assert sol["menabrea"]["torsion"]["unknowns"] == ["Mx_B"]
+
+
+def test_PointCouple():
+    L, C0, a = 4.0, 4e3, 1.0
+    m = addC(addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "appui_simple", "B"), a, 0, 0, C0)
+    sol = solveBeam(m, OPTS)
+    assert col(sol, "Ry") == pytest.approx([C0 / L, -C0 / L], rel=1e-12)
+    Ml, Mr = ppEval(sol["Mfz"], a, "left"), ppEval(sol["Mfz"], a, "right")
+    assert Ml == pytest.approx(C0 * a / L, rel=1e-12)
+    assert Mr == pytest.approx(-C0 * (L - a) / L, rel=1e-12)
+    assert Ml - Mr == pytest.approx(C0, rel=1e-12)
+    assert sol["extrema"]["Mfz"]["max"] == pytest.approx(C0 * a / L, rel=1e-12)
+    assert sol["extrema"]["Mfz"]["min"] == pytest.approx(-C0 * (L - a) / L, rel=1e-12)
+
+
+def test_TriangularLinearLoad():
+    L, q0 = 6.0, 3e3
+    m = addQ(addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "appui_simple", "B"), 0, L, "y", [-q0 / L, 0.0])
+    sol = solveBeam(m, OPTS)
+    assert col(sol, "Ry") == pytest.approx([q0 * L / 6, q0 * L / 3], rel=1e-12)
+    assert sol["extrema"]["Mfz"]["max"] == pytest.approx(q0 * L**2 / (9 * math.sqrt(3)), rel=1e-12)
+    assert sol["extrema"]["Mfz"]["sMax"] == pytest.approx(L / math.sqrt(3), rel=1e-9)
+
+
+def test_PartialTrapezoidLoadLocalXi():
+    # charge linéaire de p1 = -2000 (s = 1) à p2 = -6000 (s = 3), ξ = s - a
+    L, a, b, p1, p2 = 4.0, 1.0, 3.0, -2000.0, -6000.0
+    m = addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "appui_simple", "B")
+    sol = solveBeam(addQ(m, a, b, "y", [(p2 - p1) / (b - a), p1]), OPTS)
+    W = (b - a) * (p1 + p2) / 2
+    xbar = a + (b - a) * (p1 + 2 * p2) / (3 * (p1 + p2))
+    RB = -W * xbar / L
+    RA = -W - RB
+    assert col(sol, "Ry") == pytest.approx([RA, RB], rel=1e-12)
+    assert list(sol["breaks"]) == [0.0, 1.0, 3.0, 4.0]
+
+    def p(x):
+        return p1 + (p2 - p1) / (b - a) * (x - a)
+
+    def integrale(f, s):
+        """∫_s^L f(x)·1[a ≤ x ≤ b] dx, par quad sur la partie chargée [max(s, a), b]."""
+        return quad(f, max(s, a), b, epsabs=1e-12, epsrel=1e-13)[0] if s < b else 0.0
+
+    for s in (0.5, 1.5, 2.0, 2.7, 3.5):
+        Ty = RB + integrale(p, s)
+        Mz = (L - s) * RB + integrale(lambda x, s=s: (x - s) * p(x), s)
+        assert ppEval(sol["Ty"], s) == pytest.approx(Ty, rel=1e-9)
+        assert ppEval(sol["Mfz"], s) == pytest.approx(Mz, rel=1e-9)
+    assert ppEval(sol["Mfz"], 2.0) == pytest.approx(6000.0, rel=1e-12)
+    assert list(sol["model"]["distLoads"][0]["coeffs"]) == [(p2 - p1) / (b - a), p1]
+
+
+def test_MechanismDetection():
+    L = 4.0
+    # un seul appui simple, force excentrée : mécanisme
+    verifier_erreur(MECANISME, solveBeam, addF(addSup(baseModel(L), 0, "appui_simple", "A"), 2, 0, -1e3, 0), OPTS)
+    # deux appuis simples et effort axial : mécanisme axial
+    m = addSup(addSup(baseModel(L), 0, "appui_simple", "A"), L, "appui_simple", "B")
+    verifier_erreur(MECANISME, solveBeam, addF(m, 2, 1e3, 0, 0), OPTS)
+    # aucune liaison et force : mécanisme
+    verifier_erreur(MECANISME, solveBeam, addF(baseModel(L), 2, 0, -1e3, 0), OPTS)
+    # torsion sans encastrement : mécanisme
+    m = addSup(addSup(baseModel(L), 0, "pivot", "A"), L, "appui_simple", "B")
+    verifier_erreur(MECANISME, solveBeam, addC(m, 2, 500, 0, 0), OPTS)
+    # deux appuis au même point, force ailleurs : mécanisme
+    m = addSup(addSup(baseModel(L), 1, "pivot", "A"), 1, "appui_simple", "B")
+    verifier_erreur(MECANISME, solveBeam, addF(m, 3, 0, -1e3, 0), OPTS)
+    # sous-problèmes non chargés ou chargements équilibrés : pas d'erreur
+    m = addSup(addSup(baseModel(L), 0, "appui_simple", "A"), L, "appui_simple", "B")
+    m = addC(addC(addF(m, 2, 0, -1e3, 0), 1, 300, 0, 0), 3, -300, 0, 0)
+    sol = solveBeam(m, OPTS)
+    assert col(sol, "Ry") == pytest.approx([500, 500], rel=1e-12)
+    assert sol["h"]["axial"] == 0 and sol["h"]["torsion"] == 0 and sol["h"]["plan2D"] == -1
+    # Mt(s) = Σ_droite Mx : entre les deux couples, seul -300 (en s = 3) est à droite
+    assert ppEval(sol["Mt"], np.array([0.5, 2.0, 3.5])) == pytest.approx([0, -300, 0], abs=1e-12)
+    # appui unique sous la force : chargement compatible
+    sol = solveBeam(addF(addSup(baseModel(L), 2, "appui_simple", "A"), 2, 0, -1e3, 0), OPTS)
+    assert sol["reactions"][0]["Ry"] == pytest.approx(1e3, rel=1e-12) and sol["h"]["total"] == 0
+
+
+def test_FastPathPerformance():
+    m = addSup(addSup(addSup(baseModel(6), 0, "pivot", "A"), 3, "appui_simple", "B"), 6, "appui_simple", "C")
+    for pos, fy in ((1, -1000), (2, -2000), (4, -1500), (5, -500)):
+        addF(m, pos, 0, fy, 0)
+    solveBeam(m, OPTS)  # échauffement
+    t0 = time.perf_counter()
+    for _ in range(50):
+        sol = solveBeam(m, OPTS)
+    duree = time.perf_counter() - t0
+    assert duree < 1.0, f"chemin rapide trop lent : {1000 * duree / 50:.1f} ms par appel"
+    assert sum(col(sol, "Ry")) == pytest.approx(5000, rel=1e-12)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# E08c : golden_beam.json, cas solveBeam sans ressort, tassement, rotule ni thermique (ceux-là sont en E09)
+# ---------------------------------------------------------------------------------------------------------------------
+
+HORS_E08 = ("gerber_", "appui_elastique_", "tassement_", "thermique_")
+IDS_GOLDEN = [i for i in case_ids("golden_beam.json", suffix="_solveBeam") if not i.startswith(HORS_E08)]
+# Ignorés par assert_matches : E09 / E10, et les abscisses sMin / sMax, comparées à part par verifie_abscisses_extrema.
+IGNORE_GOLDEN = {
+    "equations",
+    "internalIntegral",
+    "methodCheck",
+    "hyperCheck",
+    "reactionsIntegration",
+    "integration",
+    "sMin",
+    "sMax",
+}
+
+
+def verifie_abscisses_extrema(sol, extrema):
+    """Compare les abscisses sMin et sMax de Python à celles du golden, avec le repli autorisé par Théo (E08c).
+
+    Quand deux abscisses donnent exactement le même extremum (bi_encastree_uniforme : Mfz(0) = Mfz(L) = −12 000 N·m),
+    MATLAB et Python les départagent par le bruit d'arrondi (1e-15 relatif) et retiennent deux abscisses différentes.
+    Si l'abscisse de Python diffère de celle du golden (rel 1e-9, abs 1e-6 m), on vérifie alors que la valeur de la
+    fonction à l'abscisse de Python égale l'extremum du golden à rel 1e-9. Cela ne concerne que les champs sMin et
+    sMax ; le golden et les autres tolérances sont inchangés.
+    """
+    for nom, e in extrema.items():
+        for champ_s, champ_v in (("sMax", "max"), ("sMin", "min")):
+            s = sol["extrema"][nom][champ_s]
+            if math.isclose(s, e[champ_s], rel_tol=1e-9, abs_tol=1e-6):
+                continue
+            v = ppEval(sol[nom], s)
+            assert math.isclose(v, e[champ_v], rel_tol=1e-9), (
+                f"extrema.{nom}.{champ_s} : {e[champ_s]!r} attendu, obtenu {s!r} ; "
+                f"valeur à cette abscisse {v!r} au lieu de l'extremum {e[champ_v]!r}"
+            )
+
+
+@pytest.mark.parametrize("cid", IDS_GOLDEN)
+def test_golden_solveBeam(cid):
+    c = get_case("golden_beam.json", cid)
+    sol = solveBeam(c["entrees"], OPTS)
+    assert_matches(sol, c["sortie"], rel=1e-9, abs_=1e-6, ignore=IGNORE_GOLDEN)
+    verifie_abscisses_extrema(sol, c["sortie"]["extrema"])
