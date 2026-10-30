@@ -821,7 +821,9 @@ CHAMPS_REACTION = ("Rx", "Ry", "Rz", "Mx", "My", "Mz")
 # Cas où MATLAB lui-même donne hyperCheck >= 1e-9 (golden : 1,936 pour thermique_bi_encastree). Sans charge, l'échelle
 # d'équilibre vaut 0 et btsReactionDiff compare le bruit d'arrondi des réactions Ry (2e-13 N) à lui-même, alors que
 # Ménabréa et l'intégration donnent les mêmes réactions (Rx = ±151 200 N, Mz = ±1 680 N·m). Python reproduit la valeur
-# MATLAB, que assert_matches vérifie ; le contrôle « hyperCheck < 1e-9 » de la fiche E09 est remplacé pour ce seul cas.
+# MATLAB sur Windows, mais pas sur Linux (CI GitHub : 2,22 au lieu de 1,936, le bruit d'arrondi dépend de la
+# bibliothèque d'algèbre linéaire). Pour ce seul cas, la valeur d'hyperCheck n'est donc plus comparée au golden ; le
+# contrôle « hyperCheck < 1e-9 » de la fiche E09 est remplacé par l'accord physique des deux méthodes (voir plus bas).
 HYPERCHECK_BRUIT = {"thermique_bi_encastree_solveBeam"}
 
 
@@ -850,7 +852,8 @@ def verifie_abscisses_extrema(sol, extrema):
 def test_golden_solveBeam(cid):
     c = get_case("golden_beam.json", cid)
     sol = solveBeam(c["entrees"])
-    assert_matches(sol, c["sortie"], rel=1e-9, abs_=1e-6, ignore=IGNORE_GOLDEN)
+    ignore = IGNORE_GOLDEN | {"hyperCheck"} if cid in HYPERCHECK_BRUIT else IGNORE_GOLDEN
+    assert_matches(sol, c["sortie"], rel=1e-9, abs_=1e-6, ignore=ignore)
     verifie_abscisses_extrema(sol, c["sortie"]["extrema"])
     if math.isnan(sol["hyperCheck"]):
         return
