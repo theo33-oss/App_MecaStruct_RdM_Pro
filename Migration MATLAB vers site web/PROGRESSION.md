@@ -3,7 +3,8 @@
 Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3 lignes de notes dessous.
 
 ## Phase 0 — Préparation (Théo)
-- [ ] E00 — Dépôt GitHub, Python, exports JSON depuis MATLAB
+- [x] E00 — Dépôt GitHub, Python, exports JSON depuis MATLAB
+  Dépôt privé `App_MecaStruct_RdM_Pro` sur GitHub. Python 3.12.10 installé. 8 JSON de base et 9 fichiers golden (209 cas) exportés. Erreurs attendues seulement : erreur_tabulated_rectangle, truss_mecanisme.
 
 ## Phase 1 — Squelette
 - [ ] E01 — Dossier web/, dépendances, pytest, ruff, CI, page « Bonjour »
