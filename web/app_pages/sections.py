@@ -10,7 +10,7 @@ import streamlit as st
 from mecastruct.core import geometry
 from mecastruct.core.data_manager import sectionPresets
 from mecastruct.plots import section_plots
-from mecastruct.services import beam_design, compute
+from mecastruct.services import beam_design, beam_services, compute
 from mecastruct.ui import state, widgets
 from mecastruct.ui.formula_panel import formula_panel
 
@@ -75,6 +75,39 @@ def _envoie_vers_poutres() -> None:
     st.session_state["Sec.envoye"] = True
 
 
+def _efforts_poutre(mode: str) -> None:
+    """Remplit N, Mfz, Mfy, Ty avec les efforts de la poutre, recalculée d'abord (loadFromBeam de MATLAB).
+
+    mode : 'abscisse' (coupure en s0) ou 'max' (point le plus sollicité). Le message est gardé dans « Sec_msg ».
+    """
+    cible = st.session_state["saisie"]["Sec"]
+    cible["s0"] = st.session_state.get("Sec.s0", cible["s0"])
+    try:
+        res = beam_services.computeBeam(state.saisie("Beam"), dm)
+        state.set_result("Beam", res)
+        nouvelle = beam_design.loadFromBeam(cible, res, "Sec", mode)
+    except Exception as err:  # MecaStructError : abscisse hors de la poutre, poutre incalculable…
+        st.session_state["Sec_msg"] = ("error", str(getattr(err, "message", err)))
+        return
+    st.session_state["saisie"]["Sec"] = nouvelle
+    state.reset_widgets("Sec")
+    note = "⚠ Résultats NON fiables (hyperstatique, Iyz ≠ 0) — " if res["unreliable"] else ""
+    msg = (
+        f"{note}Efforts lus sur la poutre en s = {nouvelle['s0']:.4g} m : N = {nouvelle['N']:.4g} kN, "
+        f"Mfz = {nouvelle['Mfz']:.4g} kN·m, Mfy = {nouvelle['Mfy']:.4g} kN·m"
+    )
+    r = state.result("Sec")
+    beam = state.saisie("Beam")
+    if r is not None and beam["section"] != r["result"]["sec"]:
+        iz_sec = r["result"]["P"]["Iz"] * 1e12
+        if abs(beam["Iz"] - iz_sec) > 1e-3 * iz_sec:
+            msg += (
+                f"  ⚠ Attention : la section de la page Sections (Iz = {iz_sec:.4g} mm⁴) diffère de celle de la poutre "
+                f"(Iz = {beam['Iz']:.4g} mm⁴) : les contraintes ne concernent pas la même section."
+            )
+    st.session_state["Sec_msg"] = ("info", msg)
+
+
 def _saisie_geometrie() -> None:
     """Type de section, profilé du catalogue, préréglages, dimensions pertinentes et sections composées."""
     types = geometry.sectionTypes()
@@ -120,6 +153,35 @@ def _saisie_efforts_et_methode() -> None:
     widgets.num("Sec", "Mfz", "Mfz : plan (x, y), fibres du haut comprimées si > 0", "kN·m")
     widgets.num("Sec", "Mfy", "Mfy : plan (x, z), fibres z > 0 tendues si > 0", "kN·m")
     widgets.num("Sec", "Ty", "Ty : tranchant en y", "kN")
+    st.markdown("**… ou reprendre les efforts de la poutre calculée**")
+    widgets.num(
+        "Sec",
+        "s0",
+        "s sur la poutre",
+        "m",
+        help="Abscisse de la coupure dans la page Poutres (de 0 à L).",
+        min_value=0.0,
+    )
+    colonnes = st.columns(2)
+    colonnes[0].button(
+        "Efforts en s",
+        key="Sec.efforts_s",
+        on_click=_efforts_poutre,
+        args=("abscisse",),
+        help="Remplit N, Mfz, Mfy, Ty avec les efforts de la poutre à l'abscisse s.",
+    )
+    colonnes[1].button(
+        "Efforts au point critique",
+        key="Sec.efforts_max",
+        on_click=_efforts_poutre,
+        args=("max",),
+        help="Remplit N, Mfz, Mfy, Ty avec les efforts de la section la plus sollicitée de la poutre.",
+    )
+    niveau, message = st.session_state.pop("Sec_msg", (None, None))
+    if niveau == "error":
+        st.error(message)
+    elif niveau:
+        st.info(message)
     widgets.num("Sec", "Kt", "Kt (-)", min_value=1.0)
 
 

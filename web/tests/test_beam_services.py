@@ -81,7 +81,7 @@ def test_cas_readme_moment_contrainte_fleche(dm):
 
 def test_computeBeam_renvoie_les_cles_du_contrat(dm):
     r = computeBeam(defaultBeamInput(), dm)
-    assert set(r) == {"model", "sol", "defl", "energy", "check", "status", "unreliable"}
+    assert set(r) == {"model", "sol", "defl", "energy", "check", "status", "unreliable", "rapport", "tables"}
     assert r["status"].startswith("h = 0 (isostatique) — f max = ")
 
 

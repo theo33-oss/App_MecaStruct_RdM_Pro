@@ -45,16 +45,22 @@ def num(tab: str, champ: str, label: str, unit: str = "", help: str | None = Non
 
 
 def choice(
-    tab: str, champ: str, label: str, options: list, help: str | None = None, format_func: Callable | None = None
+    tab: str,
+    champ: str,
+    label: str,
+    options: list,
+    help: str | None = None,
+    format_func: Callable | None = None,
+    **kw,
 ) -> str:
     """Liste déroulante liée à saisie[tab][champ] ; format_func donne le libellé affiché de chaque option."""
     extra = {"format_func": format_func} if format_func is not None else {}
-    return _lie(tab, champ, st.selectbox, label, options=options, help=help, **extra)
+    return _lie(tab, champ, st.selectbox, label, options=options, help=help, **extra, **kw)
 
 
-def check(tab: str, champ: str, label: str, help: str | None = None) -> bool:
+def check(tab: str, champ: str, label: str, help: str | None = None, **kw) -> bool:
     """Case à cocher liée à saisie[tab][champ]."""
-    return _lie(tab, champ, st.checkbox, label, help=help)
+    return _lie(tab, champ, st.checkbox, label, help=help, **kw)
 
 
 def table(tab: str, champ: str, columns: dict, help: str | None = None) -> list[dict]:
@@ -67,7 +73,7 @@ def table(tab: str, champ: str, columns: dict, help: str | None = None) -> list[
     src = f"{cle}.src"
     s = state.saisie(tab)
     if src not in st.session_state:
-        st.session_state[src] = pd.DataFrame(s[champ])
+        st.session_state[src] = pd.DataFrame(s[champ], columns=list(columns) if not s[champ] else None)
     if help:
         st.caption(help)
     edite = st.data_editor(

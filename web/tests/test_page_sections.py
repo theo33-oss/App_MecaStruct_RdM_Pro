@@ -43,3 +43,25 @@ def test_section_composee_calcule():
     _bouton(at, "Calculer").click().run()
     assert not at.exception
     assert at.session_state["res"]["Sec"]["result"]["sec"]["type"] == "composite"
+
+
+def test_efforts_de_la_poutre():
+    """« Efforts en s » et « Efforts au point critique » reprennent les efforts de la poutre (IPE 300, 6 m)."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    at.number_input(key="Sec.s0").set_value(2.0).run()
+    _bouton(at, "Efforts en s").click().run()
+    assert not at.exception and not at.error
+    sec = at.session_state["saisie"]["Sec"]
+    sol = at.session_state["res"]["Beam"]["sol"]
+    from mecastruct.core.pp import ppEval
+
+    assert sec["Mfz"] == pytest.approx(ppEval(sol["Mfz"], 2.0) / 1e3)
+    assert sec["Ty"] == pytest.approx(ppEval(sol["Ty"], 2.0) / 1e3)
+    _bouton(at, "Efforts au point critique").click().run()
+    assert not at.exception and not at.error
+    chk = at.session_state["res"]["Beam"]["check"]
+    assert at.session_state["saisie"]["Sec"]["s0"] == pytest.approx(chk["s"])
+    assert at.session_state["saisie"]["Sec"]["Mfz"] == pytest.approx(chk["Mfz"] / 1e3)
+    at.number_input(key="Sec.s0").set_value(99.0).run()
+    _bouton(at, "Efforts en s").click().run()
+    assert len(at.error) == 1  # abscisse hors de la poutre : message, pas d'exception

@@ -97,7 +97,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E25 — Sections
   Page Sections (disposition commune, exemple IPE, préréglages, dimensions pertinentes, transfert vers Poutres) ; section composée : tableaux rects et holes, pris en charge dans compute._sectionFromSaisie. Écarts : MATLAB exclut le composite de sa liste de types (buildSectionsTab), la fiche le demande : implémenté d'après la fiche. Chargement des efforts depuis la poutre reporté à E26 (dépend des résultats Poutres) ; le transfert n'alimente pas Flambage (page non encore portée).
   pytest 858 passed (4 nouveaux, test_page_sections.py) ; ruff check verts. Rendu visuel avec streamlit run non vérifié.
-- [ ] E26 — Poutres 1/2
+- [x] E26 — Poutres 1/2
+  Page Poutres (exemples, matériau → E, G, Re, section avec import depuis Sections, tableaux appuis / forces / couples / charges réparties, options, Calculer, schéma d'aperçu avant calcul, diagrammes, déformée, équations par tronçon, 6 onglets de résultats). computeBeam renvoie aussi rapport et tables (beamReport, beamTables). Écarts : confirmation « résultat non fiable » remplacée par un avertissement dans l'état ; ressorts, tassements, rotules, température et poids propre laissés à E27 (non éditables ici, mais pris en compte par les exemples). Report de E25 fait ici (hors fiche) : « Efforts en s » et « Efforts au point critique » dans la page Sections, avec le champ s0.
+  pytest 862 passed (4 nouveaux : 3 test_page_poutres.py, 1 test_page_sections.py) ; ruff check verts. Rendu visuel avec streamlit run non vérifié.
 - [ ] E27 — Poutres 2/2
 - [ ] E28 — Treillis + Sollicitations
 - [ ] E29 — Flambage, Tenseurs & critères, Hooke & jauges

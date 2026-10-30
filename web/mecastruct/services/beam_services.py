@@ -442,7 +442,7 @@ def computeBeam(saisie: dict, dm: DataManager) -> dict:
     unreliable = (not sol["isostatic"]) and sol["model"]["Iyz"] != 0
     if unreliable:
         status = "⚠ LIMITE : hyperstatique avec Iyz ≠ 0, résultats NON fiables — " + status
-    return {
+    res = {
         "model": sol["model"],
         "sol": sol,
         "defl": d,
@@ -451,6 +451,136 @@ def computeBeam(saisie: dict, dm: DataManager) -> dict:
         "status": status,
         "unreliable": unreliable,
     }
+    res["rapport"] = beamReport(res)
+    res["tables"] = beamTables(res)
+    return res
+
+
+def beamReport(res: dict) -> list[str]:
+    """Rapport de l'onglet Poutres : verdict, résultats en unités d'affichage, puis rapports des moteurs.
+
+    Entrée : `res` (computeBeam, sans les clés rapport et tables). Sortie : list[str] (port de la fin de computeBeam).
+    """
+    sol, d, U, chk = res["sol"], res["defl"], res["energy"], res["check"]
+    h, bd, e, di = sol["h"], chk["bend"], sol["extrema"], d["integration"]
+    hTxt = "isostatique" if sol["isostatic"] else "hyperstatique"
+    sig, adm = bd["sigmaMaxKt"] / 1e6, bd["sigmaAdm"] / 1e6
+    marge = (adm - sig) / adm * 100
+    if bd["ok"]:
+        verdict = (
+            f"Verdict : la poutre résiste. Contrainte {sig:.1f} MPa pour {adm:.1f} MPa admissibles, "
+            f"marge {marge:.0f} %."
+        )
+    else:
+        verdict = (
+            f"Verdict : la poutre NE résiste PAS. Contrainte {sig:.1f} MPa pour {adm:.1f} MPa admissibles "
+            f"(dépassement {-marge:.0f} %). Augmentez la section ou réduisez la charge."
+        )
+    lines = [
+        verdict,
+        "Résultats (unités d'affichage : kN, kN·m, MPa, mm, mrad)",
+        f"Degré d'hyperstatisme : total h = {h['total']} ({hTxt}) — axial {h['axial']}, flexion (x,y) {h['xy']}, "
+        f"flexion (x,z) {h['xz']}, torsion {h['torsion']} ; plan 2D : {h['plan2D']}",
+    ]
+    for r in sol["reactions"]:
+        lines.append(
+            f"Réaction en {r['name']} ({r['type']}, s = {r['pos']:.4g} m) : Rx = {r['Rx'] / 1e3:.5g} kN, "
+            f"Ry = {r['Ry'] / 1e3:.5g} kN, Rz = {r['Rz'] / 1e3:.5g} kN, Mz = {r['Mz'] / 1e3:.5g} kN·m, "
+            f"My = {r['My'] / 1e3:.5g} kN·m"
+        )
+    lines += [
+        f"Mfz : max {e['Mfz']['max'] / 1e3:.5g} kN·m (s = {e['Mfz']['sMax']:.4g} m), "
+        f"min {e['Mfz']['min'] / 1e3:.5g} kN·m (s = {e['Mfz']['sMin']:.4g} m) ; "
+        f"Ty : max {e['Ty']['max'] / 1e3:.5g} kN, min {e['Ty']['min'] / 1e3:.5g} kN",
+        f"Contrôle coupures / intégrale : écart relatif {sol['methodCheck']:.3g}",
+        f"Flèche maximale (intégration, plan {d['plane']}) : f = {di['fmax'] * 1e3:.5g} mm "
+        f"en s = {di['sAtFmax']:.4g} m ; "
+        f"rotation max |α| = {np.max(np.abs(di['alpha'])) * 1e3:.5g} mrad",
+        f"Énergie de déformation totale U = {U['total']:.5g} J",
+        f"Vérification : Kt·|σ|max = {sig:.5g} MPa en s = {chk['s']:.4g} m, σadm = {adm:.5g} MPa → {_okText(bd['ok'])}",
+        "Étape suivante : « Envoyer au tenseur » pour les contraintes principales et les critères, "
+        "ou la page Flambage si la poutre est comprimée.",
+    ]
+    if res["unreliable"]:
+        lines.insert(
+            0,
+            "⚠ LIMITE DE L'APPLICATION : poutre hyperstatique avec Iyz ≠ 0. Les réactions sont calculées plan par plan "
+            "(couplage y–z des inconnues hyperstatiques ignoré) : réactions, moments et contraintes NON fiables. "
+            "Saisir la section dans ses axes principaux (Iyz = 0).",
+        )
+    for titre, rapport in (
+        ("=== Statique et torseur de cohésion (moteur, SI) ===", sol["report"]),
+        ("=== Déformée : 4 méthodes ===", d["report"]),
+        ("=== Vérification de résistance ===", chk["report"]),
+    ):
+        lines += [titre, *rapport]
+    return lines
+
+
+def beamTables(res: dict) -> dict[str, pd.DataFrame]:
+    """Tableaux de l'onglet Poutres (colonnes de MATLAB) : Réactions, Équations, Flèche, Énergie, Contraintes.
+
+    Entrée : `res` (computeBeam). Sortie : dict titre → DataFrame, en kN, kN·m, MPa, mm.
+    """
+    sol, d, U, chk = res["sol"], res["defl"], res["energy"], res["check"]
+    bd = chk["bend"]
+    R = sol["reactions"]
+    reac = pd.DataFrame(
+        {
+            "Appui": [r["name"] for r in R],
+            "Type": [r["type"] for r in R],
+            "Position (m)": [r["pos"] for r in R],
+            **{f"{c} ({u})": [r[c] / 1e3 for r in R] for c, u in (("Rx", "kN"), ("Ry", "kN"), ("Rz", "kN"))},
+            **{f"{c} ({u})": [r[c] / 1e3 for r in R] for c, u in (("Mx", "kN·m"), ("My", "kN·m"), ("Mz", "kN·m"))},
+        }
+    )
+    eqs = sol["equations"]
+    comps = ("N", "Ty", "Tz", "Mt", "Mfy", "Mfz")
+    eq = pd.DataFrame(
+        {"Tronçon": range(1, len(eqs) + 1), "s1 (m)": [q["s1"] for q in eqs], "s2 (m)": [q["s2"] for q in eqs]}
+    )
+    for c in comps:
+        eq[f"{c}(s)"] = [q[f"{c}_txt"] for q in eqs]
+    cmp_ = d["comparison"]
+    defl = pd.DataFrame(
+        {
+            "Méthode": cmp_["Methode"],
+            "f max (mm)": cmp_["fmax_m"] * 1e3,
+            "s (m)": cmp_["s_m"],
+            "Écart (%)": cmp_["Ecart_pct"],
+        }
+    )
+    energie = pd.DataFrame(
+        {
+            "Composante": [
+                "U_N (effort normal)",
+                "U_Ty (tranchant y)",
+                "U_Tz (tranchant z)",
+                "U_Mt (torsion)",
+                "U_Mfy (flexion y)",
+                "U_Mfz (flexion z)",
+                "Total",
+            ],
+            "U (J)": [U[k] for k in ("UN", "UTy", "UTz", "UMt", "UMfy", "UMfz", "total")],
+        }
+    )
+    lignes = [
+        ("Abscisse du point le plus sollicité", chk["s"], "m"),
+        ("N(s)", chk["N"] / 1e3, "kN"),
+        ("Ty(s)", chk["Ty"] / 1e3, "kN"),
+        ("Mfz(s)", chk["Mfz"] / 1e3, "kN·m"),
+        ("Mfy(s)", chk["Mfy"] / 1e3, "kN·m"),
+        ("σ traction max", bd["sigmaMaxTraction"] / 1e6, "MPa"),
+        ("σ compression max", bd["sigmaMaxCompression"] / 1e6, "MPa"),
+        ("Kt·|σ|max", bd["sigmaMaxKt"] / 1e6, "MPa"),
+        ("σadm = Re/s", bd["sigmaAdm"] / 1e6, "MPa"),
+        ("Résistance", _okText(bd["ok"]), ""),
+    ]
+    verif = pd.DataFrame(
+        [(nom, v if isinstance(v, str) else f"{v:.6g}", u) for nom, v, u in lignes],
+        columns=["Grandeur", "Valeur", "Unité"],
+    )
+    return {"Réactions": reac, "Équations": eq, "Flèche : 4 méthodes": defl, "Énergie": energie, "Contraintes": verif}
 
 
 def _colMax(v: np.ndarray) -> float:
