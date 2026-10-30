@@ -14,7 +14,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E02 — errors.py, utils.py, units.py (+ convertisseur)
   Ports de buildUnitMap / normalizeUnit (table recopiée, contrôlée contre units.json par les tests), toSI / fromSI rejettent les textes (invalidValue) comme MATLAB.
   pytest : 167 passed (10 anciens + 157 nouveaux) ; ruff check et ruff format --check verts.
-- [ ] E03 — data_manager.py
+- [x] E03 — data_manager.py
+  Port de DataManager.m sans abaques Kt ni table de Mohr (E04). Sauvegarde .mat remplacée par exportUserData / importUserData (JSON) ; getMaterial et getProfile renvoient aussi IsUser et Author (ARCHITECTURE §1).
+  pytest 201 passed (34 nouveaux) ; ruff check et ruff format --check verts. Tests d'unités déjà dans test_units.py (E02), testDefaultUserFilePath sans objet en Python.
 - [ ] E04 — kt_mohr.py
 - [ ] E05 — pp.py
 - [ ] E06 — geometry.py 1/2
