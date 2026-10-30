@@ -176,10 +176,7 @@ def _affiche_message() -> None:
     elif genre:
         st.info(texte)
     if genre == "tenseur":
-        try:
-            st.page_link("app_pages/tenseurs.py", label="Ouvrir Tenseurs & critères", icon="⭕")
-        except st.errors.StreamlitAPIException:  # hors de la navigation (tests de la page seule)
-            pass
+        widgets.page_link("app_pages/tenseurs.py", "Ouvrir Tenseurs & critères", "⭕")
 
 
 def _saisie_poutre_et_section() -> None:

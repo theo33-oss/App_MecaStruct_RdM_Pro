@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 
 from mecastruct.core.errors import MecaStructError
+from mecastruct.services import compute
 from mecastruct.services.examples import exampleNames, loadExample
 from mecastruct.ui import state
 
@@ -143,3 +144,21 @@ def example_picker(tab: str) -> None:
     if noms:
         st.selectbox("Exemple", noms, key=f"{tab}.exemple")
     st.button("Charger l'exemple", key=f"{tab}.charger", on_click=_charge_exemple, args=(tab,))
+
+
+def choice_materiau(tab: str, champs: list[str], dm: Any, label: str = "Matériau") -> str:
+    """Liste des matériaux liée à saisie[tab]["mat"] ; un changement remplit les champs `champs` (E, G, Re…)."""
+
+    def applique() -> None:
+        for champ, valeur in compute._materiau(dm, st.session_state[f"{tab}.mat"], champs).items():
+            st.session_state[f"{tab}.{champ}"] = valeur
+
+    return choice(tab, "mat", label, dm.listMaterials(), on_change=applique)
+
+
+def page_link(page: str, label: str, icon: str | None = None) -> None:
+    """Lien vers une page de l'application ; omis hors de la navigation (test d'une page seule)."""
+    try:
+        st.page_link(page, label=label, icon=icon)
+    except st.errors.StreamlitAPIException:
+        pass

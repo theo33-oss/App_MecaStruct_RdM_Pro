@@ -9,6 +9,7 @@ import streamlit as st
 
 from mecastruct.core import geometry
 from mecastruct.core.data_manager import sectionPresets
+from mecastruct.core.units import fromSI
 from mecastruct.plots import section_plots
 from mecastruct.services import beam_design, beam_services, compute
 from mecastruct.ui import state, widgets
@@ -72,7 +73,21 @@ def _envoie_vers_poutres() -> None:
     beam = beam_design.sectionToBeamInput(state.saisie("Beam"), res["sec"], res["P"], dm.getMaterial(saisie["mat"]))
     st.session_state["saisie"]["Beam"] = beam
     state.reset_widgets("Beam")
-    st.session_state["Sec.envoye"] = True
+    # Flambage : S, Iz, Iy de la poutre ; axes non principaux (Iyz ≠ 0, hors profilé) : moments principaux I1, I2
+    fla = st.session_state["saisie"]["Fla"]
+    fla.update(
+        S=beam["S"],
+        Iz=beam["Iz"],
+        Iy=beam["Iy"],
+        mat=saisie["mat"],
+        **compute._materiau(dm, saisie["mat"], ["E", "Re"]),
+    )
+    P = res["P"]
+    principaux = res["sec"]["type"] != "profile" and abs(P["Iyz"]) > 1e-9 * (P["Iz"] * P["Iy"]) ** 0.5
+    if principaux:
+        fla.update(Iz=fromSI(P["I1"], "mm^4"), Iy=fromSI(P["I2"], "mm^4"))
+    state.reset_widgets("Fla")
+    st.session_state["Sec.envoye"] = "principaux" if principaux else True
 
 
 def _efforts_poutre(mode: str) -> None:
@@ -215,9 +230,13 @@ def _resultats(res: dict, tables: dict, statut: str) -> None:
 
     if st.button("Utiliser cette section pour une poutre", key="Sec.transfert"):
         _envoie_vers_poutres()
-    if st.session_state.pop("Sec.envoye", False):
-        st.success("Section transmise à la page Poutres.")
-        st.page_link("app_pages/poutres.py", label="Ouvrir Poutres", icon="📏")
+    envoi = st.session_state.pop("Sec.envoye", False)
+    if envoi:
+        st.success("Section transmise aux pages Poutres et Flambage.")
+        if envoi == "principaux":
+            st.info("Iyz ≠ 0 : Flambage reçoit les moments principaux I1 et I2 ; Poutres garde Iz, Iy et Iyz.")
+        widgets.page_link("app_pages/poutres.py", "Ouvrir Poutres", "📏")
+        widgets.page_link("app_pages/flambage.py", "Ouvrir Flambage", "📐")
 
 
 st.title("Sections droites")

@@ -488,7 +488,8 @@ def computeTraction(saisie: dict, dm: DataManager) -> dict:
     """Traction/compression : σ(x), ΔL par 3 méthodes, rigidité ; section variable S(x) si demandée.
 
     Entrées : `saisie` (defaultTractionInput) ; `dm` (non utilisé, le matériau est déjà dans E, nu, alpha, Re).
-    Sortie : result (moteur + rapport), tables « Synthèse », status (σmax, ΔL intégrale).
+    Sortie : result (moteur + x, Sx pour le tracé de σ(x), en m et m², + rapport), tables « Synthèse », status
+    (σmax, ΔL intégrale).
     """
     T = saisie
     p = {
@@ -505,9 +506,10 @@ def computeTraction(saisie: dict, dm: DataManager) -> dict:
     }
     if T["dLmax"] > 0:
         p["dLmax"] = toSI(T["dLmax"], "mm")
+    x = np.linspace(0.0, p["L0"], 201)
+    Sx = p["S0"] * np.ones_like(x)
     if T["varS"]:
         fS = parseFunction(T["Sexpr"])
-        x = np.linspace(0.0, p["L0"], 201)
         Sx = toSI(fS(x), "mm^2")
         if not np.all(np.isfinite(Sx)) or np.any(Sx <= 0):
             raise MecaStructError(_ID_EXPR, "S(x) doit être réelle, finie et strictement positive sur [0, L0].")
@@ -538,7 +540,7 @@ def computeTraction(saisie: dict, dm: DataManager) -> dict:
         f"ΔL = {vals[0] * 1e3:.5g} mm (analytique) / {vals[1] * 1e3:.5g} mm (intégrale) / "
         f"{vals[2] * 1e3:.5g} mm (énergétique)"
     ]
-    result = {**r, "rapport": _rapport(entete, [("=== Démarche (moteur, SI) ===", r["report"])])}
+    result = {**r, "x": x, "Sx": Sx, "rapport": _rapport(entete, [("=== Démarche (moteur, SI) ===", r["report"])])}
     return {
         "result": result,
         "tables": tables,
