@@ -24,4 +24,4 @@ Format d'une entrée (la plus récente en haut) :
   - (a) accepter une tolérance absolue plus large sur `shear.yAtMax` dans les tests golden (par exemple 1e-9·L). C'est une modification de tolérance de test, donc à valider ;
   - (b) un seuil de mise à zéro entre 2,9e-9·L et 6,1e-9·L passerait les 452 tests, mais il serait calé sur ce bruit ;
   - (c) autre approche de la cote du maximum que tu préfères.
-- Statut : ouvert. Reste de E07 fait (`geometry.py` complet : `analytical`, `integral`, `tabulated`, `compare`, `shearFactors`, `_assembleP`, `_shearCore`, `_integrateSymbolic`, `_integrateNumeric`). Case E07 non cochée dans PROGRESSION.md.
+- Statut : résolu. Décision de Théo : option (a), tolérance absolue de 1e-9 m sur `yAtMax` dans les tests golden (`_verifie_golden` dans `web/tests/test_geometry.py`), seul ce champ ; aucun fichier golden JSON ni autre tolérance modifiés. Suite : 452 passed, ruff check et format verts. E07 cochée dans PROGRESSION.md.

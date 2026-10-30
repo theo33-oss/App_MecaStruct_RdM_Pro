@@ -3,6 +3,7 @@ Huygens) et 488–733 (cisaillement, profilés, tabulée, comparaison, composite
 integral reportées par E06. Golden : analytical, integral, shearFactors, compare, tabulated et erreurs.
 """
 
+import copy
 import math
 
 import numpy as np
@@ -697,22 +698,41 @@ def test_latex_valide():
 # -------------------------------------------------------------------------------------
 
 
+# Le maximum de Q/b est plat en y = 0 pour une section symétrique : sa position (yAtMax) n'est connue qu'au bruit
+# d'arrondi près, donc le golden ne se reproduit qu'à quelques 1e-10 m (−1,74e-10 m pour couronne_60_40 en intégrale
+# numérique, où MATLAB donne 0). Décision de Théo (option a) : tolérance absolue de 1e-9 m sur yAtMax seulement.
+YATMAX_ABS = 1e-9  # m
+
+
+def _verifie_golden(resultat: dict, sortie: dict, rel: float, abs_: float = 1e-12) -> None:
+    """Compare un résultat à sa sortie golden ; yAtMax (shear.yAtMax ou yAtMax) est comparé avec abs = YATMAX_ABS."""
+    autres = copy.deepcopy(sortie)
+    autres.pop("yAtMax", None)
+    if isinstance(autres.get("shear"), dict):
+        autres["shear"].pop("yAtMax", None)
+    assert_matches(resultat, autres, rel=rel, abs_=abs_)
+    if "yAtMax" in sortie:
+        assert_matches(resultat["yAtMax"], sortie["yAtMax"], rel=0.0, abs_=YATMAX_ABS)
+    elif "yAtMax" in sortie.get("shear", {}):
+        assert_matches(resultat["shear"]["yAtMax"], sortie["shear"]["yAtMax"], rel=0.0, abs_=YATMAX_ABS)
+
+
 @pytest.mark.parametrize("cid", case_ids("golden_geometry.json", suffix="_analytical"))
 def test_golden_analytical(cid):
     c = get_case("golden_geometry.json", cid)
-    assert_matches(geo.analytical(c["entrees"]), c["sortie"], rel=1e-9)
+    _verifie_golden(geo.analytical(c["entrees"]), c["sortie"], rel=1e-9)
 
 
 @pytest.mark.parametrize("cid", case_ids("golden_geometry.json", suffix="_integral_num"))
 def test_golden_integral_num(cid):
     c = get_case("golden_geometry.json", cid)
-    assert_matches(geo.integral(c["entrees"]["sec"], "numerique"), c["sortie"], rel=1e-6, abs_=1e-15)
+    _verifie_golden(geo.integral(c["entrees"]["sec"], "numerique"), c["sortie"], rel=1e-6, abs_=1e-15)
 
 
 @pytest.mark.parametrize("cid", case_ids("golden_geometry.json", suffix="_shearFactors"))
 def test_golden_shear_factors(cid):
     c = get_case("golden_geometry.json", cid)
-    assert_matches(geo.shearFactors(c["entrees"]), c["sortie"], rel=1e-6)
+    _verifie_golden(geo.shearFactors(c["entrees"]), c["sortie"], rel=1e-6)
 
 
 @pytest.mark.parametrize("cid", case_ids("golden_geometry.json", suffix="_compare"))

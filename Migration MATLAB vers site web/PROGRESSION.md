@@ -27,7 +27,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E06 — geometry.py 1/2
   Port de validateSection, primitives, widthAt, firstMomentAbove, outline, fromProfile, sectionTypes, hasSymbolic et des aides privées (Huygens, formules fermées, J, b(y), Q(y), contours, textes). _assembleP absente (E07). Écarts : widthAt prend side = 'max' par défaut (valeur MATLAB, pas « both » de la fiche) ; un profilé donné seulement par famille et nom est complété depuis le catalogue (demandé par la fiche, absent de MATLAB).
   pytest 304 passed (79 nouveaux : tests portés, golden widthAt et firstMomentAbove, cohérence Huygens) ; ruff check et ruff format --check verts. Reportés à E07 : testReportFormat et erreurs de integral.
-- [ ] E07 — geometry.py 2/2
+- [x] E07 — geometry.py 2/2
+  Port de analytical, integral (SymPy, repli dblquad), tabulated, compare, shearFactors, _assembleP, cisaillement et intégrales LaTeX. Écarts : seuil de mise à zéro de yAtMax 1e-9·L (MATLAB) ; intégrales numériques en coordonnées x/L avec epsabs 1e-15 ; rendu LaTeX de testLatexValid non porté.
+  pytest 452 passed (148 nouveaux dans test_geometry.py) ; ruff check et ruff format --check verts. Golden shear.yAtMax comparé avec abs 1e-9 m (maximum de Q/b plat en y = 0, cote connue au bruit d'arrondi près), décision de Théo (option a).
 - [ ] E08 — beam_solver.py 1/3 (modèle, sous-problèmes, coupures)
 - [ ] E09 — beam_solver.py 2/3 (hyperstatique)
 - [ ] E10 — beam_solver.py 3/3 (méthode intégrale, extrema, équations, rapport)
