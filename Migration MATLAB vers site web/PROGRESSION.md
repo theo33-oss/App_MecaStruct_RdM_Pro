@@ -31,6 +31,7 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   Port de analytical, integral (SymPy, repli dblquad), tabulated, compare, shearFactors, _assembleP, cisaillement et intégrales LaTeX. Écarts : seuil de mise à zéro de yAtMax 1e-9·L (MATLAB) ; intégrales numériques en coordonnées x/L avec epsabs 1e-15 ; rendu LaTeX de testLatexValid non porté.
   pytest 452 passed (148 nouveaux dans test_geometry.py) ; ruff check et ruff format --check verts. Golden shear.yAtMax comparé avec abs 1e-9 m (maximum de Q/b plat en y = 0, cote connue au bruit d'arrondi près), décision de Théo (option a).
 - [ ] E08 — beam_solver.py 1/3 (modèle, sous-problèmes, coupures)
+  Sous-étape A faite (commit E08a) : _beamOpts, _reqPos, _optNum, _optName, _getArr, _normType, _normalizeModel, _prepDist, _gauss, _gaussData, _matIntegrate, _matEval, _cleanMat, _matToPP, _matMaxAbs, _cutBend dans beam_solver.py ; 14 tests dans test_beam_solver.py (pytest 466 passed, ruff verts). Ajout hors liste de la fiche : _gaussVals (même bloc MATLAB, utile à B) ; les erreurs de testInvalidInputs passent par _normalizeModel et _beamOpts (solveBeam arrive en B). Reste B puis C.
 - [ ] E09 — beam_solver.py 2/3 (hyperstatique)
 - [ ] E10 — beam_solver.py 3/3 (méthode intégrale, extrema, équations, rapport)
 - [ ] E11 — truss_solver.py
