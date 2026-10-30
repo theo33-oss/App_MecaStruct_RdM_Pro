@@ -91,7 +91,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E23 — Coquille Streamlit, Accueil, Formulaire rapide
   streamlit_app.py (10 pages par st.navigation), ui/state.py (init = loadExample de chaque onglet, comme au démarrage MATLAB), ui/widgets.py, ui/formula_panel.py, page Accueil (textes de buildHomeTab, visite en encadré), 9 pages vides. Écarts : formula_panel(None) ne dessine rien (Accueil, Convertisseur) ; test de l'Accueil par test_app_starts (st.page_link exige la navigation) ; applyNationalAnnex non porté (fiche E27).
   pytest 850 passed (10 nouveaux, test_ui_smoke.py) ; ruff check verts ; navigation vérifiée par AppTest (pages Poutres, Sections, Flambage).
-- [ ] E24 — Base de données + Convertisseur
+- [x] E24 — Base de données + Convertisseur
+  Page Base de données : matériaux (filtre, formulaire, suppression des ajouts), profilés (cm², cm⁴, cm³ comme refreshProfileTable), matage, abaques Kt (valeurs initiales de loadExample : arbre de flexion, r/d 0,1, D/d 1,5), données utilisateur en JSON, documents docs/. Convertisseur : catalogue units.json, unités par défaut (defFrom/defTo), Inverser, tableaux MATLAB. Écarts : données utilisateur en JSON et non .mat ; les abaques gardent leurs paramètres par abaque.
+  pytest 854 passed (4 nouveaux, test_pages_db_convert.py) ; ruff check verts. Vérification visuelle avec streamlit run non faite.
 - [ ] E25 — Sections
 - [ ] E26 — Poutres 1/2
 - [ ] E27 — Poutres 2/2
