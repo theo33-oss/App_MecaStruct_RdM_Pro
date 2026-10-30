@@ -1,9 +1,10 @@
 """Solveur de poutres, port de la partie poutres de BeamAndTrussSolver.m (ARCHITECTURE §3).
 
 Ce fichier contient les aides de base (options, normalisation du modèle, charges réparties, quadrature de Gauss
-sur des matrices de coefficients, une ligne par tronçon, ordre polyval), la méthode des coupures, les 4 sous-problèmes
-(axial, flexion xy, flexion xz, torsion), la résolution isostatique et hyperstatique (Ménabréa et intégration, avec
-ressorts, tassements, dilatation thermique et rotules), et solveBeam.
+sur des matrices de coefficients, une ligne par tronçon, ordre polyval), la méthode des coupures, la méthode intégrale,
+les 4 sous-problèmes (axial, flexion xy, flexion xz, torsion), la résolution isostatique et hyperstatique (Ménabréa et
+intégration, avec ressorts, tassements, dilatation thermique et rotules), les équations par tronçon, le rapport et
+solveBeam.
 """
 
 import copy
@@ -14,7 +15,19 @@ import numpy as np
 
 from mecastruct.core.data_manager import hasSymbolic
 from mecastruct.core.errors import MecaStructError
-from mecastruct.core.pp import PP, _mergeBreaks, _num, _pad, _segIndex, _shiftPoly, _texNum, _tol
+from mecastruct.core.pp import (
+    PP,
+    _mergeBreaks,
+    _num,
+    _pad,
+    _polyAdd,
+    _segIndex,
+    _shiftPoly,
+    _texNum,
+    _tol,
+    poly2latex,
+    poly2str,
+)
 from mecastruct.core.utils import as_array, as_list, is_num
 
 _ID_MODEL = "MecaStruct:Beam:invalidModel"
@@ -53,10 +66,10 @@ def _beamOpts(opts) -> dict:
     """Options de solveBeam complétées par leurs valeurs par défaut.
 
     Entrée : `opts` (dict ou None) : internalMethod, hyperMethod, useSymbolic, includeShearEnergy.
-    Sortie : dict avec les 4 clés (useSymbolic vaut False si SymPy est absent).
+    Sortie : dict avec les 4 clés (useSymbolic vaut False par défaut, et aussi si SymPy est absent).
     Erreur : MecaStruct:Beam:invalidOption si une option est inconnue ou mal typée.
     """
-    o = {"internalMethod": "both", "hyperMethod": "both", "useSymbolic": None, "includeShearEnergy": False}
+    o = {"internalMethod": "both", "hyperMethod": "both", "useSymbolic": False, "includeShearEnergy": False}
     if not _isEmpty(opts):
         if not isinstance(opts, dict):
             raise MecaStructError(_ID_OPTION, "Les options doivent être une structure scalaire.")
@@ -78,7 +91,7 @@ def _beamOpts(opts) -> dict:
                 if not (isinstance(v, bool | np.bool_) or is_num(v)):
                     raise MecaStructError(_ID_OPTION, f"{cle} doit être un booléen.")
                 o[cle] = bool(v)
-    o["useSymbolic"] = hasSymbolic() if o["useSymbolic"] is None else (o["useSymbolic"] and hasSymbolic())
+    o["useSymbolic"] = o["useSymbolic"] and hasSymbolic()
     return o
 
 
@@ -1206,28 +1219,576 @@ def _actions(mdl: dict, reac: list[dict]) -> dict:
     return act
 
 
-def _provisoire_E10() -> tuple[dict, float, list, list, list]:
-    """Remplace provisoirement la méthode intégrale des efforts et le rapport (portés en E10, qui supprime ceci).
+_COMPOSANTES = ("N", "Ty", "Tz", "Mt", "Mfy", "Mfz")
+_TEX_COMPOSANTES = ("N", "T_{y}", "T_{z}", "M_{t}", "M_{fy}", "M_{fz}")
+_FL_ACTIONS = ("Fx", "Fy", "Fz", "Mx", "My", "Mz")
 
-    Sortie : `(internalIntegral, methodCheck, equations, report, latex)` = `({}, nan, [], [], [])`.
+
+def _symPoly(c, x):
+    """Polynôme numérique (ordre polyval) en expression SymPy exacte de x (flottants convertis en rationnels).
+
+    Entrées : `c` (coefficients), `x` (symbole SymPy). Sortie : expression SymPy.
     """
-    return {}, math.nan, [], [], []
+    import sympy as sp  # import tardif : SymPy est optionnel
+
+    c = np.atleast_1d(np.asarray(c, dtype=float))
+    return sp.Add(*[sp.Rational(float(ck)) * x ** (c.size - 1 - k) for k, ck in enumerate(c)])
+
+
+def _symCoefs(e, s) -> np.ndarray:
+    """Coefficients (ordre polyval, flottants) d'une expression SymPy polynomiale en s ; une constante : 1 élément.
+
+    Entrées : `e` (expression SymPy), `s` (symbole). Sortie : tableau 1-D.
+    """
+    import sympy as sp  # import tardif : SymPy est optionnel
+
+    e = sp.expand(e)
+    if not e.free_symbols:
+        return np.array([float(e)])
+    return np.array([float(ck) for ck in sp.Poly(e, s).all_coeffs()])
+
+
+def _integralRowsNum(endv: np.ndarray, px, py, pz, sR: float) -> list[np.ndarray]:
+    """Coefficients (N, Ty, Tz, Mt, Mfy, Mfz) d'un tronçon par np.polyint, à partir des valeurs en sR.
+
+    Entrées : `endv` (6 valeurs en s = sR : N, N·m), `px`, `py`, `pz` (charges réparties en s, N/m), `sR` (m).
+    Sortie : liste de 6 tableaux de coefficients (ordre polyval).
+    """
+    Px, Py, Pz = np.polyint(px), np.polyint(py), np.polyint(pz)
+    cN = -Px
+    cN[-1] += endv[0] + np.polyval(Px, sR)
+    cTy = -Py
+    cTy[-1] += endv[1] + np.polyval(Py, sR)
+    cTz = -Pz
+    cTz[-1] += endv[2] + np.polyval(Pz, sR)
+    ITy = np.polyint(cTy)
+    cMfz = -ITy
+    cMfz[-1] += endv[5] + np.polyval(ITy, sR)
+    ITz = np.polyint(cTz)
+    cMfy = ITz.copy()
+    cMfy[-1] += endv[4] - np.polyval(ITz, sR)
+    return [cN, cTy, cTz, np.array([endv[3]]), cMfy, cMfz]
+
+
+def _integralRowsSym(endv: np.ndarray, px, py, pz, sR: float) -> list[np.ndarray]:
+    """Même résultat que _integralRowsNum, par intégrales SymPy exactes (flottants convertis en rationnels).
+
+    Entrées et sortie : comme _integralRowsNum.
+    """
+    import sympy as sp  # import tardif : SymPy est optionnel
+
+    x, s = sp.symbols("x s")
+    bor = sp.Rational(float(sR))
+    I = [sp.integrate(_symPoly(p, x), (x, s, bor)) for p in (px, py, pz)]
+    NS = sp.Rational(float(endv[0])) + I[0]
+    TyS = sp.Rational(float(endv[1])) + I[1]
+    TzS = sp.Rational(float(endv[2])) + I[2]
+    I2 = [sp.integrate(T.subs(s, x), (x, s, bor)) for T in (TyS, TzS)]
+    MfzS = sp.Rational(float(endv[5])) + I2[0]
+    MfyS = sp.Rational(float(endv[4])) - I2[1]
+    return [
+        _symCoefs(NS, s),
+        _symCoefs(TyS, s),
+        _symCoefs(TzS, s),
+        np.array([endv[3]]),
+        _symCoefs(MfyS, s),
+        _symCoefs(MfzS, s),
+    ]
+
+
+def _integralMethod(br, tol: float, act: dict, dl: list[dict], D: int, useSym: bool) -> tuple:
+    """Méthode intégrale : efforts intégrés depuis s = L (valeurs nulles en L+), sauts aux actions ponctuelles.
+
+    Entrées : `br` (points de rupture, m), `tol` (m), `act` (sortie de _actions), `dl` (sortie de _prepDist), `D`
+    (degré maximal), `useSym` (vrai : chemin SymPy, donne le même résultat ; faux : chemin numérique).
+    Sorties : `(C6, closure, methodUsed)` ; C6 = liste des 6 matrices n × (D+3) (N, Ty, Tz, Mt, Mfy, Mfz) ;
+    closure = 6 valeurs de fermeture en s = 0- (N, N·m) ; methodUsed = 'symbolique' ou 'numérique'.
+    """
+    n = len(br) - 1
+    W = D + 3
+    C6 = [np.zeros((n, W)) for _ in range(6)]
+    endv = np.zeros(6)
+    for k in range(n - 1, -1, -1):
+        sR, sL = br[k + 1], br[k]
+        endv = endv + _jumps(act, _FL_ACTIONS, sR, tol)
+        acc = {"x": np.zeros(1), "y": np.zeros(1), "z": np.zeros(1)}
+        for d in dl:
+            if d["a"] <= sL + tol and d["b"] >= sR - tol:
+                acc[d["dir"]] = _polyAdd(acc[d["dir"]], d["pg"])
+        if useSym:
+            rows = _integralRowsSym(endv, acc["x"], acc["y"], acc["z"], sR)
+        else:
+            rows = _integralRowsNum(endv, acc["x"], acc["y"], acc["z"], sR)
+        for c in range(6):
+            C6[c][k] = _pad(rows[c], W)
+        endv = np.array([np.polyval(r, sL) for r in rows])
+    closure = endv + _jumps(act, _FL_ACTIONS, br[0], tol)
+    return C6, closure, "symbolique" if useSym else "numérique"
+
+
+def _methodCheck(Cc: list, Ci: list, br, compScale: list) -> float:
+    """Écart relatif maximal entre les efforts par coupures (Cc) et par la méthode intégrale (Ci), 7 points par tronçon.
+
+    Entrées : `Cc`, `Ci` (6 matrices n × w chacune), `br` (m), `compScale` (6 échelles, N ou N·m).
+    Sortie : écart (sans dimension, ou absolu si l'échelle est nulle).
+    """
+    err = 0.0
+    for c in range(6):
+        dmax = 0.0
+        for k in range(len(br) - 1):
+            t = np.linspace(br[k], br[k + 1], 7)
+            dmax = max(dmax, float(np.max(np.abs(np.polyval(Cc[c][k], t) - np.polyval(Ci[c][k], t)))))
+        if compScale[c] > 0:
+            err = max(err, dmax / compScale[c])
+        elif dmax > 0:
+            err = max(err, dmax)
+    return err
+
+
+def _equations(sol: dict, br) -> list[dict]:
+    """Équations par tronçon : pour chaque composante, la formule LaTeX (entre $) et le texte.
+
+    Entrées : `sol` (dict dont les 6 composantes sont des PP), `br` (points de rupture, m).
+    Sortie : liste de dicts s1, s2 (m), puis par composante C (LaTeX) et C_txt (texte).
+    """
+    eqs = []
+    for k in range(len(br) - 1):
+        eq = {"s1": float(br[k]), "s2": float(br[k + 1])}
+        for nom, tex in zip(_COMPOSANTES, _TEX_COMPOSANTES, strict=True):
+            ck = sol[nom].coefs[k]
+            eq[nom] = f"${tex}(s) = {poly2latex(ck)}$"
+            eq[nom + "_txt"] = f"{nom}(s) = {poly2str(ck)}"
+        eqs.append(eq)
+    return eqs
+
+
+def _appendTerm(s: str, terme: str, neg: bool) -> str:
+    """Ajoute un terme signé à une combinaison linéaire en texte (vide au départ).
+
+    Entrées : `s` (combinaison déjà écrite, éventuellement vide), `terme` (texte), `neg` (vrai si le signe est moins).
+    """
+    if not s:
+        return "-" + terme if neg else terme
+    return f"{s} - {terme}" if neg else f"{s} + {terme}"
+
+
+def _linEq(coefs, names: list[str], cst: float, isTex: bool, withZero: bool = True) -> str:
+    """Combinaison linéaire « a·X + b·Y + c » en texte ou LaTeX (suivie de « = 0 » si withZero).
+
+    Entrées : `coefs` (tableau), `names` (noms des inconnues, même longueur), `cst` (constante), `isTex`, `withZero`.
+    Les termes négligeables (≤ 1e-13 du maximum) sont omis ; sortie "0" si tous le sont.
+    """
+    coefs = np.asarray(coefs, dtype=float).ravel()
+    mx = float(np.max(np.abs(np.append(coefs, cst)), initial=0.0))
+    s = ""
+    for c, nom in zip(coefs, names, strict=True):
+        if c == 0 or abs(c) <= 1e-13 * mx:
+            continue
+        mag = _texNum(abs(c)) if isTex else _num(abs(c))
+        if mag == "1":
+            terme = nom
+        elif isTex:
+            terme = mag + r"\," + nom
+        else:
+            terme = mag + "·" + nom
+        s = _appendTerm(s, terme, c < 0)
+    if cst != 0 and abs(cst) > 1e-13 * mx:
+        s = _appendTerm(s, _texNum(abs(cst)) if isTex else _num(abs(cst)), cst < 0)
+    if not s:
+        s = "0"
+    return s + " = 0" if withZero else s
+
+
+def _dofText(type_: str) -> str:
+    """Degrés de liberté bloqués d'un type d'appui, en texte du rapport."""
+    if type_ in ("appui_simple", "pivot_glissant"):
+        return "v, w"
+    if type_ in ("rotule", "pivot"):
+        return "u, v, w"
+    return "u, v, w, θx, θy, θz"
+
+
+def _joinNums(v) -> str:
+    """Nombres séparés par « , » au format du rapport (%.6g)."""
+    return ", ".join(_num(float(x)) for x in v)
+
+
+def _repDonnees(c: dict, rep: list[str], tex: list[str]) -> None:
+    """Rapport : données, liaisons, rotules, actions thermiques, charges et points de rupture (ajoutés à rep, tex).
+
+    Entrée : `c` (contexte de _beamReport). Sorties : aucune, rep et tex sont complétés.
+    """
+    mdl = c["mdl"]
+    rep.append(
+        f"Données (SI) : L = {_num(mdl['L'])} m ; E = {_num(mdl['E'])} Pa ; G = {_num(mdl['G'])} Pa ; "
+        f"S = {_num(mdl['S'])} m² ; Iz = {_num(mdl['Iz'])} m⁴ ; Iy = {_num(mdl['Iy'])} m⁴ ; "
+        f"Ix = {_num(mdl['Ix'])} m⁴ ; ky = {_num(mdl['ky'])} ; kz = {_num(mdl['kz'])}"
+    )
+    rep.extend(f"  Remarque : {note}" for note in c["notes"])
+    rep.append(
+        "Convention : torseur de cohésion = actions extérieures à DROITE de la section, réduit au centre G(s) ; "
+        "réactions = efforts exercés par les appuis sur la poutre (repère global)."
+    )
+    sup = mdl["supports"]
+    if not sup:
+        rep.append("Liaisons : aucune.")
+    else:
+        rep.append("Liaisons :")
+        for s in sup:
+            rep.append(
+                f"  {s['name']} : {s['type'].replace('_', ' ')} en s = {_num(s['pos'])} m "
+                f"(ddl bloqués : {_dofText(s['type'])})"
+            )
+            if s["spring"] > 0:
+                rep.append(f"    appui élastique : ressort de raideur k = {_num(s['spring'])} N/m (déplacement = −R/k)")
+            if s["dx"] != 0 or s["dy"] != 0 or s["dz"] != 0:
+                rep.append(
+                    f"    tassement imposé : dx = {_num(s['dx'])} m ; dy = {_num(s['dy'])} m ; dz = {_num(s['dz'])} m"
+                )
+    for hi in mdl["hinges"]:
+        rep.append(
+            f"Rotule intermédiaire {hi['name']} en s = {_num(hi['pos'])} m : "
+            "Mfy = Mfz = 0 (la rotation y est discontinue)."
+        )
+    th = mdl["thermal"]
+    if th["epsX"] != 0 or th["kv"] != 0 or th["kw"] != 0:
+        rep.append(
+            f"Action thermique : α·ΔT = {_num(th['epsX'])} (allongement relatif), courbure thermique "
+            f"v'' = {_num(th['kv'])} 1/m (plan xy), w'' = {_num(th['kw'])} 1/m (plan xz). "
+            "Une dilatation ou une courbure empêchée par les appuis crée des efforts."
+        )
+    if mdl["pointLoads"]:
+        rep.append("Forces ponctuelles :")
+        for p in mdl["pointLoads"]:
+            rep.append(
+                f"  {p['name']} en s = {_num(p['pos'])} m : Fx = {_num(p['Fx'])} N ; "
+                f"Fy = {_num(p['Fy'])} N ; Fz = {_num(p['Fz'])} N"
+            )
+    if mdl["pointMoments"]:
+        rep.append("Couples ponctuels :")
+        for p in mdl["pointMoments"]:
+            rep.append(
+                f"  {p['name']} en s = {_num(p['pos'])} m : Mx = {_num(p['Mx'])} N·m ; "
+                f"My = {_num(p['My'])} N·m ; Mz = {_num(p['Mz'])} N·m"
+            )
+    if c["dl"]:
+        rep.append("Charges réparties (ξ = s - a, variable locale) :")
+        for d in c["dl"]:
+            if d["I0"] != 0:
+                xr = f" ; résultante {_num(d['I0'])} N appliquée en s = {_num(d['I1'] / d['I0'])} m"
+            else:
+                xr = f" ; résultante nulle, moment {_num(d['I1'])} N·m"
+            dr = d["dir"]
+            rep.append(
+                f"  {d['name']} : p_{dr}(ξ) = {poly2str(d['coeffs'], 'ξ')} N/m sur "
+                f"[{_num(d['a'])} ; {_num(d['b'])}] m, soit p_{dr}(s) = {poly2str(d['pg'])}{xr}"
+            )
+            xiTex = r"\xi = s" if d["a"] == 0 else r"\xi = s - " + _texNum(d["a"])
+            tex.append(
+                "$p_{"
+                + dr
+                + r"}(\xi) = "
+                + poly2latex(d["coeffs"], r"\xi")
+                + r",\ \ "
+                + xiTex
+                + r",\ \ \int_{"
+                + _texNum(d["a"])
+                + "}^{"
+                + _texNum(d["b"])
+                + "} p_{"
+                + dr
+                + r"}\,ds = "
+                + _texNum(d["I0"])
+                + "$"
+            )
+    rep.append(f"Points de rupture (tronçons) : s = [{_joinNums(c['br'])}] m")
+
+
+def _repHyper(c: dict, rep: list[str], tex: list[str]) -> None:
+    """Rapport : degré d'hyperstatisme des 4 sous-problèmes et total (ajouté à rep et tex)."""
+    sps = c["subs"]
+    rep.append("--- Degré d'hyperstatisme (4 sous-problèmes indépendants) ---")
+    for s in sps:
+        nm = ", ".join(u["name"] for u in s["unk"]) if s["nunk"] > 0 else "-"
+        extra = ""
+        if s["rank"] < s["neq"]:
+            if s["nunk"] == 0 and not s["loaded"]:
+                extra = " (aucune liaison ni charge : sans objet)"
+            else:
+                extra = " (liaisons insuffisantes mais chargement équilibré : pas de mécanisme effectif)"
+        elif s["h"] > 0 and not s["loaded"]:
+            extra = " (non chargé : réactions nulles)"
+        rep.append(f"  {s['label']} : {s['nunk']} inconnue(s) [{nm}], {s['neq']} équation(s) -> h = {s['h']}{extra}")
+    H = c["h"]
+    st = "isostatique" if c["isostatic"] else "hyperstatique"
+    rep.append(
+        f"  h total = {H['axial']} + {H['xy']} + {H['xz']} + {H['torsion']} = {H['total']} ; "
+        f"h plan (x,y) = {sps[0]['nunk']} + {sps[1]['nunk']} - 3 = {H['plan2D']} -> poutre {st}"
+    )
+    tex.append(
+        f"$h = h_{{N}} + h_{{xy}} + h_{{xz}} + h_{{t}} = {H['axial']} + {H['xy']} + {H['xz']} + {H['torsion']} "
+        f"= {H['total']}$"
+    )
+    tex.append(f"$h_{{plan}} = r_{{N}} + r_{{xy}} - 3 = {sps[0]['nunk']} + {sps[1]['nunk']} - 3 = {H['plan2D']}$")
+
+
+def _repPFS(c: dict, rep: list[str], tex: list[str]) -> None:
+    """Rapport : principe fondamental de la statique par sous-problème (équations et réactions, ajoutés à rep, tex)."""
+    nameA = c["nameA"]
+    texA = _texId(nameA, 0)
+    rep.append(
+        f"--- Principe fondamental de la statique : résultantes et moments au point {nameA} (s = {_num(c['xA'])} m) ---"
+    )
+    rep.append(
+        f"  Transport des moments : M_{nameA}(F) = M_P(F) + {nameA}P ∧ F avec {nameA}P = (x_P - x_{nameA})·x, "
+        f"soit (x_P - x_{nameA})·Fy selon z et -(x_P - x_{nameA})·Fz selon y."
+    )
+    tex.append(
+        r"$\overrightarrow{M}_{"
+        + texA
+        + r"}(\vec{F}) = \overrightarrow{M}_{P}(\vec{F}) + \overrightarrow{"
+        + texA
+        + r"P} \wedge \vec{F}$"
+    )
+    for s in c["subs"]:
+        if s["nunk"] == 0 and not s["loaded"]:
+            continue
+        rep.append(f"  [{s['label']}]")
+        if s["loadMoments"]:
+            parts = [f"{lm['label']} = {_num(lm['value'])} N·m" for lm in s["loadMoments"]]
+            ax = "z" if s["name"] == "xy" else "y"
+            rep.append(f"    Moments des charges en {nameA} (selon {ax}) : {' ; '.join(parts)}")
+        sg = np.array([u["sgn"] for u in s["unk"]], dtype=float)
+        nmT = [u["name"] for u in s["unk"]]
+        nmX = [u["tex"] for u in s["unk"]]
+        for r in range(s["neq"]):
+            coefs = s["rowSign"][r] * s["A"][r] * sg
+            cst = s["rowSign"][r] * s["b"][r]
+            rep.append(f"    {s['eqTxt'][r]} : {_linEq(coefs, nmT, cst, False)}")
+            tex.append("$" + s["eqTex"][r] + r" :\ " + _linEq(coefs, nmX, cst, True) + "$")
+        if s["rank"] == s["neq"] and s["h"] == 0:
+            parts = []
+            for j, u in enumerate(s["unk"]):
+                val = u["sgn"] * s["R"][j]
+                parts.append(f"{u['name']} = {_num(val)} {u['unit']}")
+                tex.append("$" + u["tex"] + " = " + _texNum(val) + r"\ \mathrm{" + u["texUnit"] + "}$")
+            rep.append("    => " + " ; ".join(parts))
+        elif s["h"] > 0 and s["rank"] == s["neq"]:
+            if s["loaded"]:
+                rep.append(
+                    f"    => {s['neq']} équation(s) pour {s['nunk']} inconnue(s) : hyperstatique d'ordre {s['h']}, "
+                    "résolution par Ménabréa / intégration ci-dessous."
+                )
+            else:
+                rep.append(f"    => hyperstatique d'ordre {s['h']} non chargé : toutes les réactions sont nulles.")
+        else:
+            rep.append(
+                "    => liaisons insuffisantes mais chargement compatible (aucun mouvement de mécanisme sollicité)."
+            )
+            if s["degenerate"]:
+                rep.append(
+                    "    => liaisons à la fois redondantes et insuffisantes : réactions de norme minimale "
+                    "(méthode d'intégration)."
+                )
+
+
+def _repHypRes(c: dict, rep: list[str], tex: list[str]) -> None:
+    """Rapport : Ménabréa, méthode d'intégration et écart entre les deux, par sous-problème hyperstatique."""
+    for s in c["subs"]:
+        men = s["men"]
+        if men is not None:
+            rep.append(f"--- Théorème de Ménabréa : {s['label']} (h = {s['h']}) ---")
+            rep.append(
+                f"  Système de base isostatique : réactions conservées [{', '.join(men['base'])}] ; inconnues "
+                f"hyperstatiques X = [{', '.join(men['unknowns'])}] (déplacements correspondants nuls)."
+            )
+            if s["kind"] == "bend":
+                msg = (
+                    f"  M(s) = M0(s) + Σ Xi·mi(s) ; {s['energyTxt']} ; ∂U/∂Xi = 0 -> Σj δij·Xj = -δi0, "
+                    f"δij = ∫ mi·mj/({s['stiffTxt']}) ds"
+                )
+                if men["includeShear"]:
+                    msg += f" + ∫ ti·tj/({s['shearTxt']}) ds"
+            else:
+                msg = (
+                    f"  N(s) = N0(s) + Σ Xi·ni(s) ; {s['energyTxt']} ; ∂U/∂Xi = 0 -> Σj δij·Xj = -δi0, "
+                    f"δij = ∫ ni·nj/({s['stiffTxt']}) ds"
+                )
+            rep.append(msg)
+            tex.append(
+                r"$\frac{\partial U}{\partial X_{i}} = 0 \Rightarrow \sum_{j} \delta_{ij}\,X_{j} = -\delta_{i0}$"
+            )
+            tex.append(s["energyTex"])
+            hX = len(men["X"])
+            xn = [f"X_{{{i}}}" for i in range(1, hX + 1)]
+            for i in range(hX):
+                rep.append(f"  Ligne {i + 1} : δ = [{_joinNums(men['delta'][i])}] ; -δ{i + 1}0 = {_num(men['rhs'][i])}")
+                tex.append("$" + _linEq(men["delta"][i], xn, 0.0, True, False) + " = " + _texNum(men["rhs"][i]) + "$")
+            parts = []
+            for i in range(hX):
+                xi = men["sgn"][i] * men["X"][i]
+                parts.append(f"X{i + 1} = {men['unknowns'][i]} = {_num(xi)}")
+                tex.append(f"$X_{{{i + 1}}} = " + men["unknownsTex"][i] + " = " + _texNum(xi) + "$")
+            rep.append("  Solution : " + " ; ".join(parts))
+        it = s["int"]
+        if it is not None:
+            rep.append(f"--- Méthode d'intégration : {s['label']} ---")
+            rep.append("  " + s["intTxt"])
+            tex.append(s["intTex"])
+            rep.append(f"  Inconnues ({len(it['unknowns'])}) : {', '.join(it['unknowns'])}")
+            rep.append(f"  Équations : {s['neq']} d'équilibre + conditions cinématiques {', '.join(it['conditions'])}")
+            parts = []
+            for i, valeur in enumerate(it["solution"]):
+                nmi = it["unknowns"][i]
+                if " =" in nmi:
+                    nmi = nmi[: nmi.index(" =")]
+                sg = s["unk"][i]["sgn"] if i < len(s["unk"]) else 1
+                parts.append(f"{nmi} = {_num(sg * valeur)}")
+            rep.append("  Solution : " + " ; ".join(parts))
+        if not math.isnan(s["hyperCheck"]):
+            rep.append(f"  Écart relatif maximal Ménabréa / intégration ({s['label']}) : {s['hyperCheck']:.3g}")
+
+
+def _repReactions(c: dict, rep: list[str]) -> None:
+    """Rapport : réactions des appuis (efforts exercés par les appuis sur la poutre, repère global)."""
+    rep.append("--- Réactions (efforts exercés par les appuis sur la poutre, repère global) ---")
+    if not c["reactions"]:
+        rep.append("  aucune liaison.")
+    for r in c["reactions"]:
+        rep.append(
+            f"  {r['name']} ({r['type'].replace('_', ' ')}, s = {_num(r['pos'])} m) : Rx = {_num(r['Rx'])} N ; "
+            f"Ry = {_num(r['Ry'])} N ; Rz = {_num(r['Rz'])} N ; Mx = {_num(r['Mx'])} N·m ; "
+            f"My = {_num(r['My'])} N·m ; Mz = {_num(r['Mz'])} N·m"
+        )
+
+
+def _repCohesion(c: dict, rep: list[str], tex: list[str]) -> None:
+    """Rapport : torseur de cohésion (coupures et intégrale), équations par tronçon et contrôle des deux méthodes."""
+    if c["doCut"]:
+        rep.append("--- Torseur de cohésion : méthode des coupures (somme des actions à droite) ---")
+        rep.append(
+            "  N(s) = Σdroite Fx + ∫_s^L px dx ; Ty(s) = Σdroite Fy + ∫_s^L py dx ; "
+            "Tz(s) = Σdroite Fz + ∫_s^L pz dx ; Mt(s) = Σdroite Mx"
+        )
+        rep.append(
+            "  Mfz(s) = Σdroite [(xi - s)·Fyi + Czi] + ∫_s^L (x - s)·py dx ; "
+            "Mfy(s) = Σdroite [-(xi - s)·Fzi + Cyi] - ∫_s^L (x - s)·pz dx"
+        )
+        tex.append(
+            r"$N(s) = \sum_{droite} F_{xi} + \int_{s}^{L} p_x\,dx,\ \ "
+            r"T_y(s) = \sum_{droite} F_{yi} + \int_{s}^{L} p_y\,dx$"
+        )
+        tex.append(
+            r"$M_{fz}(s) = \sum_{droite} \left[ (x_i - s)\,F_{yi} + C_{zi} \right] + \int_{s}^{L} (x - s)\,p_y\,dx$"
+        )
+        tex.append(
+            r"$M_{fy}(s) = \sum_{droite} \left[ -(x_i - s)\,F_{zi} + C_{yi} \right] - \int_{s}^{L} (x - s)\,p_z\,dx$"
+        )
+    else:
+        rep.append("--- Torseur de cohésion (méthode intégrale uniquement) ---")
+    for k, e in enumerate(c["eqs"], start=1):
+        rep.append(f"  Tronçon {k} : s ∈ [{_num(e['s1'])} ; {_num(e['s2'])}] m")
+        nz = 0
+        for nom in _COMPOSANTES:
+            txt = e[nom + "_txt"]
+            if not txt.endswith("= 0"):
+                rep.append("    " + txt)
+                nz += 1
+        if nz == 0:
+            rep.append("    toutes les composantes sont nulles")
+    if c["doIntg"]:
+        rep.append(
+            f"--- Méthode intégrale ({c['methodUsed']}) : intégration depuis s = L (valeurs nulles en L+), "
+            "sauts aux actions ponctuelles ---"
+        )
+        rep.append(
+            "  dN/ds = -px ; dTy/ds = -py (= q) ; dTz/ds = -pz ; dMfz/ds = -Ty ; dMfy/ds = Tz ; "
+            "Ty(a-) = Ty(a+) + Fy ; Mfz(a-) = Mfz(a+) + Cz ; Mfy(a-) = Mfy(a+) + Cy"
+        )
+        tex.append(
+            r"$\frac{dN}{ds} = -p_x,\ \ \frac{dT_y}{ds} = -p_y,\ \ T_y = -\frac{dM_{fz}}{ds},\ \ "
+            r"T_z = \frac{dM_{fy}}{ds}$"
+        )
+        tex.append(r"$T_y(s) = T_y(b^{-}) + \int_{s}^{b} p_y\,dx,\ \ M_{fz}(s) = M_{fz}(b^{-}) + \int_{s}^{b} T_y\,dx$")
+        cl = c["closure"]
+        rep.append(
+            "  Fermeture en s = 0- (équilibre global, doit être nulle) : "
+            f"N = {_num(cl[0])} ; Ty = {_num(cl[1])} ; Tz = {_num(cl[2])} ; "
+            f"Mt = {_num(cl[3])} ; Mfy = {_num(cl[4])} ; Mfz = {_num(cl[5])}"
+        )
+        if not math.isnan(c["methodCheck"]):
+            rep.append(f"  Écart relatif maximal coupures / intégrale : {c['methodCheck']:.3g}")
+
+
+def _repExtrema(c: dict, rep: list[str], tex: list[str]) -> None:
+    """Rapport : extrema des 6 composantes d'efforts (texte et LaTeX)."""
+    rep.append("--- Extrema des efforts intérieurs ---")
+    unites = ("N", "N", "N", "N·m", "N·m", "N·m")
+    unitesTex = ("N", "N", "N", r"N\,m", r"N\,m", r"N\,m")
+    base = ("N_{", "T_{y,", "T_{z,", "M_{t,", "M_{fy,", "M_{fz,")
+    for nom, u, ut, b in zip(_COMPOSANTES, unites, unitesTex, base, strict=True):
+        e = c["extrema"][nom]
+        rep.append(
+            f"  {nom} : max = {_num(e['max'])} {u} en s = {_num(e['sMax'])} m ; "
+            f"min = {_num(e['min'])} {u} en s = {_num(e['sMin'])} m"
+        )
+        if e["max"] != 0 or e["min"] != 0:
+            tex.append(
+                "$"
+                + b
+                + r"max} = "
+                + _texNum(e["max"])
+                + r"\ \mathrm{"
+                + ut
+                + r"}\ (s = "
+                + _texNum(e["sMax"])
+                + r"\ \mathrm{m}),\ \ "
+                + b
+                + "min} = "
+                + _texNum(e["min"])
+                + r"\ \mathrm{"
+                + ut
+                + r"}\ (s = "
+                + _texNum(e["sMin"])
+                + r"\ \mathrm{m})$"
+            )
+
+
+def _beamReport(c: dict) -> tuple[list[str], list[str]]:
+    """Rapport détaillé (texte, en français) et formules clés (LaTeX) de solveBeam ; port de btsBeamReport.
+
+    Entrée : `c` (contexte de solveBeam : mdl, notes, br, subs, h, xA, nameA, isostatic, reactions, dl, doCut, doIntg,
+    methodUsed, methodCheck, closure, eqs, extrema).
+    Sorties : `(report, latex)`, deux listes de chaînes ; les chaînes LaTeX sont entre $ et sans caractère non ASCII.
+    """
+    rep = ["=== Poutre droite : résolution statique (BeamAndTrussSolver.solveBeam) ==="]
+    tex = [r"$\{T_{coh}\}_{G} = \{T_{ext,\,droite}\}_{G} = -\{T_{ext,\,gauche}\}_{G}$"]
+    _repDonnees(c, rep, tex)
+    _repHyper(c, rep, tex)
+    _repPFS(c, rep, tex)
+    _repHypRes(c, rep, tex)
+    _repReactions(c, rep)
+    _repCohesion(c, rep, tex)
+    _repExtrema(c, rep, tex)
+    return rep, tex
 
 
 def solveBeam(model: dict, opts: dict | None = None) -> dict:
     """Résout une poutre : réactions, degré d'hyperstatisme et efforts intérieurs (ARCHITECTURE §3).
 
     Entrées : `model` (dict, SI : m, Pa, m², m⁴, N, N·m) ; `opts` (dict facultatif) : internalMethod
-    ('both', 'coupures', 'integrale'), hyperMethod ('both', 'menabrea', 'integration'), useSymbolic,
-    includeShearEnergy.
+    ('both', 'coupures', 'integrale'), hyperMethod ('both', 'menabrea', 'integration'), useSymbolic, includeShearEnergy.
+    useSymbolic vaut faux par défaut : la méthode intégrale est alors numérique (np.polyint), plus rapide, avec le même
+    résultat que le chemin SymPy, qui n'est utilisé que si useSymbolic est vrai et que SymPy est installé.
     Sortie : dict `sol` : model, h, isostatic, reactions (liste de dicts name, pos, type, Rx, Ry, Rz, Mx, My, Mz,
-    en N et N·m), breaks, N, Ty, Tz, Mt, Mfy, Mfz (PP), internalIntegral, methodCheck, equations, extrema,
-    menabrea, reactionsMenabrea, reactionsIntegration, hyperCheck, integration, methodUsed, report, latex.
+    en N et N·m), breaks, N, Ty, Tz, Mt, Mfy, Mfz (PP : coupures, ou méthode intégrale si internalMethod = 'integrale'),
+    internalIntegral (6 PP, methodUsed, closure ; {} si non calculée), methodCheck (écart des deux méthodes, NaN si
+    une seule), equations (une entrée par tronçon), extrema, menabrea, reactionsMenabrea, reactionsIntegration,
+    hyperCheck, integration, methodUsed, report, latex.
     Erreurs : MecaStruct:Beam:invalidModel, invalidSupport, invalidOption, mechanism.
-    Limite (E08) : la méthode intégrale, les équations et le rapport ne sont pas encore calculés (E10).
     """
     o = _beamOpts(opts)
-    mdl, _ = _normalizeModel(model)  # notes « non fourni » : rapport (E10)
+    mdl, notes = _normalizeModel(model)
     L = mdl["L"]
     sup = mdl["supports"]
     dl = _prepDist(mdl["distLoads"])
@@ -1283,19 +1844,32 @@ def solveBeam(model: dict, opts: dict | None = None) -> dict:
     maxF = max([_matMaxAbs(C, br) for C in Cc[:3]] + [scaleF])
     maxM = max([_matMaxAbs(C, br) for C in Cc[3:]] + [maxF * L, scaleC])
     compScale = [maxF] * 3 + [maxM] * 3
-    compNames = ["N", "Ty", "Tz", "Mt", "Mfy", "Mfz"]
-
-    internalIntegral, methodCheck, equations, report, latex = _provisoire_E10()
+    doCut = o["internalMethod"] in ("both", "coupures")
     doIntg = o["internalMethod"] in ("both", "integrale")
 
-    # --- pp principaux (en E08, toujours issus des coupures)
+    # --- méthode intégrale (internalIntegral, contrôle des coupures)
+    methodCheck = math.nan
+    internalIntegral: dict = {}
+    closure = None
+    methodUsed = "numérique"
+    if doIntg:
+        act = _actions(mdl, reactions)
+        Ci, closure, methodUsed = _integralMethod(br, tol, act, dl, D, o["useSymbolic"])
+        if doCut:
+            methodCheck = _methodCheck(Cc, Ci, br, compScale)
+        for c, nom in enumerate(_COMPOSANTES):
+            internalIntegral[nom] = _matToPP(_cleanMat(Ci[c], br, 1e-12 * compScale[c]), br)
+        internalIntegral["methodUsed"] = methodUsed
+        internalIntegral["closure"] = closure
+
+    # --- pp principaux : coupures, ou méthode intégrale seule (internalMethod = 'integrale')
     sol = {"model": mdl, "h": h, "isostatic": isostatic, "reactions": reactions, "breaks": br}
-    for name, C, sc in zip(compNames, Cc, compScale, strict=True):
-        sol[name] = _matToPP(_cleanMat(C, br, 1e-12 * sc), br)
+    for c, nom in enumerate(_COMPOSANTES):
+        sol[nom] = _matToPP(_cleanMat(Cc[c], br, 1e-12 * compScale[c]), br) if doCut else internalIntegral[nom]
     sol["internalIntegral"] = internalIntegral
     sol["methodCheck"] = methodCheck
-    sol["equations"] = equations
-    sol["extrema"] = {name: _extrema(sol[name]) for name in compNames}
+    sol["equations"] = _equations(sol, br)
+    sol["extrema"] = {nom: _extrema(sol[nom]) for nom in _COMPOSANTES}
 
     # --- Ménabréa / intégration
     sol["menabrea"] = {s["name"]: s["men"] for s in sps if s["men"] is not None}
@@ -1304,6 +1878,27 @@ def solveBeam(model: dict, opts: dict | None = None) -> dict:
     sol["hyperCheck"] = max(checks) if checks else math.nan
     sol["reactionsMenabrea"] = [] if isostatic else reacMen
     sol["reactionsIntegration"] = [] if isostatic else reacInt
-    sol["methodUsed"] = "numérique" if doIntg else "coupures"
-    sol["report"], sol["latex"] = report, latex
+    sol["methodUsed"] = methodUsed if doIntg else "coupures"
+
+    # --- rapport
+    ctx = {
+        "mdl": mdl,
+        "notes": notes,
+        "br": br,
+        "subs": sps,
+        "h": h,
+        "xA": xA,
+        "nameA": nameA,
+        "isostatic": isostatic,
+        "reactions": reactions,
+        "dl": dl,
+        "doCut": doCut,
+        "doIntg": doIntg,
+        "methodUsed": methodUsed,
+        "methodCheck": methodCheck,
+        "closure": closure,
+        "eqs": sol["equations"],
+        "extrema": sol["extrema"],
+    }
+    sol["report"], sol["latex"] = _beamReport(ctx)
     return sol

@@ -1,4 +1,4 @@
-"""Tests de beam_solver, sous-étapes E08a, E08b, E08c et E09.
+"""Tests de beam_solver, sous-étapes E08a, E08b, E08c, E09 et E10.
 
 E08a : options, normalisation du modèle, Gauss, matrices de coefficients, coupures. Portage de testInvalidInputs et de
 la partie normalisation de testNormalizationAndDefaults (tests/test_BeamAndTrussSolver.m) ; les erreurs passent ici par
@@ -6,7 +6,9 @@ _normalizeModel et _beamOpts.
 E08b : sous-problèmes, Ménabréa, extrema, solveBeam (structure du résultat, mécanisme).
 E08c : cas d'école de MATLAB, exécutés avec les options par défaut et avec Ménabréa + coupures seulement.
 E09 : méthode d'intégration, Ménabréa ≡ intégration, ressorts, tassements, thermique, rotules, et tous les cas
-solveBeam de golden_beam.json. Non portés : methodCheck et equations (E10), flèches de SolicitationsEngine (E13).
+solveBeam de golden_beam.json.
+E10 : méthode intégrale ≡ coupures, options de méthode, LaTeX et rapport, signe de My ; non porté : les flèches de
+SolicitationsEngine (E13).
 """
 
 import copy
@@ -38,7 +40,6 @@ from mecastruct.core.beam_solver import (
     _normalizeModel,
     _normType,
     _prepDist,
-    _provisoire_E10,
     _reactionDiff,
     solveBeam,
 )
@@ -205,7 +206,7 @@ def test_hinges():
 def test_options():
     o = _beamOpts(None)
     assert (o["internalMethod"], o["hyperMethod"], o["includeShearEnergy"]) == ("both", "both", False)
-    assert o["useSymbolic"] is hasSymbolic()
+    assert o["useSymbolic"] is False  # numérique par défaut (plus rapide, même résultat)
     assert _beamOpts({}) == o
     o = _beamOpts({"internalMethod": "Intégrale", "hyperMethod": "MENABREA", "includeShearEnergy": 1})
     assert (o["internalMethod"], o["hyperMethod"], o["includeShearEnergy"]) == ("integrale", "menabrea", True)
@@ -349,11 +350,11 @@ def test_solveBeam_options_par_defaut_sur_isostatique():
     assert sol["reactions"][0]["Ry"] == pytest.approx(750.0, rel=1e-12)
 
 
-def test_provisoire_E10():
-    assert _provisoire_E10() == ({}, pytest.approx(math.nan, nan_ok=True), [], [], [])
-    sol = solveBeam(sur_deux_appuis(), COUPURES_MENABREA)
+def test_coupures_sans_integrale():
+    sol = solveBeam(sur_deux_appuis(), COUPURES_MENABREA)  # internalMethod = 'coupures' : pas de méthode intégrale
     assert sol["internalIntegral"] == {} and math.isnan(sol["methodCheck"])
-    assert sol["equations"] == [] and sol["report"] == [] and sol["latex"] == []
+    assert len(sol["equations"]) == 2 and sol["equations"][0]["s1"] == 0 and sol["equations"][1]["s2"] == 4
+    assert sol["report"][0].startswith("=== Poutre droite") and sol["latex"][0].startswith("$")
 
 
 def test_menabrea_console_appuyee_force_au_milieu():
@@ -813,9 +814,8 @@ def test_FastPathPerformance(opts):
 # ---------------------------------------------------------------------------------------------------------------------
 
 IDS_GOLDEN = case_ids("golden_beam.json", suffix="_solveBeam")
-# Ignorés par assert_matches : E10 (equations, internalIntegral, methodCheck), et les abscisses sMin / sMax, comparées
-# à part par verifie_abscisses_extrema.
-IGNORE_GOLDEN = {"equations", "internalIntegral", "methodCheck", "sMin", "sMax"}
+# Ignorés par assert_matches : les abscisses sMin / sMax, comparées à part par verifie_abscisses_extrema.
+IGNORE_GOLDEN = {"sMin", "sMax"}
 CHAMPS_REACTION = ("Rx", "Ry", "Rz", "Mx", "My", "Mz")
 # Cas où MATLAB lui-même donne hyperCheck >= 1e-9 (golden : 1,936 pour thermique_bi_encastree). Sans charge, l'échelle
 # d'équilibre vaut 0 et btsReactionDiff compare le bruit d'arrondi des réactions Ry (2e-13 N) à lui-même, alors que
@@ -1048,3 +1048,102 @@ def test_IntermediateHinge():
     # E13 : dv = deflection(h, sh, {"includeShear": False}) ; la pente saute à la rotule et les 4 méthodes de flèche
     # E13 : concordent, max(abs(dv["comparison"]["Ecart_pct"])) < 1e-6
     verifier_erreur(MODELE, solveBeam, {**m, "hinges": [{"pos": 4, "name": "R"}]})
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# E10 : tests/test_BeamAndTrussSolver.m (coupures ≡ intégrale, options, LaTeX et rapport, signe de My, cas README)
+# ---------------------------------------------------------------------------------------------------------------------
+
+COMPOSANTES = ("N", "Ty", "Tz", "Mt", "Mfy", "Mfz")
+# ARCHITECTURE §0.4 : commandes LaTeX interdites (avertissement MATLAB) et environnements amsmath
+MOTIFS_LATEX_INTERDITS = (
+    "\\iint",
+    "\\iiint",
+    "\\implies",
+    "\\text{",
+    "\\dfrac",
+    "\\tfrac",
+    "\\boldsymbol",
+    "\\geqslant",
+    "\\leqslant",
+    "pmatrix",
+    "bmatrix",
+    "{align",
+    "{cases",
+)
+
+
+def verifie_latex(chaine):
+    """Une chaîne LaTeX commence et finit par $, tient en moins de 1000 caractères ASCII, a autant de { que de }."""
+    assert chaine.startswith("$") and chaine.endswith("$"), chaine
+    assert len(chaine) < 1000 and chaine.isascii(), chaine
+    assert chaine.count("{") == chaine.count("}"), chaine
+    assert not any(motif in chaine for motif in MOTIFS_LATEX_INTERDITS), chaine
+
+
+def test_coupures_egales_integrale():
+    # testCutsEqualIntegral : méthode intégrale ≡ coupures, en numérique et en symbolique si SymPy est installé
+    options = [False, True] if hasSymbolic() else [False]
+    for m in mixedModels():
+        for us in options:
+            sol = solveBeam(m, {"useSymbolic": us})
+            assert sol["methodCheck"] < 1e-10
+            assert sol["internalIntegral"]["methodUsed"] == ("symbolique" if us else "numérique")
+            ry = max(abs(r["Ry"]) for r in sol["reactions"])
+            assert np.max(np.abs(sol["internalIntegral"]["closure"])) < 1e-8 * (1 + ry)
+            t = np.linspace(0, sol["model"]["L"], 37)
+            for nom in COMPOSANTES:
+                v1 = ppEval(sol[nom], t)
+                v2 = ppEval(sol["internalIntegral"][nom], t)
+                assert np.allclose(v2, v1, rtol=0, atol=1e-9 * (1 + np.max(np.abs(v1))))
+
+
+def test_options_methodes():
+    # testOptions : méthode intégrale seule, Ménabréa seul, intégration seule et chemin rapide
+    L, q = 5.0, 1e3
+    m = addSup(addSup(baseModel(L), 0, "encastrement", "A"), L, "appui_simple", "B")
+    addQ(m, 0, L, "y", -q)
+    pts = [0.0, 1.0, 2.5, 5.0]
+    s1 = solveBeam(m, {"internalMethod": "coupures"})
+    assert s1["internalIntegral"] == {} and math.isnan(s1["methodCheck"])
+    s2 = solveBeam(m, {"internalMethod": "integrale", "useSymbolic": False})
+    assert ppEval(s2["Mfz"], pts) == pytest.approx(ppEval(s2["internalIntegral"]["Mfz"], pts), rel=1e-12, abs=1e-9)
+    assert ppEval(s2["Mfz"], 0.0) == pytest.approx(-q * L**2 / 8, rel=1e-12)
+    assert math.isnan(s2["methodCheck"])
+    s3 = solveBeam(m, {"hyperMethod": "menabrea", "useSymbolic": False})
+    assert s3["reactionsIntegration"] == [] and s3["reactionsMenabrea"] and s3["menabrea"]
+    assert math.isnan(s3["hyperCheck"])
+    s4 = solveBeam(m, {"hyperMethod": "integration", "useSymbolic": False})
+    assert s4["reactionsMenabrea"] == [] and s4["menabrea"] == {}
+    assert s4["reactions"][1]["Ry"] == pytest.approx(3 * q * L / 8, rel=1e-10)
+    s5 = solveBeam(m, {"internalMethod": "coupures", "hyperMethod": "menabrea", "useSymbolic": False})
+    assert s5["reactions"][1]["Ry"] == pytest.approx(3 * q * L / 8, rel=1e-12)
+    assert ppEval(s5["Mfz"], pts) == pytest.approx(ppEval(s1["Mfz"], pts), rel=1e-12, abs=1e-9)
+
+
+def test_rapport_et_latex():
+    # testReportAndLatexFormat et testLatexRendersWithoutWarning : rapport en texte, LaTeX valide sur chaque modèle
+    for m in mixedModels():
+        sol = solveBeam(m, {"useSymbolic": False})
+        assert sol["report"][0].startswith("=== Poutre droite") and all(isinstance(x, str) for x in sol["report"])
+        for chaine in sol["latex"]:
+            verifie_latex(chaine)
+        for eq in sol["equations"]:
+            for nom in COMPOSANTES:
+                verifie_latex(eq[nom])
+
+
+def test_signe_de_My_dans_le_rapport():
+    # testReportHyperstaticSignMy : My de la réaction B et My_B du rapport ont le même sens (bi-encastrée, charge en z)
+    m = addSup(addSup(baseModel(2), 0, "encastrement", "A"), 2, "encastrement", "B")
+    addF(m, 1, 0, 0, -1000)
+    sol = solveBeam(m)
+    myB = sol["reactions"][1]["My"]
+    assert abs(myB) == pytest.approx(250, abs=1e-6)
+    assert f"My_B = {myB:.6g}" in "\n".join(sol["report"])
+
+
+def test_cas_readme_mmax():
+    # Cas du README (IPE 200, S235, L = 4 m, q = 10 kN/m) : Mmax = qL²/8 = 20 kN·m
+    sol = solveBeam(get_case("golden_beam.json", "readme_IPE200_solveBeam")["entrees"])
+    assert sol["extrema"]["Mfz"]["max"] == pytest.approx(20e3, rel=1e-9)

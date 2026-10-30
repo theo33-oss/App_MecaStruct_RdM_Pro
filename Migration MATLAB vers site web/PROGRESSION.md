@@ -38,7 +38,10 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E09 — beam_solver.py 2/3 (hyperstatique)
   Port de _integration (btsIntegration) : le stub E09 est supprimé, 'integration' et 'both' fonctionnent, hyperCheck et reactionsIntegration renseignés ; ressorts, tassements, rotules et thermique étaient déjà pris en compte dans les deux méthodes (E08), seuls des tests ont été ajoutés. Tests de E08c paramétrés (None, OPTS) ; 7 tests MATLAB portés (flèches de SolicitationsEngine en commentaire `# E13`) ; les 18 cas golden `*_solveBeam` passent avec les options par défaut (gerber_hyperstatique : repli sMin/sMax décidé par Théo, comme bi_encastree_uniforme). pytest 532 passed ; ruff verts.
   Écart à la fiche : le golden thermique_bi_encastree donne lui-même hyperCheck = 1,936 (sans charge, btsReactionDiff compare du bruit d'arrondi à une échelle nulle ; réactions identiques). Python reproduit cette valeur ; pour ce seul cas le test remplace « hyperCheck < 1e-9 » par l'accord des deux méthodes à 1e-9 de la plus grande réaction (HYPERCHECK_BRUIT, code du test). Golden et tolérances inchangés.
-- [ ] E10 — beam_solver.py 3/3 (méthode intégrale, extrema, équations, rapport)
+- [x] E10 — beam_solver.py 3/3 (méthode intégrale, extrema, équations, rapport)
+  Port de btsIntegralMethod (numérique par np.polyint ; symbolique par SymPy exact, même résultat), methodCheck, internalIntegral (6 pp + methodUsed, closure), equations, btsBeamReport découpé en aides `_rep*`. `_provisoire_E10` supprimé ; useSymbolic vaut faux par défaut (fiche), test_options adapté.
+  pytest 537 passed ; ruff check et ruff format --check verts. Golden et tolérances inchangés (seules sMin/sMax restent ignorés dans le test golden) ; golden_beam.json ne contient ni internalIntegral ni equations : coupures ≡ intégrale est testé par test_coupures_egales_integrale.
+  Rapports de appui_appui_uniforme et bi_encastree_uniforme relus : en français ; Ménabréa ≡ intégration à 5e-17 sur le second.
 - [ ] E11 — truss_solver.py
 - [ ] E12 — solicitations.py
 - [ ] E13 — deflection.py
