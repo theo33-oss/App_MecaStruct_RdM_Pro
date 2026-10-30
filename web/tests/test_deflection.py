@@ -2,7 +2,7 @@
 
 Portage des tests de flèche, d'énergie et de Mohr de tests/test_SolicitationsEngine.m, du cas README (IPE 200) et des
 golden files (golden_beam.json : cas *_deflection et *_strainEnergy ; golden_solicitations.json : mohrIntegral).
-testBucklingDelegation est porté en E14, avec buckling.py.
+testBucklingDelegation est porté dans test_buckling.py (E14).
 """
 
 import copy

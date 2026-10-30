@@ -51,7 +51,10 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E13 — deflection.py
   Port de deflection (4 méthodes), strainEnergy et mohrIntegral dans deflection.py ; buckling(p) délègue à buckling.analyze (E14, testBucklingDelegation reporté). 50 tests dans test_deflection.py, # E13 de test_beam_solver.py réactivés ; pytest 629 passed, ruff verts. Écarts : sol optionnel, a et b optionnels pour mohrIntegral, Gauss par numpy leggauss.
   Golden de flèche : 3 exceptions de test décidées par Théo (BLOCAGES.md, E13), limitées à test_golden_deflection ; appui_elastique : castigliano et mohr vérifiés par 3 contrôles au lieu d'une comparaison terme à terme.
-- [ ] E14 — buckling.py
+- [x] E14 — buckling.py
+  Port de BucklingEngine : analyze, stabilityCurve, listConditions, effectiveLengthCoefficient, hasSymbolic (réexporté de data_manager), modes propres, équation caractéristique, dérivation, rapport et LaTeX ; testBucklingDelegation porté. Chemin symbolique (dsolve, vpasolve) non porté : methodUsed = 'numérique' (fiche E14).
+  Golden : 'symbolic' et 'determinant' (sorties du chemin symbolique) exclus de la comparaison (SYMBOLIQUE dans test_buckling.py). fdResidual de encastre-encastre : écart 8,5e-13 avec MATLAB (bruit d'arrondi), passe sous le plancher abs 1e-12, tolérances inchangées.
+  pytest 665 passed (36 nouveaux, dont 7 golden) ; ruff check et ruff format --check verts. Rendu LaTeX non testé (contrôles de texte seulement, comme E04).
 - [ ] E15 — tensors.py
 - [ ] E16 — hooke_gauges.py
 - [ ] E17 — design_checks.py
