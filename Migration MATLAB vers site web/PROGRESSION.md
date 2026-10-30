@@ -11,7 +11,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   Modèles copiés sans modification (dont tests.yml à la racine, non testé sur GitHub : pas de push). venv Python 3.12.10 : pytest 10 passed (0 skip), ruff « All checks passed! », Streamlit health ok et page « MecaStruct RdM Pro » vue. Étape E00 vérifiée : 8 JSON et 9 golden présents.
 
 ## Phase 2 — Moteurs de calcul
-- [ ] E02 — errors.py, utils.py, units.py (+ convertisseur)
+- [x] E02 — errors.py, utils.py, units.py (+ convertisseur)
+  Ports de buildUnitMap / normalizeUnit (table recopiée, contrôlée contre units.json par les tests), toSI / fromSI rejettent les textes (invalidValue) comme MATLAB.
+  pytest : 167 passed (10 anciens + 157 nouveaux) ; ruff check et ruff format --check verts.
 - [ ] E03 — data_manager.py
 - [ ] E04 — kt_mohr.py
 - [ ] E05 — pp.py
