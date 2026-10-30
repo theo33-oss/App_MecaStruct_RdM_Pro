@@ -83,7 +83,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E21 — beam_plots.py
   Port de PlotEngine (beamSchematic, internalForces, deflection, movingEnvelope) en Plotly, helpers dans _common.py. Écarts : une seule légende par figure (MATLAB en a une par axe) ; flèches de taille fixe ; libellés en HTML (sous-indices) et point décimal ; extrema exacts ajoutés aux points tracés (200 par tronçon en efforts, grille fine pour l'intégration de la déformée) ; légende du schéma à droite.
   pytest 820 passed (15 nouveaux dans test_beam_plots.py) ; ruff check et ruff format --check verts. Aperçus : python tools/preview_plots.py, validés par Théo contre docs/img/03 et 04.
-- [ ] E22 — section_plots.py + other_plots.py
+- [x] E22 — section_plots.py + other_plots.py
+  Port de section, sectionStress, bucklingCurve, mohr2D, mohr3D, yieldLocus, truss (2D et 3D), ktChart ; _support déplacé de beam_plots vers _common (support). Écarts : sectionStress ne trace pas le contour (le MATLAB non plus) ; vecteurs 3D sans pointe ; zone admissible 3D = disque moins disques blancs. formulaSheet et exportAxes non portés (fiche).
+  pytest 840 passed (20 nouveaux) ; ruff check verts. Aperçus : python tools/preview_plots.py (21 HTML dans web/tools/out/), rendu à valider par Théo contre docs/img/02, 05, 10, 11.
 
 ## Phase 5 — Interface
 - [ ] E23 — Coquille Streamlit, Accueil, Formulaire rapide

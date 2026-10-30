@@ -11,7 +11,7 @@ from plotly.subplots import make_subplots
 
 from mecastruct.core.errors import MecaStructError
 from mecastruct.core.pp import asPP, ppEval, ppSample
-from mecastruct.plots._common import COULEUR, arcArrow, arrow, comp, label, num, polyShape, teinte
+from mecastruct.plots._common import COULEUR, arcArrow, arrow, comp, label, num, polyShape, support, teinte
 
 _ID = "MecaStruct:PlotEngine:invalidInput"
 _TOUTES = ("N", "Ty", "Tz", "Mt", "Mfy", "Mfz")
@@ -46,36 +46,6 @@ def _txt(
     )
 
 
-def _support(fig: go.Figure, p, typ: str, h: float, phi: float, couleur: str) -> None:
-    """Symbole normalisé d'appui, pointe en p, corps tourné de phi (encastrement, appui simple, rotule, pivots)."""
-    R = np.array([[math.cos(phi), -math.sin(phi)], [math.sin(phi), math.cos(phi)]])
-    origine = np.asarray(p, dtype=float)
-
-    def T(Q):
-        return (R @ np.asarray(Q, dtype=float).T).T + origine
-
-    if typ == "encastrement":
-        polyShape(fig, T([[-1.1 * h, 0.0], [1.1 * h, 0.0]]), couleur, 3)
-        for xi in np.linspace(-1.1 * h, 1.1 * h, 7):
-            polyShape(fig, T([[xi, 0.0], [xi - 0.4 * h, -0.4 * h]]), couleur, 1)
-        return
-    roulant = typ in ("appui_simple", "pivot_glissant")
-    polyShape(fig, T([[0.0, 0.0], [-0.6 * h, -h], [0.6 * h, -h]]), couleur, 1.2, COULEUR["appui"], ferme=True)
-    if typ != "appui_simple":
-        th = np.linspace(0, 2 * math.pi, 40)
-        polyShape(fig, T(np.column_stack([0.18 * h * np.cos(th), 0.18 * h * np.sin(th)])), couleur, 1.2, "white", True)
-    yg = -h
-    if roulant:
-        th = np.linspace(0, 2 * math.pi, 30)
-        for xc in (-0.33 * h, 0.33 * h):
-            cercle = np.column_stack([xc + 0.15 * h * np.cos(th), -1.15 * h + 0.15 * h * np.sin(th)])
-            polyShape(fig, T(cercle), couleur, 1, COULEUR["appui"], ferme=True)
-        yg = -1.3 * h
-    polyShape(fig, T([[-0.9 * h, yg], [0.9 * h, yg]]), couleur, 1.5)
-    for xi in np.linspace(-0.8 * h, 0.9 * h, 6):
-        polyShape(fig, T([[xi, yg], [xi - 0.25 * h, yg - 0.25 * h]]), couleur, 0.8)
-
-
 def beamSchematic(model: dict, sol: dict | None = None) -> go.Figure:
     """Schéma de la poutre : appuis, forces, couples, charges réparties et réactions (avec valeurs si sol est fourni).
 
@@ -105,7 +75,7 @@ def beamSchematic(model: dict, sol: dict | None = None) -> go.Figure:
         phi = 0.0
         if typ == "encastrement":
             phi = -math.pi / 2 if x < L / 2 else math.pi / 2
-        _support(fig, (x, 0.0), typ, h, phi, fg)
+        support(fig, (x, 0.0), typ, h, phi, fg)
         if typ == "encastrement":
             _txt(fig, x + math.copysign(1.8 * h, phi), -1.6 * h, label(nm), fg, "center", "top", 11)
         else:
