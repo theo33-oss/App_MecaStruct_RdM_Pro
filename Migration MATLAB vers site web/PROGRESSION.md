@@ -80,7 +80,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   pytest 805 passed (38 nouveaux dans test_compute.py) ; ruff check et ruff format --check verts. Tests portés de testSectionRectangle, testTruss, testTractionValues, testTorsionAndBuckling, testHookeAndGauges, testParseFunction. Golden et tolérances inchangés.
 
 ## Phase 4 — Graphiques
-- [ ] E21 — beam_plots.py
+- [x] E21 — beam_plots.py
+  Port de PlotEngine (beamSchematic, internalForces, deflection, movingEnvelope) en Plotly, helpers dans _common.py. Écarts : une seule légende par figure (MATLAB en a une par axe) ; flèches de taille fixe ; libellés en HTML (sous-indices) et point décimal ; extrema exacts ajoutés aux points tracés (200 par tronçon en efforts, grille fine pour l'intégration de la déformée) ; légende du schéma à droite.
+  pytest 820 passed (15 nouveaux dans test_beam_plots.py) ; ruff check et ruff format --check verts. Aperçus : python tools/preview_plots.py, validés par Théo contre docs/img/03 et 04.
 - [ ] E22 — section_plots.py + other_plots.py
 
 ## Phase 5 — Interface
