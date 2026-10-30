@@ -63,6 +63,11 @@ def check(tab: str, champ: str, label: str, help: str | None = None, **kw) -> bo
     return _lie(tab, champ, st.checkbox, label, help=help, **kw)
 
 
+def text(tab: str, champ: str, label: str, help: str | None = None, **kw) -> str:
+    """Champ texte lié à saisie[tab][champ]."""
+    return _lie(tab, champ, st.text_input, label, help=help, **kw)
+
+
 def table(tab: str, champ: str, columns: dict, help: str | None = None) -> list[dict]:
     """Tableau éditable (lignes ajoutables) sur saisie[tab][champ], liste de dicts ; columns = column_config.
 
@@ -128,6 +133,8 @@ def _charge_exemple(tab: str) -> None:
     variante = st.session_state.get(f"{tab}.exemple")
     st.session_state["saisie"][tab] = loadExample(tab, variante)
     state.reset_widgets(tab)
+    if tab == "Beam":
+        state.push_beam_history()
 
 
 def example_picker(tab: str) -> None:

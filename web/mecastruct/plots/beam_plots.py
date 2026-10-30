@@ -718,3 +718,18 @@ def movingEnvelope(env: dict) -> go.Figure:
     fig.update_xaxes(range=[s[0], s[-1]], title_text="s (m)", row=2, col=1)
     fig.update_layout(title_text="Enveloppe de charge mobile", height=560, showlegend=True)
     return fig
+
+
+def combinations(T) -> go.Figure:
+    """Moment Mfz maximal et minimal de chaque combinaison (barres), ligne « Enveloppe » comprise.
+
+    Entrée : `T` (DataFrame de computeCombinations : colonnes Combinaison, Mfz max (kN·m), Mfz min (kN·m)).
+    Sortie : figure Plotly, en kN·m.
+    """
+    fig = go.Figure()
+    fig.add_bar(x=T["Combinaison"], y=T["Mfz max (kN·m)"], name="Mfz max", marker_color=COULEUR["positif"])
+    fig.add_bar(x=T["Combinaison"], y=T["Mfz min (kN·m)"], name="Mfz min", marker_color=COULEUR["negatif"])
+    fig.update_layout(
+        barmode="group", title="Moment M<sub>fz</sub> par combinaison", yaxis_title="M<sub>fz</sub> (kN·m)"
+    )
+    return fig

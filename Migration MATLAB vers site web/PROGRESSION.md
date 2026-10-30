@@ -100,7 +100,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E26 — Poutres 1/2
   Page Poutres (exemples, matériau → E, G, Re, section avec import depuis Sections, tableaux appuis / forces / couples / charges réparties, options, Calculer, schéma d'aperçu avant calcul, diagrammes, déformée, équations par tronçon, 6 onglets de résultats). computeBeam renvoie aussi rapport et tables (beamReport, beamTables). Écarts : confirmation « résultat non fiable » remplacée par un avertissement dans l'état ; ressorts, tassements, rotules, température et poids propre laissés à E27 (non éditables ici, mais pris en compte par les exemples). Report de E25 fait ici (hors fiche) : « Efforts en s » et « Efforts au point critique » dans la page Sections, avec le champ s0.
   pytest 862 passed (4 nouveaux : 3 test_page_poutres.py, 1 test_page_sections.py) ; ruff check verts. Rendu visuel avec streamlit run non vérifié.
-- [ ] E27 — Poutres 2/2
+- [x] E27 — Poutres 2/2
+  Page Poutres complétée : charge rapide, ressorts / tassements / rotules / température / poids propre (éditables, déjà pris en compte par le calcul), combinaisons (+ graphique Mfz max/min), charge mobile, profilé le plus léger (+ « Utiliser ce profilé »), Eurocode 3 avec annexe nationale (applyNationalAnnex : γM0 = γM1 = 1 pour EN et FR), fatigue, Annuler / Rétablir (10 états, session_state), envoi vers Tenseurs. Écarts : charge mobile et fatigue suivent les champs MATLAB (mvP, mvE, mvN, mvFixed ; R, ka, kb, Kf = Kt, Rm du matériau), pas le tableau « position relative / charge » ni les champs Kf / Rm de la fiche ; « Charger depuis la poutre » dans Sollicitations reste à E28 (page non portée), lien remplacé par une légende ; la page Tenseurs ne calcule pas encore (E29) : la saisie est remplie et un lien s'affiche ; pas de note « non fiable » dans le statut Eurocode 3.
+  pytest 871 passed (9 nouveaux dans test_page_poutres.py) ; ruff check verts. Rendu visuel avec streamlit run non vérifié.
 - [ ] E28 — Treillis + Sollicitations
 - [ ] E29 — Flambage, Tenseurs & critères, Hooke & jauges
 - [ ] E30 — Enregistrer / ouvrir + exports

@@ -51,3 +51,102 @@ def test_cas_readme_en_widgets():
     assert res["sol"]["extrema"]["Mfz"]["max"] / 1e3 == pytest.approx(20.0, rel=1e-6)
     assert res["defl"]["integration"]["fmax"] * 1e3 == pytest.approx(9.029, abs=5e-4)
     assert "9.029" in res["status"]
+
+
+def _charge(at: AppTest, variante: str) -> None:
+    at.selectbox(key="Beam.exemple").set_value(variante).run()
+    _bouton(at, "Charger l'exemple").click().run()
+
+
+def test_combinaisons_avec_enveloppe():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _bouton(at, "Calculer les combinaisons").click().run()
+    assert not at.exception  # la ligne d'état est rouge : l'ELU de l'exemple ne passe pas
+    T = at.session_state["res"]["BeamCombo"]
+    assert T["Combinaison"].iloc[-1] == "Enveloppe"
+
+
+def test_eurocode_fatigue_et_profile_sur_exemple_ipe():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _bouton(at, "Vérifier selon l'Eurocode 3").click().run()
+    _bouton(at, "Vérifier la fatigue").click().run()
+    _bouton(at, "Chercher le profilé le plus léger").click().run()
+    assert not at.exception and not at.error
+    res = at.session_state["res"]
+    assert {"BeamEC3", "BeamFat", "BeamProf"} <= set(res)
+    assert res["BeamProf"][1] is not None
+
+
+def test_eurocode_refuse_une_section_saisie_a_la_main():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    at.number_input(key="Beam.S").set_value(5000.0).run()  # valeur à la main : plus de forme associée
+    _bouton(at, "Vérifier selon l'Eurocode 3").click().run()
+    assert not at.exception
+    assert len(at.error) == 1 and "BeamEC3" not in at.session_state["res"]
+
+
+def test_charge_mobile():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _bouton(at, "Calculer l'enveloppe de la charge mobile").click().run()
+    assert not at.exception and not at.error
+    assert "BeamMov" in at.session_state["res"]
+
+
+def test_annexe_nationale_remet_gamma_a_1():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    at.selectbox(key="Beam.na").set_value("autre").run()
+    at.number_input(key="Beam.gM0").set_value(1.1).run()
+    assert at.session_state["saisie"]["Beam"]["gM0"] == pytest.approx(1.1)
+    at.selectbox(key="Beam.na").set_value("FR").run()
+    s = at.session_state["saisie"]["Beam"]
+    assert s["gM0"] == 1.0 and s["gM1"] == 1.0
+
+
+def test_charge_rapide_ajoute_une_ligne():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    avant = len(at.session_state["saisie"]["Beam"]["dl"])
+    at.selectbox(key="Beam_qforme").set_value("Triangulaire croissante (0 → p)").run()
+    _bouton(at, "Ajouter cette charge").click().run()
+    assert not at.exception and not at.error
+    dl = at.session_state["saisie"]["Beam"]["dl"]
+    assert len(dl) == avant + 1 and dl[-1]["type"] == "linéaire" and dl[-1]["vals"].startswith("0 ")
+
+
+def test_tassement_ressort_rotule_et_poids_propre_editables():
+    """Exemples « tassement » et « gerber » : tableaux supx et hg, température et poids propre éditables."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _charge(at, "tassement")
+    assert at.session_state["saisie"]["Beam"]["supx"][0]["dy"] == -10.0
+    at.number_input(key="Beam.thDT").set_value(20.0).run()
+    at.checkbox(key="Beam.selfw").set_value(True).run()
+    _bouton(at, "Calculer").click().run()
+    assert not at.exception and not at.error
+    s = at.session_state["saisie"]["Beam"]
+    assert s["thDT"] == 20.0 and s["selfw"] is True and "Beam" in at.session_state["res"]
+    _charge(at, "gerber")
+    _bouton(at, "Calculer").click().run()
+    assert not at.exception and not at.error
+    assert len(at.session_state["saisie"]["Beam"]["hg"]) == 1
+
+
+def test_annuler_retablit_le_premier_exemple():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _charge(at, "console")
+    L1 = at.session_state["saisie"]["Beam"]["L"]
+    _charge(at, "deuxtravees")
+    L2 = at.session_state["saisie"]["Beam"]["L"]
+    assert L1 != L2
+    _bouton(at, "↶ Annuler").click().run()
+    assert at.session_state["saisie"]["Beam"]["L"] == L1
+    assert at.number_input(key="Beam.L").value == L1
+    _bouton(at, "↷ Rétablir").click().run()
+    assert at.session_state["saisie"]["Beam"]["L"] == L2
+
+
+def test_envoyer_au_tenseur():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _bouton(at, "Envoyer au tenseur (point le plus sollicité)").click().run()
+    assert not at.exception and not at.error
+    ten = at.session_state["saisie"]["Ten"]
+    sigma = at.session_state["res"]["Beam"]["check"]["sigma"] / 1e6
+    assert ten["sig"][0][0] == pytest.approx(sigma) and ten["mat"] == "S235"
