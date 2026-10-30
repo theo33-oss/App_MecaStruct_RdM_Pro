@@ -933,3 +933,18 @@ def ktChart(id: str) -> go.Figure:
         legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99),
     )
     return fig
+
+
+def bucklingMode(b: dict) -> go.Figure:
+    """Mode propre de flambement v(s)/v_max sur [0, L].
+
+    Entrée : `b` (buckling.analyze : modeShape, conditionText, Lp en m, L en m). Sortie : figure Plotly.
+    """
+    s = np.linspace(0.0, float(b["L"]), 201)
+    fig = go.Figure(go.Scatter(x=s, y=np.asarray(b["modeShape"](s), dtype=float), mode="lines", line={"width": 3}))
+    fig.update_layout(
+        title=f"Mode propre ({b['conditionText']}, L' = {float(b['Lp']):.4g} m)",
+        xaxis_title="s (m)",
+        yaxis_title="v(s)/v<sub>max</sub>",
+    )
+    return fig

@@ -939,6 +939,20 @@ def defaultTensorInput() -> dict:
     }
 
 
+def symmetrize(sig: list[list[float]], edits: dict) -> list[list[float]]:
+    """Tenseur 3×3 après des cellules modifiées, en gardant σij = σji (symmetrize de MecaStruct_App.m).
+
+    Entrées : `sig` (3×3, MPa) ; `edits` : {ligne: {colonne: valeur}} avec colonne = 0, 1, 2 ou "x", "y", "z" ; une
+    valeur None (cellule vidée) vaut 0. Sortie : nouvelle liste 3×3 ; `sig` n'est pas modifiée.
+    """
+    out = [list(map(float, ligne)) for ligne in sig]
+    for i, colonnes in edits.items():
+        for j, valeur in colonnes.items():
+            j = "xyz".index(j) if isinstance(j, str) else int(j)
+            out[int(i)][j] = out[j][int(i)] = 0.0 if valeur is None else float(valeur)
+    return out
+
+
 def computeTensor(saisie: dict, dm: DataManager) -> dict:
     """Tenseur des contraintes : principales, facette, Mohr 2D et 3D, critères (Tresca, Von Mises, Rankine).
 

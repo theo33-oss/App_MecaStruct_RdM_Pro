@@ -9,10 +9,9 @@ import streamlit as st
 
 from mecastruct.core import geometry
 from mecastruct.core.data_manager import sectionPresets
-from mecastruct.core.units import fromSI
 from mecastruct.plots import section_plots
 from mecastruct.services import beam_design, beam_services, compute
-from mecastruct.ui import state, widgets
+from mecastruct.ui import state, transfert, widgets
 from mecastruct.ui.formula_panel import formula_panel
 
 # Dimensions pertinentes par type (port de relevantDims de MecaStruct_App.m)
@@ -65,29 +64,10 @@ def _calcule() -> None:
 
 
 def _envoie_vers_poutres() -> None:
-    """Transmet la section calculée à la saisie Poutres (S, Iz, Iy, Ix, Iyz, ky, kz…) et réinitialise ses widgets."""
-    r = state.result("Sec")
-    if r is None:
-        return
-    res = r["result"]
-    beam = beam_design.sectionToBeamInput(state.saisie("Beam"), res["sec"], res["P"], dm.getMaterial(saisie["mat"]))
-    st.session_state["saisie"]["Beam"] = beam
-    state.reset_widgets("Beam")
-    # Flambage : S, Iz, Iy de la poutre ; axes non principaux (Iyz ≠ 0, hors profilé) : moments principaux I1, I2
-    fla = st.session_state["saisie"]["Fla"]
-    fla.update(
-        S=beam["S"],
-        Iz=beam["Iz"],
-        Iy=beam["Iy"],
-        mat=saisie["mat"],
-        **compute._materiau(dm, saisie["mat"], ["E", "Re"]),
-    )
-    P = res["P"]
-    principaux = res["sec"]["type"] != "profile" and abs(P["Iyz"]) > 1e-9 * (P["Iz"] * P["Iy"]) ** 0.5
-    if principaux:
-        fla.update(Iz=fromSI(P["I1"], "mm^4"), Iy=fromSI(P["I2"], "mm^4"))
-    state.reset_widgets("Fla")
-    st.session_state["Sec.envoye"] = "principaux" if principaux else True
+    """Transmet la section calculée aux saisies Poutres et Flambage (callback du bouton)."""
+    envoi = transfert.envoie_section(dm)
+    if envoi is not None:
+        st.session_state["Sec.envoye"] = envoi
 
 
 def _efforts_poutre(mode: str) -> None:

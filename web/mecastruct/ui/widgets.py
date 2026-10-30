@@ -4,6 +4,7 @@ Chaque champ est lié à saisie[onglet][champ] par sa clé de widget « onglet.c
 dans la saisie à chaque passage.
 """
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -146,14 +147,15 @@ def example_picker(tab: str) -> None:
     st.button("Charger l'exemple", key=f"{tab}.charger", on_click=_charge_exemple, args=(tab,))
 
 
-def choice_materiau(tab: str, champs: list[str], dm: Any, label: str = "Matériau") -> str:
+def choice_materiau(tab: str, champs: list[str], dm: Any, label: str = "Matériau", **kw) -> str:
     """Liste des matériaux liée à saisie[tab]["mat"] ; un changement remplit les champs `champs` (E, G, Re…)."""
 
     def applique() -> None:
         for champ, valeur in compute._materiau(dm, st.session_state[f"{tab}.mat"], champs).items():
-            st.session_state[f"{tab}.{champ}"] = valeur
+            if math.isfinite(valeur):  # comme applyMaterial : un champ inconnu de la base reste inchangé
+                st.session_state[f"{tab}.{champ}"] = valeur
 
-    return choice(tab, "mat", label, dm.listMaterials(), on_change=applique)
+    return choice(tab, "mat", label, dm.listMaterials(), on_change=applique, **kw)
 
 
 def page_link(page: str, label: str, icon: str | None = None) -> None:
