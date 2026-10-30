@@ -224,6 +224,7 @@ formula_panel("geometrie")
 
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
+    widgets.file_bar("Sec")
     widgets.example_picker("Sec")
     with st.expander("Type de section", expanded=True):
         _saisie_geometrie()

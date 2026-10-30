@@ -159,18 +159,19 @@ def _jauges_resultats() -> None:
 
 
 ONGLETS = [
-    ("Loi de Hooke", "hooke", _hooke_saisie, _hooke_resultats),
-    ("Jauges, pont et rosettes", "extensometrie", _jauges_saisie, _jauges_resultats),
+    ("Loi de Hooke", "hooke", "Hoo", _hooke_saisie, _hooke_resultats),
+    ("Jauges, pont et rosettes", "extensometrie", "Jau", _jauges_saisie, _jauges_resultats),
 ]
 
 st.title("Hooke & jauges")
 onglets = st.tabs([titre for titre, *_ in ONGLETS], key="Hoo_onglet", on_change="rerun")
-for onglet, (_, fiche, saisie_fn, resultats_fn) in zip(onglets, ONGLETS, strict=True):
+for onglet, (_, fiche, tab, saisie_fn, resultats_fn) in zip(onglets, ONGLETS, strict=True):
     if onglet.open:
         formula_panel(fiche)  # la fiche suit le sous-onglet ouvert
     with onglet:
         gauche, droite = st.columns([1, 2], gap="large")
         with gauche:
+            widgets.file_bar(tab)
             saisie_fn()
         with droite:
             resultats_fn()

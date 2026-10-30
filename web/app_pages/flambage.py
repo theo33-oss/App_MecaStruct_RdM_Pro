@@ -110,6 +110,7 @@ formula_panel("flambage")
 
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
+    widgets.file_bar("Fla")
     widgets.example_picker("Fla")
     _saisie()
     if st.button("Calculer", key="Fla.calc", type="primary", width="stretch"):

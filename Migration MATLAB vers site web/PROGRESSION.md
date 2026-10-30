@@ -110,7 +110,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E29 — Flambage, Tenseurs & critères, Hooke & jauges
   Pages Flambage (régime mis en évidence, verdict seulement si P ≠ 0, courbe de stabilité, mode propre, démonstration, rapport), Tenseurs & critères (éditeur 3×3 symétrisé par compute.symmetrize, trois graphiques, tableaux Principales / Critères / Facette) et Hooke & jauges (champs inactifs selon le mode comme onHookeMode, fiche de formules qui suit le sous-onglet). Transfert de section factorisé dans ui/transfert.py (Sections et « Importer depuis Sections » de Flambage, texte « Section utilisée » dans Fla_info) ; l'envoi de la poutre vers Tenseurs (E27) se lit dans la page Tenseurs et se calcule. Écarts : la symétrisation de l'éditeur n'est testée que par la fonction pure (AppTest ne déclenche pas le rappel d'un data_editor) ; choice_materiau ignore les champs inconnus de la base (comme applyMaterial).
   pytest 908 passed (23 nouveaux, test_pages_flambage_tenseurs_hooke.py) ; ruff check verts. Rendu visuel avec streamlit run non vérifié.
-- [ ] E30 — Enregistrer / ouvrir + exports
+- [x] E30 — Enregistrer / ouvrir + exports
+  Service project_io.py (problème et projet en JSON, feuilles de résultats dont « Enveloppe » et « Efforts » de la poutre, xlsx et zip de CSV ; beamEffortSheets porté ici) ; `file_bar(tab)` sur toutes les pages de calcul (4 sous-onglets de Sollicitations, 2 de Hooke & jauges) et `project_bar()` sur l'Accueil. Écarts : JSON et non .mat (le .mat MATLAB n'est pas reproductible tel quel) ; champs relus par nom, les champs absents du fichier gardent la valeur de l'exemple ; les tableaux de l'export sont ceux de res["tables"] (les tableaux Combinaisons, Charge mobile, Eurocode, Fatigue de la page Poutres ne sont pas exportés).
+  pytest 934 passed (26 nouveaux, test_project_io.py) ; ruff check et ruff format --check verts. Téléversement et téléchargement non vérifiés dans un navigateur (AppTest ne les pilote pas).
 
 ## Phase 6 — Dossier de validation
 - [ ] E31 — validation_report.py

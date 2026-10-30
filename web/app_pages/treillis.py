@@ -112,6 +112,7 @@ formula_panel("treillis")
 
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
+    widgets.file_bar("Tr")
     widgets.example_picker("Tr")
     with st.expander("Matériau, section et nœuds", expanded=True):
         _saisie()

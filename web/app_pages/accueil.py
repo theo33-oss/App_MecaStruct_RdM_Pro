@@ -5,7 +5,7 @@ Port de buildHomeTab (MecaStruct_App.m) ; la visite guidée devient un encadré 
 
 import streamlit as st
 
-from mecastruct.ui import state
+from mecastruct.ui import state, widgets
 
 state.init()
 
@@ -32,6 +32,9 @@ with st.expander("Comment faire : une poutre de A à Z (5 étapes)", expanded=Tr
         "la poutre résiste-t-elle, avec quelle marge ?\n"
         "5. **Flambage** : une poutre comprimée doit aussi être vérifiée au flambage (page Flambage)."
     )
+
+st.subheader("Projet")
+widgets.project_bar()
 
 st.subheader("À retenir avant de saisir")
 st.markdown(

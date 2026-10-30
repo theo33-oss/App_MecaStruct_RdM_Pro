@@ -98,6 +98,7 @@ formula_panel("tenseurs")
 
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
+    widgets.file_bar("Ten")
     widgets.example_picker("Ten")
     _saisie()
     if st.button("Calculer", key="Ten.calc", type="primary", width="stretch"):

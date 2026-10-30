@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 
 from mecastruct.core.errors import MecaStructError
-from mecastruct.services import compute
+from mecastruct.services import compute, project_io
 from mecastruct.services.examples import exampleNames, loadExample
 from mecastruct.ui import state
 
@@ -164,3 +164,96 @@ def page_link(page: str, label: str, icon: str | None = None) -> None:
         st.page_link(page, label=label, icon=icon)
     except st.errors.StreamlitAPIException:
         pass
+
+
+def _applique(tab: str, saisie: dict) -> None:
+    """Remplace la saisie de l'onglet par celle d'un fichier (champs absents : exemple) et vide ses widgets."""
+    st.session_state["saisie"][tab] = {**loadExample(tab), **saisie}
+    state.reset_widgets(tab)
+    if tab == "Beam":  # resetBeamHistory : l'historique repart du problème ouvert
+        st.session_state.pop("beam_history", None)
+        state.push_beam_history()
+
+
+def _ouvre(cle: str, lecture: Callable[[str], str]) -> bool:
+    """Lit le fichier déposé dans l'uploader `cle` une seule fois ; `lecture(texte)` renvoie un message de succès.
+
+    Erreur de lecture : message rouge sous l'uploader. Succès : le message est gardé pour le passage suivant et la page
+    se relance (les widgets repartent de la nouvelle saisie). Renvoie False tant qu'il n'y a rien de neuf.
+    """
+    fichier = st.file_uploader("Ouvrir (.json)", type="json", key=f"fichier.{cle}", label_visibility="collapsed")
+    if fichier is None or st.session_state.get(f"fichier.{cle}.lu") == fichier.file_id:
+        return False
+    st.session_state[f"fichier.{cle}.lu"] = fichier.file_id
+    try:
+        st.session_state[f"fichier.{cle}.msg"] = lecture(fichier.getvalue().decode("utf-8-sig"))
+    except (MecaStructError, UnicodeDecodeError) as err:
+        st.error(getattr(err, "message", "Ce fichier n'est pas un fichier texte JSON."))
+        return False
+    return True
+
+
+def file_bar(tab: str) -> None:
+    """Ligne « Enregistrer mon problème / Ouvrir un problème / Exporter en tableau » de l'onglet `tab`."""
+    colonnes = st.columns(3)
+    with colonnes[0]:
+        st.download_button(
+            "Enregistrer mon problème (.json)",
+            lambda: project_io.problemToJson(tab, state.saisie(tab)),  # lu au clic : saisie à jour
+            file_name=f"Probleme_{tab}.json",
+            mime="application/json",
+            key=f"fichier.{tab}.enregistrer",
+            on_click="ignore",
+        )
+    with colonnes[1]:
+
+        def lecture(texte: str) -> str:
+            _applique(tab, project_io.problemFromJson(texte, tab)[1])
+            return "Problème ouvert."
+
+        if _ouvre(f"{tab}.problème", lecture):
+            st.rerun()
+    res = state.result(tab)
+    feuilles = project_io.resultSheets(tab, res) if res else {}
+    with colonnes[2]:
+        fmt = st.radio("Format d'export", ["xlsx", "csv"], horizontal=True, key=f"fichier.{tab}.format")
+        st.download_button(
+            "Exporter en tableau",
+            (lambda: project_io.toXlsx(feuilles)) if fmt == "xlsx" else (lambda: project_io.toCsvZip(feuilles)),
+            file_name=f"MecaStruct_{tab}.{'xlsx' if fmt == 'xlsx' else 'zip'}",
+            mime="application/octet-stream",
+            key=f"fichier.{tab}.exporter",
+            on_click="ignore",
+            disabled=not feuilles,
+            help=None if feuilles else "Aucun résultat à exporter : cliquez d'abord sur « Calculer ».",
+        )
+    msg = st.session_state.pop(f"fichier.{tab}.problème.msg", None)
+    if msg:
+        st.success(msg)
+
+
+def project_bar() -> None:
+    """Accueil : « Enregistrer tout le projet » et « Ouvrir un projet » (les onglets non relus sont signalés)."""
+    st.download_button(
+        "Enregistrer tout le projet (.json)",
+        lambda: project_io.projectToJson(st.session_state["saisie"]),
+        file_name="Projet_MecaStruct.json",
+        mime="application/json",
+        key="projet.enregistrer",
+        on_click="ignore",
+    )
+    st.caption("Ouvrir un projet")
+
+    def lecture(texte: str) -> str:
+        saisies, echecs = project_io.projectFromJson(texte)
+        for tab, saisie in saisies.items():
+            _applique(tab, saisie)
+        if echecs:
+            return "Onglets non restaurés (version différente) : " + ", ".join(echecs)
+        return "Projet ouvert."
+
+    if _ouvre("projet", lecture):
+        st.rerun()
+    msg = st.session_state.pop("fichier.projet.msg", None)
+    if msg:
+        (st.warning if msg.startswith("Onglets") else st.success)(msg)

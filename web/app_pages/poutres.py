@@ -666,6 +666,7 @@ with gauche:
         help="Annule la dernière modification de la saisie (retour à l'état du dernier calcul ou exemple).",
     )
     colonnes[1].button("↷ Rétablir", key="Beam_retablir", on_click=_historique, args=(1,))
+    widgets.file_bar("Beam")
     widgets.example_picker("Beam")
     with st.expander("Poutre et matériau", expanded=True):
         _saisie_poutre_et_section()

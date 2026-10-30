@@ -305,6 +305,7 @@ for onglet, (_, fiche, tab) in zip(onglets, ONGLETS, strict=True):
     with onglet:
         gauche, droite = st.columns([1, 2], gap="large")
         with gauche:
+            widgets.file_bar(tab)
             widgets.example_picker(tab)
             SOUS_PAGES[tab][0]()
         with droite:

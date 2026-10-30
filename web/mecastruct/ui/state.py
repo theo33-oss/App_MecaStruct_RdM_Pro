@@ -11,8 +11,7 @@ import streamlit as st
 
 from mecastruct.core.data_manager import DataManager
 from mecastruct.services.examples import loadExample
-
-ONGLETS = ("Sec", "Beam", "Tr", "Tra", "Cis", "Tor", "Fle", "Fla", "Ten", "Hoo", "Jau")
+from mecastruct.services.project_io import PROJECT_KEYS as ONGLETS
 
 
 def init() -> None:
