@@ -672,3 +672,13 @@ def bendingStress(p: dict) -> dict:
         "report": report,
         "latex": latex,
     }
+
+
+def buckling(p: dict) -> dict:
+    """Flambage : délégation à buckling.analyze(p) (module créé en E14).
+
+    Entrée : `p` (paramètres de flambage, voir buckling.analyze). Sortie : dict de buckling.analyze.
+    """
+    from mecastruct.core.buckling import analyze  # import tardif : évite l'import circulaire avec buckling.py
+
+    return analyze(p)

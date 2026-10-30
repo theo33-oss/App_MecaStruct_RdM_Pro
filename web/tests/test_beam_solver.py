@@ -7,8 +7,8 @@ E08b : sous-problèmes, Ménabréa, extrema, solveBeam (structure du résultat, 
 E08c : cas d'école de MATLAB, exécutés avec les options par défaut et avec Ménabréa + coupures seulement.
 E09 : méthode d'intégration, Ménabréa ≡ intégration, ressorts, tassements, thermique, rotules, et tous les cas
 solveBeam de golden_beam.json.
-E10 : méthode intégrale ≡ coupures, options de méthode, LaTeX et rapport, signe de My ; non porté : les flèches de
-SolicitationsEngine (E13).
+E10 : méthode intégrale ≡ coupures, options de méthode, LaTeX et rapport, signe de My.
+E13 : les parties « flèche » (deflection) des tests d'appuis, ressorts, thermique et rotules sont réactivées ici.
 """
 
 import copy
@@ -44,6 +44,7 @@ from mecastruct.core.beam_solver import (
     solveBeam,
 )
 from mecastruct.core.data_manager import hasSymbolic
+from mecastruct.core.deflection import deflection
 from mecastruct.core.errors import MecaStructError
 from mecastruct.core.pp import PP, ppDerivative, ppEval, ppIntegrate, ppScale
 from tests.golden_tools import assert_matches, case_ids, get_case
@@ -963,9 +964,12 @@ def test_SupportSettlementPropped():
     # le tassement est vu dans la déformée : v(L) = −δ (double intégration de Mfz, encastrement en A)
     v, _ = deflectionAt(sol, E * I, [(0, 0), (0, 1)], L)
     assert v == pytest.approx(-d, rel=1e-9)
-    # E13 : dv = deflection(m, sol, {"includeShear": False, "s0": L}) ; v(L) = −d pour les 4 méthodes :
-    # E13 : ppEval(dv["integration"]["vPP"], L), dv["aires"]["v"][-1], dv["mohr"]["v"],
-    # E13 : dv["castigliano"]["vBending"][-1]
+    # v(L) = −d pour les 4 méthodes de flèche
+    dv = deflection(m, sol, {"includeShear": False, "s0": L})
+    assert ppEval(dv["integration"]["vPP"], L) == pytest.approx(-d, rel=1e-9)
+    assert dv["aires"]["v"][-1] == pytest.approx(-d, rel=1e-9)
+    assert dv["mohr"]["v"][0] == pytest.approx(-d, rel=1e-9)
+    assert dv["castigliano"]["vBending"][-1] == pytest.approx(-d, rel=1e-9)
 
 
 def test_SupportSettlementTwoSpans():
@@ -996,8 +1000,9 @@ def test_SpringSupport():
     assert sol["integration"]["xy"]["conditions"][1] == "v(B) = 0 - R/k (k = 2e+06 N/m)"
     v, _ = deflectionAt(sol, E * I, [(0, 0), (0, 1)], L)
     assert v == pytest.approx(-R / k, rel=1e-9)
-    # E13 : dv = deflection(m, sol, {"includeShear": False, "s0": L}) ; v(L) = −R/k :
-    # E13 : ppEval(dv["integration"]["vPP"], L), dv["mohr"]["v"]
+    dv = deflection(m, sol, {"includeShear": False, "s0": L})
+    assert ppEval(dv["integration"]["vPP"], L) == pytest.approx(-R / k, rel=1e-9)
+    assert dv["mohr"]["v"][0] == pytest.approx(-R / k, rel=1e-9)
 
 
 def test_ThermalActions():
@@ -1009,8 +1014,9 @@ def test_ThermalActions():
     m["thermal"] = {"epsX": 0, "kv": kap, "kw": 0}
     sol = solveBeam(m)
     assert sol["reactions"][0]["Ry"] == 0  # isostatique : aucun effort
-    # E13 : dv = deflection(m, sol, {"includeShear": False}) ; flèche maximale κL²/2 :
-    # E13 : dv["integration"]["fmax"], dv["mohr"]["fmax"]
+    dv = deflection(m, sol, {"includeShear": False})  # flèche maximale κL²/2
+    assert dv["integration"]["fmax"] == pytest.approx(kap * L**2 / 2, rel=1e-9)
+    assert dv["mohr"]["fmax"] == pytest.approx(kap * L**2 / 2, rel=1e-9)
     addSup(m, L, "appui_simple", "B")
     sol = solveBeam(m)
     assert sol["reactions"][1]["Ry"] == pytest.approx(-3 * E * I / L**3 * kap * L**2 / 2, rel=1e-9)
@@ -1045,8 +1051,9 @@ def test_IntermediateHinge():
     assert ppEval(sh["Mfz"], 2, "left") == pytest.approx(0, abs=1e-6)
     assert sum(col(sh, "Ry")) == pytest.approx(q * 2 * L, rel=1e-12)
     assert sh["integration"]["xy"]["unknowns"][-1] == "Δθ_R1 = saut de rotation à la rotule s = 2 m"
-    # E13 : dv = deflection(h, sh, {"includeShear": False}) ; la pente saute à la rotule et les 4 méthodes de flèche
-    # E13 : concordent, max(abs(dv["comparison"]["Ecart_pct"])) < 1e-6
+    # la pente saute à la rotule et les 4 méthodes de flèche concordent
+    dv = deflection(h, sh, {"includeShear": False})
+    assert dv["comparison"]["Ecart_pct"].abs().max() < 1e-6
     verifier_erreur(MODELE, solveBeam, {**m, "hinges": [{"pos": 4, "name": "R"}]})
 
 

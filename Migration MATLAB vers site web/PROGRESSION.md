@@ -48,7 +48,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E12 — solicitations.py
   Port de traction, shear, jourawski, bearing, keyDesign, pinDesign, torsion, bendingStress et seCastigliano (quad epsrel 1e-12, ∂U/∂F par différence centrée). Écarts : methodUsed = 'numérique' (MATLAB écrit 'symbolique' quand SymPy est là ; golden ignore ce champ) ; checkLatex (rendu) remplacé par ASCII + accolades équilibrées ; seTp, seIf, seRx, seGauss reportés à E13.
   pytest 579 passed (32 nouveaux : tests portés des 8 fonctions MATLAB + 14 cas golden) ; ruff check verts. Golden et tolérances inchangés.
-- [ ] E13 — deflection.py
+- [x] E13 — deflection.py
+  Port de deflection (4 méthodes), strainEnergy et mohrIntegral dans deflection.py ; buckling(p) délègue à buckling.analyze (E14, testBucklingDelegation reporté). 50 tests dans test_deflection.py, # E13 de test_beam_solver.py réactivés ; pytest 629 passed, ruff verts. Écarts : sol optionnel, a et b optionnels pour mohrIntegral, Gauss par numpy leggauss.
+  Golden de flèche : 3 exceptions de test décidées par Théo (BLOCAGES.md, E13), limitées à test_golden_deflection ; appui_elastique : castigliano et mohr vérifiés par 3 contrôles au lieu d'une comparaison terme à terme.
 - [ ] E14 — buckling.py
 - [ ] E15 — tensors.py
 - [ ] E16 — hooke_gauges.py
