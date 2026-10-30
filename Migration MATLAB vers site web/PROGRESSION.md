@@ -63,7 +63,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   pytest 712 passed (27 nouveaux : 12 tests MATLAB portés, 15 cas golden) ; ruff check et ruff format --check verts. Golden : rel = 1e-9 et abs_ par champ (code de test seulement, autorisation de Théo) : champ non nul = 1e-12 × son propre max ; champ nul en théorie (max < 1e-9 × l'échelle de sa famille dans le cas) ou exactement nul = 1e-12 × l'échelle de la famille (déformation, contrainte, souplesse, raideur) ; angle = 1e-12 × son échelle propre ; checkResidual = 1e-9. Classement : angle par nom, puis strain2D (déformation) ou stress2D (contrainte), puis nom seul.
   Champs reclassés nuls en théorie ou exactement nuls : stress2D.tau des deux rosettes (bruit d'arrondi, ±3,7e-9 et ±1,9e-9), strain2D.tau, strain2D.gammaHalf, strain2D.gamma (exactement 0), planeStrain.ezz (exactement 0). Tolérances proches de 1e-15 pour les déformations, 1,3e-4 à 1,4e-4 pour les stress2D.tau (échelle des contraintes, 1e8 Pa).
   Les règles par cas (Qred 2,3e11 rendait exx et ezz vides) et par bloc (le dictionnaire mêlait contraintes et déformations) étaient trop larges ; la règle par champ est en place.
-- [ ] E17 — design_checks.py
+- [x] E17 — design_checks.py
+  Port de ibeamDims, classify, ec3Bending, ec3LateralTorsional, ec3FlexuralBuckling, ec3AxialBending, ec3Interaction, ec3WebShear et goodman. Écarts : messages class4 et unsupportedSteel avec virgule décimale (fmt_fr) ; governing reste 1 ou 2 comme MATLAB (golden) ; pas de report ni latex (MATLAB n'en a pas) ; d de ec3AxialBending pris du cas ibeamDims (absent des entrées golden).
+  pytest 737 passed (25 nouveaux : 13 tests MATLAB portés, 12 cas golden à rel 1e-9, aucune tolérance changée) ; ruff check et ruff format --check verts.
 
 ## Phase 3 — Services
 - [ ] E18 — beam_services.py
