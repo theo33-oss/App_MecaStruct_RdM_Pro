@@ -1033,3 +1033,99 @@ for i = 1:numel(strs)
 end
 clear restore cleaner
 end
+
+%% =====================================================================
+%%       RESSORTS, TASSEMENTS, DILATATION THERMIQUE, ROTULES INTERMÉDIAIRES
+%% =====================================================================
+
+function testSupportSettlementPropped(tc)
+% Console appuyée dont l'appui descend de δ, sans charge : R = −3EIδ/L³ ; Ménabréa ≡ intégration.
+L = 4; E = 210e9; I = 8e-6; d = 5e-3;
+m = baseModel(L); m.E = E; m.Iz = I;
+m = addSup(m, 0, 'encastrement', 'A'); m = addSup(m, L, 'appui_simple', 'B');
+m.supports(2).dy = -d;
+sol = BeamAndTrussSolver.solveBeam(m);
+tc.verifyEqual(sol.reactions(2).Ry, -3*E*I*d/L^3, 'RelTol', 1e-9);
+tc.verifyLessThan(sol.hyperCheck, 1e-9);
+% le tassement est vu dans la déformée : v(L) = −δ par les 4 méthodes
+dv = SolicitationsEngine.deflection(m, sol, struct('includeShear', false, 's0', L));
+tc.verifyEqual(BeamAndTrussSolver.ppEval(dv.integration.vPP, L), -d, 'RelTol', 1e-9);
+tc.verifyEqual(dv.aires.v(end), -d, 'RelTol', 1e-9);
+tc.verifyEqual(dv.mohr.v, -d, 'RelTol', 1e-9);
+tc.verifyEqual(dv.castigliano.vBending(end), -d, 'RelTol', 1e-9);
+end
+
+function testSupportSettlementTwoSpans(tc)
+% Deux travées L, appui central qui descend de δ : RB = −6EIδ/L³ ; idem dans le plan xz (dz).
+L = 4; E = 210e9; I = 8e-6;
+m = baseModel(2*L); m.E = E; m.Iz = I; m.Iy = I;
+m = addSup(m, 0, 'appui_simple', 'A'); m = addSup(m, L, 'appui_simple', 'B'); m = addSup(m, 2*L, 'appui_simple', 'C');
+m.supports(2).dy = -2e-3; m.supports(2).dz = 1e-3;
+sol = BeamAndTrussSolver.solveBeam(m);
+tc.verifyEqual(sol.reactions(2).Ry, -6*E*I*2e-3/L^3, 'RelTol', 1e-9);
+tc.verifyEqual(sol.reactions(2).Rz, 6*E*I*1e-3/L^3, 'RelTol', 1e-9);
+end
+
+function testSpringSupport(tc)
+% Console chargée par q, ressort k en bout : R = (qL⁴/8EI)/(L³/3EI + 1/k) ; v(L) = −R/k.
+L = 4; E = 210e9; I = 8e-6; q = 10e3; k = 2e6;
+m = baseModel(L); m.E = E; m.Iz = I;
+m = addSup(m, 0, 'encastrement', 'A'); m = addSup(m, L, 'appui_simple', 'B');
+m.supports(2).spring = k;
+m = addQ(m, 0, L, 'y', -q);
+sol = BeamAndTrussSolver.solveBeam(m);
+R = (q*L^4/(8*E*I))/(L^3/(3*E*I) + 1/k);
+tc.verifyEqual(sol.reactions(2).Ry, R, 'RelTol', 1e-9);
+tc.verifyLessThan(sol.hyperCheck, 1e-9);
+dv = SolicitationsEngine.deflection(m, sol, struct('includeShear', false, 's0', L));
+tc.verifyEqual(BeamAndTrussSolver.ppEval(dv.integration.vPP, L), -R/k, 'RelTol', 1e-9);
+tc.verifyEqual(dv.mohr.v, -R/k, 'RelTol', 1e-9);
+end
+
+function testThermalActions(tc)
+% Console avec gradient : flèche en bout κL²/2 ; encastrée-appuyée : R = −3EI/L³·κL²/2 ; barre bi-encastrée : N = −ESαΔT.
+L = 4; E = 210e9; I = 8e-6; kap = 1e-4;
+m = baseModel(L); m.E = E; m.Iz = I;
+m = addSup(m, 0, 'encastrement', 'A');
+m.thermal = struct('epsX', 0, 'kv', kap, 'kw', 0);
+sol = BeamAndTrussSolver.solveBeam(m);
+tc.verifyEqual(max(abs(sol.reactions(1).Ry)), 0);   % isostatique : aucun effort
+dv = SolicitationsEngine.deflection(m, sol, struct('includeShear', false));
+tc.verifyEqual(dv.integration.fmax, kap*L^2/2, 'RelTol', 1e-9);
+tc.verifyEqual(dv.mohr.fmax, kap*L^2/2, 'RelTol', 1e-9);
+m = addSup(m, L, 'appui_simple', 'B');
+sol = BeamAndTrussSolver.solveBeam(m);
+tc.verifyEqual(sol.reactions(2).Ry, -3*E*I/L^3*kap*L^2/2, 'RelTol', 1e-9);
+tc.verifyLessThan(sol.hyperCheck, 1e-9);
+b = baseModel(L); b.E = E;
+b = addSup(b, 0, 'encastrement', 'A'); b = addSup(b, L, 'encastrement', 'B');
+b.thermal = struct('epsX', 12e-6*50, 'kv', 0, 'kw', 0);
+sb = BeamAndTrussSolver.solveBeam(b);
+tc.verifyEqual(sb.reactions(1).Rx, E*b.S*12e-6*50, 'RelTol', 1e-9);
+tc.verifyEqual(sb.reactions(2).Rx, -E*b.S*12e-6*50, 'RelTol', 1e-9);
+end
+
+function testIntermediateHinge(tc)
+% Poutre Gerber : appuis 0, 4, 8 m, rotule en 2 m, q = 10 kN/m partout : isostatique ; M(rotule) = 0.
+L = 4; q = 10e3;
+m = baseModel(2*L);
+m = addSup(m, 0, 'appui_simple', 'A'); m = addSup(m, L, 'appui_simple', 'B'); m = addSup(m, 2*L, 'appui_simple', 'C');
+m = addQ(m, 0, 2*L, 'y', -q);
+m.hinges = struct('pos', 2, 'name', 'R1');
+sol = BeamAndTrussSolver.solveBeam(m);
+tc.verifyEqual([sol.reactions.Ry], [10000 60000 10000], 'RelTol', 1e-9);
+tc.verifyEqual(BeamAndTrussSolver.ppEval(sol.Mfz, 2, 'left'), 0, 'AbsTol', 1e-6);
+% hyperstatique avec rotule : encastrement + 2 appuis ; deux méthodes d'accord, moment nul à la rotule
+h = baseModel(2*L);
+h = addSup(h, 0, 'encastrement', 'A'); h = addSup(h, L, 'appui_simple', 'B'); h = addSup(h, 2*L, 'appui_simple', 'C');
+h = addQ(h, 0, 2*L, 'y', -q);
+h.hinges = struct('pos', 2, 'name', 'R1');
+sh = BeamAndTrussSolver.solveBeam(h);
+tc.verifyLessThan(sh.hyperCheck, 1e-9);
+tc.verifyEqual(BeamAndTrussSolver.ppEval(sh.Mfz, 2, 'left'), 0, 'AbsTol', 1e-6);
+tc.verifyEqual(sum([sh.reactions.Ry]), q*2*L, 'RelTol', 1e-12);
+% la pente saute à la rotule et les 4 méthodes de flèche concordent
+dv = SolicitationsEngine.deflection(h, sh, struct('includeShear', false));
+tc.verifyLessThan(max(abs(dv.comparison.Ecart_pct)), 1e-6);
+tc.verifyError(@() BeamAndTrussSolver.solveBeam(setfield(m, 'hinges', struct('pos', 4, 'name', 'R'))), 'MecaStruct:Beam:invalidModel'); %#ok<SFLD>
+end

@@ -1,0 +1,849 @@
+{
+  "catalog": [
+    {
+      "name": "Longueur",
+      "units": [
+        {
+          "label": "mm",
+          "code": "mm"
+        },
+        {
+          "label": "cm",
+          "code": "cm"
+        },
+        {
+          "label": "m",
+          "code": "m"
+        },
+        {
+          "label": "µm",
+          "code": "µm"
+        },
+        {
+          "label": "km",
+          "code": "km"
+        },
+        {
+          "label": "in",
+          "code": "in"
+        },
+        {
+          "label": "ft",
+          "code": "ft"
+        }
+      ],
+      "defFrom": 3,
+      "defTo": 1
+    },
+    {
+      "name": "Aire",
+      "units": [
+        {
+          "label": "mm²",
+          "code": "mm²"
+        },
+        {
+          "label": "cm²",
+          "code": "cm²"
+        },
+        {
+          "label": "m²",
+          "code": "m²"
+        },
+        {
+          "label": "in²",
+          "code": "in²"
+        },
+        {
+          "label": "ft²",
+          "code": "ft²"
+        }
+      ],
+      "defFrom": 2,
+      "defTo": 1
+    },
+    {
+      "name": "Moment quadratique",
+      "units": [
+        {
+          "label": "mm⁴",
+          "code": "mm⁴"
+        },
+        {
+          "label": "cm⁴",
+          "code": "cm⁴"
+        },
+        {
+          "label": "m⁴",
+          "code": "m⁴"
+        },
+        {
+          "label": "in⁴",
+          "code": "in⁴"
+        },
+        {
+          "label": "ft⁴",
+          "code": "ft⁴"
+        }
+      ],
+      "defFrom": 2,
+      "defTo": 1
+    },
+    {
+      "name": "Force",
+      "units": [
+        {
+          "label": "N",
+          "code": "N"
+        },
+        {
+          "label": "daN",
+          "code": "daN"
+        },
+        {
+          "label": "kN",
+          "code": "kN"
+        },
+        {
+          "label": "MN",
+          "code": "MN"
+        },
+        {
+          "label": "kgf",
+          "code": "kgf"
+        },
+        {
+          "label": "tf",
+          "code": "tf"
+        },
+        {
+          "label": "lbf",
+          "code": "lbf"
+        },
+        {
+          "label": "kip",
+          "code": "kip"
+        }
+      ],
+      "defFrom": 3,
+      "defTo": 1
+    },
+    {
+      "name": "Moment",
+      "units": [
+        {
+          "label": "N·mm",
+          "code": "N.mm"
+        },
+        {
+          "label": "N·m",
+          "code": "N.m"
+        },
+        {
+          "label": "daN·m",
+          "code": "daN.m"
+        },
+        {
+          "label": "kN·m",
+          "code": "kN.m"
+        },
+        {
+          "label": "kN·mm",
+          "code": "kN.mm"
+        },
+        {
+          "label": "kgf·m",
+          "code": "kgf.m"
+        },
+        {
+          "label": "kgf·cm",
+          "code": "kgf.cm"
+        },
+        {
+          "label": "lbf·in",
+          "code": "lbf.in"
+        },
+        {
+          "label": "lbf·ft",
+          "code": "lbf.ft"
+        },
+        {
+          "label": "kip·in",
+          "code": "kip.in"
+        },
+        {
+          "label": "kip·ft",
+          "code": "kip.ft"
+        }
+      ],
+      "defFrom": 4,
+      "defTo": 1
+    },
+    {
+      "name": "Charge linéique",
+      "units": [
+        {
+          "label": "N/m",
+          "code": "N/m"
+        },
+        {
+          "label": "N/mm",
+          "code": "N/mm"
+        },
+        {
+          "label": "daN/m",
+          "code": "daN/m"
+        },
+        {
+          "label": "kN/m",
+          "code": "kN/m"
+        },
+        {
+          "label": "kgf/m",
+          "code": "kgf/m"
+        },
+        {
+          "label": "lbf/in",
+          "code": "lbf/in"
+        },
+        {
+          "label": "lbf/ft",
+          "code": "lbf/ft"
+        },
+        {
+          "label": "kip/ft",
+          "code": "kip/ft"
+        }
+      ],
+      "defFrom": 4,
+      "defTo": 2
+    },
+    {
+      "name": "Contrainte et pression",
+      "units": [
+        {
+          "label": "Pa",
+          "code": "Pa"
+        },
+        {
+          "label": "kPa",
+          "code": "kPa"
+        },
+        {
+          "label": "MPa",
+          "code": "MPa"
+        },
+        {
+          "label": "GPa",
+          "code": "GPa"
+        },
+        {
+          "label": "N/mm²",
+          "code": "N/mm²"
+        },
+        {
+          "label": "bar",
+          "code": "bar"
+        },
+        {
+          "label": "kgf/cm²",
+          "code": "kgf/cm²"
+        },
+        {
+          "label": "kgf/mm²",
+          "code": "kgf/mm²"
+        },
+        {
+          "label": "psi",
+          "code": "psi"
+        },
+        {
+          "label": "ksi",
+          "code": "ksi"
+        }
+      ],
+      "defFrom": 3,
+      "defTo": 9
+    },
+    {
+      "name": "Module d'Young et de Coulomb",
+      "units": [
+        {
+          "label": "MPa",
+          "code": "MPa"
+        },
+        {
+          "label": "GPa",
+          "code": "GPa"
+        },
+        {
+          "label": "Pa",
+          "code": "Pa"
+        },
+        {
+          "label": "N/mm²",
+          "code": "N/mm²"
+        },
+        {
+          "label": "kgf/mm²",
+          "code": "kgf/mm²"
+        },
+        {
+          "label": "psi",
+          "code": "psi"
+        },
+        {
+          "label": "ksi",
+          "code": "ksi"
+        },
+        {
+          "label": "Mpsi",
+          "code": "Mpsi"
+        }
+      ],
+      "defFrom": 2,
+      "defTo": 1
+    },
+    {
+      "name": "Angle",
+      "units": [
+        {
+          "label": "rad",
+          "code": "rad"
+        },
+        {
+          "label": "mrad",
+          "code": "mrad"
+        },
+        {
+          "label": "°",
+          "code": "°"
+        },
+        {
+          "label": "arcmin",
+          "code": "arcmin"
+        },
+        {
+          "label": "arcsec",
+          "code": "arcsec"
+        },
+        {
+          "label": "tour",
+          "code": "turn"
+        }
+      ],
+      "defFrom": 1,
+      "defTo": 3
+    },
+    {
+      "name": "Angle par longueur",
+      "units": [
+        {
+          "label": "rad/m",
+          "code": "rad/m"
+        },
+        {
+          "label": "mrad/m",
+          "code": "mrad/m"
+        },
+        {
+          "label": "°/m",
+          "code": "°/m"
+        }
+      ],
+      "defFrom": 1,
+      "defTo": 3
+    },
+    {
+      "name": "Coefficient de dilatation",
+      "units": [
+        {
+          "label": "1/°C",
+          "code": "1/°C"
+        },
+        {
+          "label": "10⁻⁶/°C",
+          "code": "1e-6/°C"
+        },
+        {
+          "label": "1/°F",
+          "code": "1/°F"
+        },
+        {
+          "label": "10⁻⁶/°F",
+          "code": "1e-6/°F"
+        }
+      ],
+      "defFrom": 2,
+      "defTo": 1
+    },
+    {
+      "name": "Masse volumique",
+      "units": [
+        {
+          "label": "kg/m³",
+          "code": "kg/m³"
+        },
+        {
+          "label": "g/cm³",
+          "code": "g/cm³"
+        },
+        {
+          "label": "lb/ft³",
+          "code": "lb/ft³"
+        },
+        {
+          "label": "lb/in³",
+          "code": "lb/in³"
+        }
+      ],
+      "defFrom": 1,
+      "defTo": 2
+    },
+    {
+      "name": "Déformation",
+      "units": [
+        {
+          "label": "-",
+          "code": "-"
+        },
+        {
+          "label": "%",
+          "code": "%"
+        },
+        {
+          "label": "µdéf",
+          "code": "µdéf"
+        },
+        {
+          "label": "mm/m",
+          "code": "mm/m"
+        }
+      ],
+      "defFrom": 3,
+      "defTo": 1
+    },
+    {
+      "name": "Écart de température",
+      "units": [
+        {
+          "label": "°C",
+          "code": "°C"
+        },
+        {
+          "label": "K",
+          "code": "K"
+        },
+        {
+          "label": "°F",
+          "code": "°F"
+        }
+      ],
+      "defFrom": 1,
+      "defTo": 3
+    },
+    {
+      "name": "Température absolue",
+      "units": [
+        {
+          "label": "°C",
+          "code": "C"
+        },
+        {
+          "label": "K",
+          "code": "K"
+        },
+        {
+          "label": "°F",
+          "code": "F"
+        }
+      ],
+      "defFrom": 1,
+      "defTo": 3
+    }
+  ],
+  "factors": [
+    {
+      "code": "mm",
+      "factor": 0.001
+    },
+    {
+      "code": "cm",
+      "factor": 0.01
+    },
+    {
+      "code": "m",
+      "factor": 1
+    },
+    {
+      "code": "µm",
+      "factor": 1E-6
+    },
+    {
+      "code": "km",
+      "factor": 1000
+    },
+    {
+      "code": "in",
+      "factor": 0.0254
+    },
+    {
+      "code": "ft",
+      "factor": 0.3048
+    },
+    {
+      "code": "mm²",
+      "factor": 1E-6
+    },
+    {
+      "code": "cm²",
+      "factor": 0.0001
+    },
+    {
+      "code": "m²",
+      "factor": 1
+    },
+    {
+      "code": "in²",
+      "factor": 0.00064516
+    },
+    {
+      "code": "ft²",
+      "factor": 0.09290304
+    },
+    {
+      "code": "mm⁴",
+      "factor": 1E-12
+    },
+    {
+      "code": "cm⁴",
+      "factor": 1E-8
+    },
+    {
+      "code": "m⁴",
+      "factor": 1
+    },
+    {
+      "code": "in⁴",
+      "factor": 4.1623142559999991E-7
+    },
+    {
+      "code": "ft⁴",
+      "factor": 0.008630974841241602
+    },
+    {
+      "code": "N",
+      "factor": 1
+    },
+    {
+      "code": "daN",
+      "factor": 10
+    },
+    {
+      "code": "kN",
+      "factor": 1000
+    },
+    {
+      "code": "MN",
+      "factor": 1.0E+6
+    },
+    {
+      "code": "kgf",
+      "factor": 9.80665
+    },
+    {
+      "code": "tf",
+      "factor": 9806.65
+    },
+    {
+      "code": "lbf",
+      "factor": 4.4482216152605
+    },
+    {
+      "code": "kip",
+      "factor": 4448.2216152605
+    },
+    {
+      "code": "N.mm",
+      "factor": 0.001
+    },
+    {
+      "code": "N.m",
+      "factor": 1
+    },
+    {
+      "code": "daN.m",
+      "factor": 10
+    },
+    {
+      "code": "kN.m",
+      "factor": 1000
+    },
+    {
+      "code": "kN.mm",
+      "factor": 1
+    },
+    {
+      "code": "kgf.m",
+      "factor": 9.80665
+    },
+    {
+      "code": "kgf.cm",
+      "factor": 0.0980665
+    },
+    {
+      "code": "lbf.in",
+      "factor": 0.11298482902761668
+    },
+    {
+      "code": "lbf.ft",
+      "factor": 1.3558179483314003
+    },
+    {
+      "code": "kip.in",
+      "factor": 112.98482902761668
+    },
+    {
+      "code": "kip.ft",
+      "factor": 1355.8179483314004
+    },
+    {
+      "code": "N/m",
+      "factor": 1
+    },
+    {
+      "code": "N/mm",
+      "factor": 1000
+    },
+    {
+      "code": "daN/m",
+      "factor": 10
+    },
+    {
+      "code": "kN/m",
+      "factor": 1000
+    },
+    {
+      "code": "kgf/m",
+      "factor": 9.80665
+    },
+    {
+      "code": "lbf/in",
+      "factor": 175.12683524647636
+    },
+    {
+      "code": "lbf/ft",
+      "factor": 14.593902937206362
+    },
+    {
+      "code": "kip/ft",
+      "factor": 14593.902937206363
+    },
+    {
+      "code": "Pa",
+      "factor": 1
+    },
+    {
+      "code": "kPa",
+      "factor": 1000
+    },
+    {
+      "code": "MPa",
+      "factor": 1.0E+6
+    },
+    {
+      "code": "GPa",
+      "factor": 1.0E+9
+    },
+    {
+      "code": "N/mm²",
+      "factor": 1.0E+6
+    },
+    {
+      "code": "bar",
+      "factor": 100000
+    },
+    {
+      "code": "kgf/cm²",
+      "factor": 98066.5
+    },
+    {
+      "code": "kgf/mm²",
+      "factor": 9.80665E+6
+    },
+    {
+      "code": "psi",
+      "factor": 6894.757293168
+    },
+    {
+      "code": "ksi",
+      "factor": 6.894757293168E+6
+    },
+    {
+      "code": "Mpsi",
+      "factor": 6.894757293168E+9
+    },
+    {
+      "code": "rad",
+      "factor": 1
+    },
+    {
+      "code": "mrad",
+      "factor": 0.001
+    },
+    {
+      "code": "°",
+      "factor": 0.017453292519943295
+    },
+    {
+      "code": "arcmin",
+      "factor": 0.00029088820866572158
+    },
+    {
+      "code": "arcsec",
+      "factor": 4.84813681109536E-6
+    },
+    {
+      "code": "turn",
+      "factor": 6.2831853071795862
+    },
+    {
+      "code": "rad/m",
+      "factor": 1
+    },
+    {
+      "code": "mrad/m",
+      "factor": 0.001
+    },
+    {
+      "code": "°/m",
+      "factor": 0.017453292519943295
+    },
+    {
+      "code": "1/°C",
+      "factor": 1
+    },
+    {
+      "code": "1e-6/°C",
+      "factor": 1E-6
+    },
+    {
+      "code": "1/°F",
+      "factor": 1.8
+    },
+    {
+      "code": "1e-6/°F",
+      "factor": 1.8E-6
+    },
+    {
+      "code": "kg/m³",
+      "factor": 1
+    },
+    {
+      "code": "g/cm³",
+      "factor": 1000
+    },
+    {
+      "code": "lb/ft³",
+      "factor": 16.01846337
+    },
+    {
+      "code": "lb/in³",
+      "factor": 27679.9047
+    },
+    {
+      "code": "-",
+      "factor": 1
+    },
+    {
+      "code": "%",
+      "factor": 0.01
+    },
+    {
+      "code": "µdéf",
+      "factor": 1E-6
+    },
+    {
+      "code": "mm/m",
+      "factor": 0.001
+    },
+    {
+      "code": "°C",
+      "factor": 1
+    },
+    {
+      "code": "K",
+      "factor": 1
+    },
+    {
+      "code": "°F",
+      "factor": 0.55555555555555558
+    },
+    {
+      "code": "C",
+      "factor": NaN,
+      "erreur": "Unité inconnue : « C »."
+    },
+    {
+      "code": "F",
+      "factor": NaN,
+      "erreur": "Unité inconnue : « F »."
+    },
+    {
+      "code": "um",
+      "factor": 1E-6
+    },
+    {
+      "code": "m^2",
+      "factor": 1
+    },
+    {
+      "code": "cm^2",
+      "factor": 0.0001
+    },
+    {
+      "code": "mm^2",
+      "factor": 1E-6
+    },
+    {
+      "code": "m^3",
+      "factor": 1
+    },
+    {
+      "code": "cm^3",
+      "factor": 1E-6
+    },
+    {
+      "code": "mm^3",
+      "factor": 1E-9
+    },
+    {
+      "code": "m^4",
+      "factor": 1
+    },
+    {
+      "code": "cm^4",
+      "factor": 1E-8
+    },
+    {
+      "code": "mm^4",
+      "factor": 1E-12
+    },
+    {
+      "code": "deg",
+      "factor": 0.017453292519943295
+    },
+    {
+      "code": "deg/m",
+      "factor": 0.017453292519943295
+    },
+    {
+      "code": "kg/m^3",
+      "factor": 1
+    },
+    {
+      "code": "kg/m",
+      "factor": 1
+    }
+  ]
+}

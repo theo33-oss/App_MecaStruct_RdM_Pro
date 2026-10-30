@@ -1,0 +1,67 @@
+[
+{
+  "id": "convert_1",
+  "description": "convertUnits",
+  "fonction": "MecaStruct_App.convertUnits",
+  "entrees": {
+    "val": 1,
+    "quantity": "Longueur",
+    "from": "in",
+    "to": "mm"
+  },
+  "sortie": 25.4,
+  "erreur": ""
+},
+{
+  "id": "convert_2",
+  "description": "convertUnits",
+  "fonction": "MecaStruct_App.convertUnits",
+  "entrees": {
+    "val": 10,
+    "quantity": "Force",
+    "from": "kip",
+    "to": "kN"
+  },
+  "sortie": 44.482216152605,
+  "erreur": ""
+},
+{
+  "id": "convert_3",
+  "description": "convertUnits",
+  "fonction": "MecaStruct_App.convertUnits",
+  "entrees": {
+    "val": 1,
+    "quantity": "Contrainte et pression",
+    "from": "ksi",
+    "to": "MPa"
+  },
+  "sortie": 6.894757293168,
+  "erreur": ""
+},
+{
+  "id": "convert_4",
+  "description": "convertUnits",
+  "fonction": "MecaStruct_App.convertUnits",
+  "entrees": {
+    "val": 100,
+    "quantity": "Température absolue",
+    "from": "°C",
+    "to": "°F"
+  },
+  "sortie": 211.99999999999994,
+  "erreur": ""
+},
+{
+  "id": "convert_5",
+  "description": "convertUnits",
+  "fonction": "MecaStruct_App.convertUnits",
+  "entrees": {
+    "val": 20,
+    "quantity": "Écart de température",
+    "from": "°C",
+    "to": "°F"
+  },
+  "sortie": 36,
+  "erreur": ""
+}
+]

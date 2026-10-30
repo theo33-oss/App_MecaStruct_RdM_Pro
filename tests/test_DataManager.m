@@ -92,16 +92,28 @@ for nm = ["XC 38", "XC 42", "XC 48"]
     tc.verifyGreaterThan(m.Rm, m.Re);
 end
 % Aluminium
-for nm = ["Aluminium 2017", "Aluminium 5356"]
-    m = dm.getMaterial(nm);
-    tc.verifyEqual([m.E m.G m.Re m.Rm], [90e9 32e9 200e6 300e6]);
-    tc.verifyTrue(contains(m.Note, '72'));
-    tc.verifyTrue(m.alpha >= 22.5e-6 && m.alpha <= 24e-6);
-end
+m = dm.getMaterial('Aluminium 5356');
+tc.verifyEqual([m.E m.G m.Re m.Rm], [70e9 27e9 200e6 300e6]);
+tc.verifyTrue(contains(m.Note, '90 GPa'));
+tc.verifyTrue(m.alpha >= 22.5e-6 && m.alpha <= 24e-6);
+% Aluminium 2017 : fiche Euralliage 2017A, T4
+m = dm.getMaterial('Aluminium 2017');
+tc.verifyEqual([m.E m.G m.Re m.Rm m.rho], [72.5e9 27.2e9 260e6 380e6 2790]);
+tc.verifyTrue(contains(m.Note, 'Euralliage'));
+tc.verifyTrue(m.alpha >= 22.5e-6 && m.alpha <= 24e-6);
+% Euralliage : valeurs de la fiche et valeurs usuelles signalées
+m = dm.getMaterial('Aluminium 6061-T6');
+tc.verifyEqual([m.E m.G m.Re m.Rm m.rho], [70e9 26.3e9 240e6 290e6 2700]);
+m = dm.getMaterial('Aluminium 7075-T6');
+tc.verifyEqual([m.Re m.Rm m.rho], [460e6 520e6 2810]);
+m = dm.getMaterial('Bronze CuSn8 R450 (CW453K)');
+tc.verifyEqual([m.Re m.Rm m.rho], [280e6 450e6 8800]);
+tc.verifyTrue(contains(m.Note, 'valeurs usuelles'));
+tc.verifyGreaterThan(sum(contains(string(dm.Materials.Note), 'Euralliage')), 25);
 % Titane TA6V
 m = dm.getMaterial('Titane TA6V');
-tc.verifyEqual([m.E m.Re m.Rm], [116e9 100e6 300e6]);
-tc.verifyTrue(contains(m.Note, '830'));
+tc.verifyEqual([m.E m.Re m.Rm], [116e9 830e6 900e6]);
+tc.verifyTrue(contains(m.Note, '100 à 120'));
 tc.verifyTrue(contains(m.Note, '950'));
 tc.verifyTrue(m.alpha >= 8.5e-6 && m.alpha <= 9.5e-6);
 % Fontes, laiton, Plexiglas
@@ -166,6 +178,11 @@ tc.verifyEqual(height(dm.Materials), n0 + 1);
 m = dm.getMaterial('Mon acier');
 tc.verifyEqual(m.G, 200e9/2.6, 'RelTol', 1e-12);
 tc.verifyTrue(m.IsUser);
+tc.verifyEqual(m.Author, 'Utilisateur');
+tc.verifyEqual(dm.getMaterial('S235').Author, 'Base fournie');
+dm.addMaterial(struct('Name', 'Acier de Théo', 'E', 200e9, 'nu', 0.3, 'Author', ' Théo '));
+tc.verifyEqual(dm.getMaterial('Acier de Théo').Author, 'Théo');
+dm.removeMaterial('Acier de Théo');
 % Remplacement d'un matériau utilisateur de même nom
 dm.addMaterial(struct('Name', 'mon  ACIER', 'E', 210e9, 'nu', 0.3));
 tc.verifyEqual(height(dm.Materials), n0 + 1);

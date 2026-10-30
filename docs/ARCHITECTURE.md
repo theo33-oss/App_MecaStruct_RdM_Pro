@@ -133,14 +133,21 @@ Utilitaires **statiques publics de `BeamAndTrussSolver`** (utilisés par `Solici
 
 - `Materials` : `table` — variables `Name` (string), `Category` (string), `E`, `G` (Pa), `nu`, `Re`, `Rm` (Pa),
   `alpha` (1/°C), `rho` (kg/m³), `Note` (string : plages de valeurs, source « cours » / « valeur usuelle »,
-  remarques), `IsUser` (logical).
+  remarques), `IsUser` (logical), `Author` (« Ajouté par » : « Base fournie » ou nom saisi).
 - `Profiles` : `struct` à champs `IPN, IPE, HEA, HEB, UPN, UAP`, chacun une `table` — `Name` (string, ex.
   `"IPN 200"`), `h`, `b`, `a` (épaisseur d'âme), `e` (épaisseur d'aile), `r` (rayon de congé), `S`, `Iz`
   (axe fort), `Iy` (axe faible), `Wz`, `Wy` (modules élastiques), `rz`, `ry`, `mass` (kg/m), `c` (UPN/UAP :
-  distance dos d'âme → centre de gravité ; NaN sinon), `IsUser`. **Toutes valeurs en SI.**
+  distance dos d'âme → centre de gravité ; NaN sinon), `IsUser`, `Author`. **Toutes valeurs en SI.**
 - `BearingPressures` : `table` — `Liaison` (string), `Conditions` (string : `"médiocres"`, `"moyennes"`,
   `"très bonnes"`), `Pmin`, `Pmax` (Pa), `Note`.
 - `UserFile` : chemin du fichier utilisateur (défaut `<dossier de DataManager.m>/userdata/MecaStruct_UserDB.mat`).
+
+### Actions imposées sur les poutres (ressorts, tassements, rotules, température)
+
+Modèle (champs facultatifs, absents = comportement précédent) : `supports(i).spring` (N/m, 0 = rigide), `supports(i).dx|dy|dz` (m, tassement imposé dans le sens de l'axe), `hinges` (`pos`, `name` : moment de flexion nul), `thermal` (`epsX` = α·ΔT, `kv` et `kw` = courbures thermiques v'' et w'', 1/m).
+Pour chaque plan de flexion, la compatibilité de Ménabréa s'écrit Σj δij·Xj + δi0 + ∫ mi·κ ds = Σj Sji·dj avec dj = tassement_j − R_j/k_j et R = c + S·X ; la méthode d'intégration pose v(P) = tassement − R/k, v'' = M/EI + κ et un saut de rotation inconnu par rotule. Une rotule ajoute l'équation M(s_h) = 0 à l'équilibre.
+La déformée ajoute à M le terme EI·κ, impose v(appui) = dj et supprime la continuité de pente aux rotules ; Castigliano et Mohr retranchent Σ r̄j·dj (réactions de l'état virtuel, sans tassement ni température).
+`tests/test_BeamAndTrussSolver.m` recoupe des formules fermées (3EIδ/L³, 6EIδ/L³, ressort, κL²/2, Gerber).
 
 ### Base matériaux par défaut (valeurs du cours, à saisir telles quelles)
 
@@ -148,10 +155,10 @@ Utilitaires **statiques publics de `BeamAndTrussSolver`** (utilisés par `Solici
   S355 (355/490) MPa ; ν = 0,3 ; G calculé ; α = 12e-6.
 - Aciers de construction mécanique XC 38, XC 42, XC 48 : `E = 210 GPa`, `G = 80 GPa`, `ν = 0,3`,
   `α = 10 à 12,5e-6` (stocker 11e-6 et la plage en `Note`), Re/Rm usuels (note « valeur usuelle »).
-- Aluminium 2017 et 5356 : `E = 90 GPa`, `G = 32 GPa`, `Re = 200 à 220`, `Rm = 300 à 320 MPa`,
-  `α = 22,5 à 24e-6`. Note : « valeur du cours ; E usuel ≈ 72–74 GPa ».
-- Titane TA6V : `E = 116 GPa`, `Re = 100 à 120`, `Rm = 300 à 350 MPa`, `α = 8,5 à 9,5e-6`. Note :
-  « valeurs du support de cours ; valeurs usuelles TA6V : Re ≈ 830–880 MPa, Rm ≈ 900–950 MPa ».
+- Aluminium 2017 et 5356 : **valeurs corrigées** `E = 70 GPa`, `G = 27 GPa`, `ν = 0,3`, `α = 23e-6`
+  (EN 1999-1-1) ; le cours donnait E = 90 GPa et G = 32 GPa (cité dans la `Note`). `Re = 200`, `Rm = 300 MPa`.
+- Titane TA6V : **valeurs corrigées** `Re = 830`, `Rm = 900 MPa` (le cours donnait Re = 100 à 120 et
+  Rm = 300 à 350 MPa, cités dans la `Note`) ; `E = 116 GPa`, `α = 9e-6` du cours.
 - Fontes FGL et FGS (`G = 40 GPa`), Laiton (`G = 34 GPa`), Plexiglas (`G = 1,1 GPa`, note « le support
   indique 11 GPa, incohérent avec E ≈ 3 GPa ; 1,1 GPa retenu »). Autres constantes : valeurs usuelles.
 - Toute constante manquante est complétée par `G = E/(2(1+ν))` ; si E, G et ν sont donnés, vérifier

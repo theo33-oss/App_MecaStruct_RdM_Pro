@@ -43,6 +43,10 @@ classdef MecaStruct_App < handle
         BeamSection = []             % section transmise à la poutre (figée au transfert : sec, P, mat)
     end
 
+    properties (Hidden)
+        ConfirmFcn = @uiconfirm      % boîte « résultat non fiable » (les tests la remplacent)
+    end
+
     properties (Access = private)
         FormulaPanel                % panneau défilant du formulaire
         FormulaAxes                  % axe de rendu de la fiche
@@ -53,11 +57,15 @@ classdef MecaStruct_App < handle
         ButtonGrid                   % grille des boutons du formulaire (dossier / note / guide)
         BtnVal                       % bouton « Dossier de validation » (onglets de calcul)
         BtnNote                      % bouton « Note de calcul » (Base de données uniquement)
-        BtnGuide                     % bouton « Guide d'utilisation » (Base de données uniquement)
+        BtnGuide                     % bouton « Guide » (visible dans tous les onglets)
         SectionWin                   % fenêtre « Voir la section » (une seule, fermée avec l'application)
+        BeamHist = {}                % historique de la saisie de Poutres (annuler / rétablir)
+        BeamHistPos = 0              % position courante dans BeamHist
+        HistBusy = false             % vrai pendant une restauration (pas de nouvelle entrée d'historique)
     end
 
     properties (Constant, Access = private)
+        LoadCases = {'G', 'Q', 'W', 'S'}   % cas de charge : permanentes, exploitation, vent, neige
         SupportTypes = {'appui_simple', 'rotule', 'pivot', 'pivot_glissant', 'encastrement'}
         Comps = {'N', 'Ty', 'Tz', 'Mt', 'Mfy', 'Mfz'}
         MatKeys = {'Sec', 'Beam', 'Tr', 'Tra', 'Cis', 'Tor', 'Fle', 'Fla', 'Ten', 'Hoo', 'Jau'}
@@ -259,21 +267,52 @@ classdef MecaStruct_App < handle
             app.SectionWin = fig;
         end
 
-        function computeBeam(app)
+        function applySectionPreset(app)
+            %APPLYSECTIONPRESET Règle le type et les dimensions de l'onglet Sections sur le tube ou la cornière choisi.
+            S = app.H.Sec;
+            P = DataManager.sectionPresets();
+            p = P(strcmp({P.name}, S.preset.Value));
+            S.type.Value = p.type;
+            app.onSectionType();
+            for f = fieldnames(p.dims).'
+                S.(f{1}).Value = p.dims.(f{1});
+            end
+            S.W.Status.Text = sprintf('%s : dimensions nominales recopiées (mm). Cliquez sur « Calculer la section » ; congés ignorés.', p.name);
+        end
+
+        function computeBeam(app, interactive)
             %COMPUTEBEAM Poutre : PFS/hyperstatisme, torseur de cohésion, déformée (4 méthodes),
             %   énergie de déformation et vérification de résistance au point le plus sollicité.
+            %   interactive (défaut false, vrai pour le bouton « Calculer ») : si le résultat est
+            %   non fiable (hyperstatique avec Iyz ≠ 0), demande à l'utilisateur de l'afficher ou non.
+            if nargin < 2
+                interactive = false;
+            end
             B = app.H.Beam;
             W = B.W;
             model = app.readBeamModel();
             sol = BeamAndTrussSolver.solveBeam(model);
+            if interactive && ~isempty(MecaStruct_App.unreliableNote(sol))
+                rep = app.ConfirmFcn(app.UIFigure, ['Poutre hyperstatique avec une section sans axes principaux (Iyz ≠ 0) : ' ...
+                    'les réactions sont calculées plan par plan et le couplage y–z est ignoré. ' ...
+                    'Les réactions, moments et contraintes ne sont PAS fiables.' newline newline ...
+                    'Afficher quand même le résultat ?'], 'Résultat non fiable', ...
+                    'Options', {'Oui, afficher', 'Non'}, 'DefaultOption', 2, 'CancelOption', 2, 'Icon', 'warning');
+                if ~strcmp(rep, 'Oui, afficher')
+                    W.Status.Text = '⚠ Résultat non affiché (hyperstatique avec Iyz ≠ 0). Saisissez la section dans ses axes principaux (Iyz = 0).';
+                    return
+                end
+            end
             d = SolicitationsEngine.deflection(sol.model, sol, ...
                 struct('plane', B.plane.Value, 'includeShear', logical(B.shear.Value)));
             U = SolicitationsEngine.strainEnergy(sol.model, sol);
             chk = app.beamCheck(sol);
             app.Results.beam = struct('model', sol.model, 'sol', sol, 'defl', d, 'energy', U, 'check', chk);
+            app.Results.beamInputs = {app.captureInputs('Beam'), app.BeamSection};   % saisie de ce calcul (contrôle Eurocode 3)
 
             % --- tracés
             PlotEngine.beamSchematic(W.Axes{1}(1), sol.model, sol);
+            app.armSchematic(W.Axes{1}(1));
             comps = app.selectedComps(sol);
             axs = W.Axes{2};
             n = numel(comps);
@@ -289,6 +328,7 @@ classdef MecaStruct_App < handle
             PlotEngine.deflection(W.Axes{3}(1), W.Axes{3}(2), sol.model, d);
             MecaStruct_App.plotEquations(W.Axes{4}(1), sol, comps);
             app.finishWork(W);
+            app.armSchematic(W.Axes{1}(1));
             for k = n + 1:numel(axs)
                 axs(k).Visible = 'off';
             end
@@ -344,7 +384,10 @@ classdef MecaStruct_App < handle
             lines{end + 1, 1} = sprintf('Énergie de déformation totale U = %.5g J', U.total);
             lines{end + 1, 1} = sprintf('Vérification : Kt·|σ|max = %.5g MPa en s = %.4g m, σadm = %.5g MPa → %s', ...
                 bd.sigmaMaxKt / 1e6, chk.s, bd.sigmaAdm / 1e6, MecaStruct_App.okText(bd.ok));
-            limite = ~sol.isostatic && isfield(sol.model, 'Iyz') && sol.model.Iyz ~= 0;
+            lines = [{MecaStruct_App.plainVerdict(bd.sigmaMaxKt / 1e6, bd.sigmaAdm / 1e6, bd.ok)}; lines];
+            lines{end + 1, 1} = ['Étape suivante : « Envoyer au tenseur » pour les contraintes principales et les critères, ' ...
+                'ou l''onglet Flambage si la poutre est comprimée.'];
+            limite = ~isempty(MecaStruct_App.unreliableNote(sol));
             if limite
                 lines = [{['⚠ LIMITE DE L''APPLICATION : poutre hyperstatique avec Iyz ≠ 0. Les réactions sont calculées plan par plan ' ...
                     '(couplage y–z des inconnues hyperstatiques ignoré) : réactions, moments et contraintes NON fiables. ' ...
@@ -357,6 +400,458 @@ classdef MecaStruct_App < handle
             if limite
                 W.Status.Text = ['⚠ LIMITE : hyperstatique avec Iyz ≠ 0, résultats NON fiables — ' W.Status.Text];
             end
+        end
+
+        function applyNationalAnnex(app)
+            % Annexe nationale choisie : renseigne γM0 et γM1 (France : 1,0 et 1,0, comme l'EN ; « autre » : champs libres).
+            B = app.H.Beam;
+            if any(strcmp(B.na.Value, {'EN', 'FR'}))
+                B.gM0.Value = 1;
+                B.gM1.Value = 1;
+            end
+        end
+
+        function [r, T] = checkEurocode(app)
+            %CHECKEURODE Vérification Eurocode 3 simplifiée (DesignChecks.ec3Bending) de la poutre calculée.
+            %   Efforts : dernier « Calculer » ou enveloppe des combinaisons (réglage « Efforts de calcul »).
+            B = app.H.Beam;
+            if isempty(app.BeamSection) || ~isfield(app.BeamSection, 'sec')
+                error('MecaStruct:App:invalidInput', ['Eurocode 3 : la section doit venir d''un profilé ou d''un profil en I ' ...
+                    '(« Importer depuis Sections » ou exemple), pas de valeurs saisies à la main.']);
+            end
+            d = DesignChecks.ibeamDims(app.BeamSection.sec);
+            if strcmp(B.ecsrc.Value, 'enveloppe')
+                app.computeCombinations();   % efforts à jour : la saisie a pu changer depuis le dernier calcul
+                c = app.Results.combos(end, :);
+                MEd = max(abs([c.("Mfz max (kN·m)"), c.("Mfz min (kN·m)")])) * 1e3;
+                VEd = max(abs([c.("Ty max (kN)"), c.("Ty min (kN)")])) * 1e3;
+                src = 'enveloppe des combinaisons';
+                Nmax = c.("N max (kN)") * 1e3;
+                Nmin = c.("N min (kN)") * 1e3;
+                ignored = '';
+            else
+                if ~isfield(app.Results, 'beamInputs') || ~isequaln(app.Results.beamInputs, {app.captureInputs('Beam'), app.BeamSection})
+                    app.computeBeam();   % la saisie a changé depuis le dernier calcul : efforts à refaire
+                end
+                e = app.Results.beam.sol.extrema;
+                MEd = max(abs([e.Mfz.max, e.Mfz.min]));
+                VEd = max(abs([e.Ty.max, e.Ty.min]));
+                src = 'poutre recalculée avec la saisie actuelle (tous les cas à 1)';
+                Nmax = e.N.max;
+                Nmin = e.N.min;
+                My = max(abs([e.Mfy.max, e.Mfy.min])) / 1e3;
+                ignored = '';
+                if My > 1e-6
+                    ignored = sprintf('Mfy max = %.4g kN·m (flexion déviée non prise en compte)', My);
+                end
+            end
+            NEd = max(abs([Nmax, Nmin]));            % N > 0 : traction ; on associe le N maximal au M maximal (prudent)
+            Ncomp = max(0, -Nmin);
+            fy = app.si(B.Re, 'MPa');
+            r = DesignChecks.ec3Bending(d, app.si(B.S, 'mm^2'), app.si(B.Iz, 'mm^4'), fy, B.gM0.Value, MEd, VEd, Ncomp);
+            Lcr = B.Lcr.Value;
+            if Lcr <= 0
+                Lcr = B.L.Value;
+            end
+            LcrF = B.LcrF.Value;
+            if LcrF <= 0
+                LcrF = B.L.Value;   % plan fort : les entretoises latérales ne le réduisent pas
+            end
+            ltb = DesignChecks.ec3LateralTorsional(d, strcmp(app.BeamSection.sec.type, 'profile'), r.W, fy, B.gM1.Value, ...
+                app.si(B.E, 'GPa'), app.si(B.G, 'GPa'), app.si(B.Iy, 'mm^4'), app.si(B.Ix, 'mm^4'), Lcr, B.C1.Value, MEd);
+            r.ltb = ltb;
+            A = app.si(B.S, 'mm^2');
+            r.axial = DesignChecks.ec3AxialBending(d, r, A, fy, B.gM0.Value, NEd, MEd);
+            r.buck = [];
+            if Ncomp > 0
+                r.buck = DesignChecks.ec3FlexuralBuckling(d, strcmp(app.BeamSection.sec.type, 'profile'), A, ...
+                    app.si(B.Iz, 'mm^4'), app.si(B.Iy, 'mm^4'), [LcrF Lcr], fy, app.si(B.E, 'GPa'), B.gM1.Value, Ncomp);
+            end
+            r.inter = [];
+            if Ncomp > 0 && MEd > 0 && r.class.class <= 3
+                r.inter = DesignChecks.ec3Interaction(r.class.class, r.buck, ltb, A, r.W, fy, B.gM1.Value, Ncomp, MEd, B.Cmy.Value, B.CmLT.Value);
+            end
+            r.web = DesignChecks.ec3WebShear(d, fy, B.gM1.Value, VEd);
+            r.partial = false;
+            r.Ncomp = Ncomp;   % compression retenue pour la classe (le dossier la refait à la main)
+            r.okAll = r.ok && ltb.ok && r.axial.ok && (isempty(r.buck) || r.buck.ok) && (isempty(r.inter) || r.inter.ok) && r.web.ok;
+            cl = r.class;
+            redTxt = 'non';
+            if r.reduced
+                redTxt = 'oui';
+            end
+            rows = {
+                'Efforts utilisés', src, ''
+                'fy = Re (EN 1993-1-1 tab. 3.1 : fy dépend de l''épaisseur, non pris en compte)', fy / 1e6, 'MPa'
+                'γM0 [EN 1993-1-1 §6.1(1), valeur recommandée 1,0]', B.gM0.Value, '-'
+                'Classe de l''aile (c/tf) [tab. 5.2 : 9ε, 10ε, 14ε]', sprintf('%d (%.2f)', cl.classFlange, cl.ratioFlange), ''
+                'Classe de l''âme (c/tw) [tab. 5.2 : 72ε, 83ε, 124ε]', sprintf('%d (%.2f)', cl.classWeb, cl.ratioWeb), ''
+                'Classe de la section [§5.5]', cl.class, '-'
+                'Wpl,y', r.Wpl * 1e6, 'cm³'
+                'Wel,y', r.Wel * 1e6, 'cm³'
+                'Mc,Rd = W·fy/γM0 [§6.2.5(2), éq. 6.13 / 6.14]', r.Mc / 1e3, 'kN·m'
+                'Av [§6.2.6(3)]', r.Av * 1e6, 'mm²'
+                'Vpl,Rd = Av·(fy/√3)/γM0 [§6.2.6(2), éq. 6.18]', r.Vpl / 1e3, 'kN'
+                'MEd', r.MEd / 1e3, 'kN·m'
+                'VEd', r.VEd / 1e3, 'kN'
+                'Moment réduit par le tranchant, VEd > 0,5 Vpl,Rd [§6.2.8]', redTxt, ''
+                'MEd / MRd [éq. 6.12]', r.ratioM, '-'
+                'VEd / Vpl,Rd [éq. 6.17]', r.ratioV, '-'
+                'Résistance des sections', r.ok, ''
+                'Lcr (entretoises : flambement faible et déversement)', Lcr, 'm'
+                'Lcr,y (flambement dans le plan fort ; 0 = L)', LcrF, 'm'
+                'Mcr [NCCI SN003, appuis à fourches]', ltb.Mcr / 1e3, 'kN·m'
+                'λ̄LT = √(W·fy/Mcr) [§6.3.2.2]', ltb.lambda, '-'
+                sprintf('Courbe %s, αLT [tab. 6.5 puis tab. 6.3]', ltb.curve), ltb.alpha, '-'
+                'χLT [§6.3.2.3, éq. 6.57, λ̄LT,0 = 0,4, β = 0,75]', ltb.chi, '-'
+                'Mb,Rd = χLT·W·fy/γM1 [éq. 6.55]', ltb.MbRd / 1e3, 'kN·m'
+                'MEd / Mb,Rd [éq. 6.54]', ltb.ratio, '-'
+                'Déversement', ltb.ok, ''
+                'NEd (traction ou compression, au maximum)', NEd / 1e3, 'kN'
+                'Npl,Rd = A·fy/γM0 [§6.2.4, éq. 6.6]', r.axial.Npl / 1e3, 'kN'};
+            ax = r.axial;
+            if ax.class12
+                rows = [rows; {
+                    'n = NEd/Npl,Rd ; a = (A − 2b·tf)/A ≤ 0,5 [§6.2.9.1(5)]', sprintf('n = %.3f ; a = %.3f', ax.n, ax.a), ''
+                    'MN,y,Rd = Mpl,y,Rd·(1 − n)/(1 − 0,5a) [éq. 6.36, sans réduction si 6.33 et 6.34]', ax.MNRd / 1e3, 'kN·m'
+                    'MEd / MN,y,Rd', ax.ratio, '-'}];
+            else
+                rows = [rows; {
+                    'σx,Ed = NEd/A + MEd/Wel [§6.2.9.2, éq. 6.42]', ax.sigma / 1e6, 'MPa'
+                    'σx,Ed / (fy/γM0)', ax.ratio, '-'}];
+            end
+            rows = [rows; {'Flexion + effort normal', ax.ok, ''}];
+            if ~isempty(r.buck)
+                for k = 1:2
+                    a = r.buck.axes(k);
+                    rows = [rows; {
+                        sprintf('Flambement %s : Ncr = π²EI/Lcr² [§6.3.1.2, éq. 6.50]', a.axis), a.Ncr / 1e3, 'kN'
+                        sprintf('Flambement %s : λ̄, courbe %s, α = %.2f [tab. 6.2, tab. 6.1]', a.axis, a.curve, a.alpha), a.lambda, '-'
+                        sprintf('Flambement %s : χ [éq. 6.49]', a.axis), a.chi, '-'
+                        sprintf('Flambement %s : Nb,Rd = χ·A·fy/γM1 [éq. 6.47]', a.axis), a.NbRd / 1e3, 'kN'}]; %#ok<AGROW>
+                end
+                rows = [rows; {
+                    'NEd,compression / Nb,Rd [éq. 6.46]', r.buck.ratio, '-'
+                    'Flambement', r.buck.ok, ''}];
+            end
+            if ~isempty(r.inter)
+                it = r.inter;
+                rows = [rows; {
+                    'Interaction N + M, nY = NEd/(χy·NRk/γM1) ; nZ [§6.3.3, annexe B]', sprintf('nY = %.3f ; nZ = %.3f', it.nY, it.nZ), ''
+                    'kyy, kzy [annexe B, méthode 2, tableau B.2 ; Cmy, CmLT]', sprintf('kyy = %.3f ; kzy = %.3f (Cmy = %.2f, CmLT = %.2f)', it.kyy, it.kzy, it.Cmy, it.CmLT), ''
+                    'NEd/(χy·NRk/γM1) + kyy·MEd/(χLT·My,Rk/γM1) [éq. 6.61]', it.ratio61, '-'
+                    'NEd/(χz·NRk/γM1) + kzy·MEd/(χLT·My,Rk/γM1) [éq. 6.62]', it.ratio62, '-'
+                    'Interaction N + M', it.ok, ''}];
+            elseif Ncomp > 0 && MEd > 0
+                rows = [rows; {'ATTENTION', 'N de compression et M présents mais section de classe 4 : interaction non vérifiée', ''}];
+            end
+            w = r.web;
+            if w.needed
+                rows = [rows; {
+                    'Voilement de l''âme par cisaillement : hw/tw > 72ε/η, vérification requise [EN 1993-1-5 §5]', sprintf('hw/tw = %.1f > %.1f', w.hwTw, w.limit), ''
+                    'λ̄w = hw/(86,4·tw·ε) ; χw [tab. 5.1, poteau d''extrémité rigide]', sprintf('λ̄w = %.3f ; χw = %.3f', w.lambda, w.chi), ''
+                    'Vb,Rd = χw·fy·hw·tw/(√3·γM1) (semelles négligées)', w.VbRd / 1e3, 'kN'
+                    'VEd / Vb,Rd', w.ratio, '-'
+                    'Voilement de l''âme', w.ok, ''}];
+            else
+                rows = [rows; {'Voilement de l''âme par cisaillement', sprintf('sans objet : hw/tw = %.1f ≤ 72ε/η = %.1f [EN 1993-1-1 §6.2.6(6)]', w.hwTw, w.limit), ''}];
+            end
+            switch B.na.Value
+                case 'FR'
+                    naTxt = 'France : γM0 = 1,0 ; γM1 = 1,0 ; γM2 = 1,25 (mêmes valeurs que l''EN) ; courbes de flambement et de déversement : valeurs recommandées de l''EN (non comparées au texte de l''annexe française)';
+                case 'autre'
+                    naTxt = sprintf('autre pays : γM0 = %.3g et γM1 = %.3g saisis ; autres paramètres : valeurs recommandées de l''EN', B.gM0.Value, B.gM1.Value);
+                otherwise
+                    naTxt = 'valeurs recommandées de l''EN (γM0 = γM1 = 1,0)';
+            end
+            rows = [rows; {
+                'Eurocode 3 (sections, voilement, déversement, N + M, flambement)', r.okAll, ''
+                'Non vérifié', 'voilement local sous charges concentrées (EN 1993-1-5 §6), flexion déviée, ELS, assemblages, classe 4', ''
+                'Annexe nationale', naTxt, ''
+                'Sources', 'docs/NORMES.md', ''}];
+            note = MecaStruct_App.unreliableNote(BeamAndTrussSolver.solveBeam(app.readBeamModel()));
+            if ~isempty(note)
+                rows(end + 1, :) = {'Résultats non fiables', 'poutre hyperstatique avec Iyz ≠ 0 : réactions et efforts plan par plan', ''};
+            end
+            if ~isempty(ignored)
+                rows(end + 1, :) = {'Efforts ignorés', ignored, ''};
+            end
+            T = app.kvTable(rows);
+            B.W.Tables.EC3.Data = T;
+            B.W.ResGroup.SelectedTab = ancestor(B.W.Tables.EC3, 'uitab');
+            app.Results.ec3 = r;
+            B.W.Status.Text = sprintf('%sEurocode 3 : classe %d, MEd/MRd = %.3f, VEd/Vpl,Rd = %.3f, MEd/Mb,Rd = %.3f (%s)', ...
+                note, cl.class, r.ratioM, r.ratioV, ltb.ratio, MecaStruct_App.okText(r.okAll));
+            if ~isempty(r.inter)
+                B.W.Status.Text = sprintf('%s, N + M (6.61/6.62) = %.3f', B.W.Status.Text, r.inter.ratio);
+            end
+        end
+
+        function [r, T] = checkFatigue(app)
+            %CHECKFATIGUE Coefficient de sécurité en fatigue (Goodman) au point le plus sollicité du dernier calcul.
+            %   σmax nominale = Kt·σ / Kt du dernier « Calculer » ; Kf = Kt ; amplitude σa = Kf·σmax·(1−R)/2.
+            B = app.H.Beam;
+            if ~isfield(app.Results, 'beam') || isempty(app.Results.beam)
+                error('MecaStruct:App:invalidInput', 'Calculez d''abord la poutre (« Calculer »).');
+            end
+            Kt = B.Kt.Value;
+            if ~(Kt >= 1)
+                error('MecaStruct:App:invalidInput', 'Fatigue : Kt doit être ≥ 1.');
+            end
+            sigMax = app.Results.beam.check.bend.sigmaMaxKt / Kt;
+            Rm = app.DM.getMaterial(B.mat.Value).Rm;
+            if ~(isfinite(Rm) && Rm > 0)
+                error('MecaStruct:App:invalidInput', 'Fatigue : Rm inconnu pour « %s ».', B.mat.Value);
+            end
+            r = DesignChecks.goodman(sigMax, B.fR.Value, Kt, Rm, B.fka.Value, B.fkb.Value);
+            ok = r.n >= B.s.Value;
+            rows = {
+                'Contrainte nominale max σmax', sigMax / 1e6, 'MPa'
+                'R = σmin / σmax', B.fR.Value, '-'
+                'Kf (= Kt)', Kt, '-'
+                'Amplitude σa = Kf·σmax·(1−R)/2', r.sigmaA / 1e6, 'MPa'
+                'Contrainte moyenne σm', r.sigmaM / 1e6, 'MPa'
+                'Rm', Rm / 1e6, 'MPa'
+                'Limite d''endurance Se = ka·kb·0,5·Rm', r.Se / 1e6, 'MPa'
+                'Coefficient de sécurité n = 1 / (σa/Se + σm/Rm)', r.n, '-'
+                'Coefficient exigé s', B.s.Value, '-'
+                'Fatigue (Goodman)', ok, ''
+                'Hypothèses', 'acier, vie infinie, Kf = Kt, chargement uniaxial d''amplitude constante', ''};
+            T = app.kvTable(rows);
+            B.W.Tables.Fat.Data = T;
+            B.W.ResGroup.SelectedTab = ancestor(B.W.Tables.Fat, 'uitab');
+            app.Results.fatigue = r;
+            B.W.Status.Text = sprintf('Fatigue (Goodman) : n = %.3g pour s = %.3g (%s)', r.n, B.s.Value, MecaStruct_App.okText(ok));
+        end
+
+        function [T, best] = findLightestProfile(app, family, deflRatio)
+            %FINDLIGHTESTPROFILE Essaie chaque profilé d'une famille avec le chargement de l'onglet Poutres.
+            %   [T, best] = app.findLightestProfile('IPE') ; deflRatio : flèche limitée à L/deflRatio (0 = ignorée).
+            %   Les champs de section de l'onglet sont remplacés le temps du calcul puis remis. T est trié par aire
+            %   croissante ; best = nom du premier profilé qui vérifie (résistance et, si demandé, flèche), '' sinon.
+            if nargin < 3 || isempty(deflRatio)
+                deflRatio = 0;
+            end
+            B = app.H.Beam;
+            inputs0 = {app.captureInputs('Beam'), app.BeamSection, app.BeamUsesSection};   % saisie avant le balayage (cache de l'export)
+            names = cellstr(app.DM.listProfiles(family));
+            flds = {'S', 'Iz', 'Iy', 'Ix', 'ky', 'kz', 'vy', 'vz', 'Iyz'};
+            old = cellfun(@(f) B.(f).Value, flds, 'UniformOutput', false);
+            oldUse = app.BeamUsesSection;
+            oldSec = app.BeamSection;
+            restore = onCleanup(@() app.restoreBeamSection(flds, old, oldUse, oldSec)); %#ok<NASGU>
+            rho = app.DM.getMaterial(B.mat.Value).rho;
+            n = numel(names);
+            v = nan(n, 6);
+            verdict = strings(n, 1);
+            ok = false(n, 1);
+            for i = 1:n
+                p = app.DM.getProfile(family, names{i});
+                P = GeometryEngine.analytical(GeometryEngine.fromProfile(p));
+                Pt = GeometryEngine.tabulated(GeometryEngine.fromProfile(p));
+                B.S.Value = p.S * 1e6;
+                B.Iz.Value = p.Iz * 1e12;
+                B.Iy.Value = p.Iy * 1e12;
+                B.Ix.Value = P.J * 1e12;
+                B.ky.Value = Pt.ky;
+                B.kz.Value = Pt.kz;
+                B.Iyz.Value = 0;
+                B.vy.Value = p.h / 2 * 1e3;
+                B.vz.Value = p.b / 2 * 1e3;
+                app.BeamUsesSection = false;
+                try
+                    sol = BeamAndTrussSolver.solveBeam(app.readBeamModel());
+                    d = SolicitationsEngine.deflection(sol.model, sol, ...
+                        struct('plane', B.plane.Value, 'includeShear', logical(B.shear.Value)));
+                    chk = app.beamCheck(sol);
+                    f = d.integration.fmax * 1e3;
+                    okF = deflRatio <= 0 || f <= sol.model.L * 1e3 / deflRatio;
+                    v(i, :) = [p.S * 1e6, rho * p.S, chk.bend.sigmaMaxKt / 1e6, chk.bend.sigmaAdm / 1e6, f, ...
+                        sol.model.L * 1e3 / max(f, eps)];
+                    ok(i) = logical(chk.bend.ok) && okF;
+                    verdict(i) = string(MecaStruct_App.okText(ok(i)));
+                catch err
+                    verdict(i) = "erreur : " + string(err.message);
+                end
+            end
+            [~, ord] = sort(v(:, 1));
+            T = table(string(names(:)), v(:, 1), v(:, 2), v(:, 3), v(:, 4), v(:, 5), v(:, 6), verdict, 'VariableNames', ...
+                {'Profilé', 'S (mm²)', 'Masse (kg/m)', 'Kt·σ max (MPa)', 'σadm (MPa)', 'f max (mm)', 'L/f (-)', 'Résistance'});
+            T = T(ord, :);
+            okS = ok(ord);
+            best = '';
+            if any(okS)
+                best = char(T.("Profilé")(find(okS, 1)));
+            end
+            B.W.Tables.Prof.Data = T;
+            B.W.ResGroup.SelectedTab = ancestor(B.W.Tables.Prof, 'uitab');
+            app.Results.profiles = T;
+            app.Results.profilesInputs = inputs0;
+            if isempty(best)
+                B.W.Status.Text = sprintf('Aucun profilé %s ne vérifie ce chargement : essayer une autre famille.', family);
+            else
+                B.W.Status.Text = sprintf('Profilé %s le plus léger qui vérifie : %s. La saisie de la section est inchangée.', family, best);
+            end
+        end
+
+        function restoreBeamSection(app, flds, old, oldUse, oldSec)
+            B = app.H.Beam;
+            for k = 1:numel(flds)
+                B.(flds{k}).Value = old{k};
+            end
+            app.BeamUsesSection = oldUse;
+            app.BeamSection = oldSec;
+        end
+
+        function T = computeCombinations(app)
+            %COMPUTECOMBINATIONS Résout chaque combinaison de cas (tableau Combinaisons) puis donne l'enveloppe.
+            %   Superposition de cas : exacte pour une poutre linéaire (isostatique ou hyperstatique).
+            %   Résultat : table, aussi affichée dans l'onglet Combinaisons et exportable.
+            B = app.H.Beam;
+            c = B.combo.Data;
+            if isempty(c)
+                error('MecaStruct:App:invalidInput', 'Aucune combinaison : ajoutez une ligne au tableau Combinaisons.');
+            end
+            n = size(c, 1);
+            v = nan(n, 9);
+            verdict = strings(n, 1);
+            ok = true(n, 1);
+            note = '';
+            for i = 1:n
+                fac = struct('G', MecaStruct_App.cellNum(c{i, 2}, 'γG'), 'Q', MecaStruct_App.cellNum(c{i, 3}, 'γQ'), ...
+                    'W', MecaStruct_App.cellNum(c{i, 4}, 'γW'), 'S', MecaStruct_App.cellNum(c{i, 5}, 'γS'));
+                try
+                    sol = BeamAndTrussSolver.solveBeam(app.readBeamModel(fac));
+                    note = MecaStruct_App.unreliableNote(sol);
+                    d = SolicitationsEngine.deflection(sol.model, sol, ...
+                        struct('plane', B.plane.Value, 'includeShear', logical(B.shear.Value)));
+                    chk = app.beamCheck(sol);
+                    e = sol.extrema;
+                    v(i, 1:6) = [e.Mfz.max e.Mfz.min e.Ty.max e.Ty.min e.N.max e.N.min] / 1e3;
+                    v(i, 7:9) = [d.integration.fmax * 1e3, chk.bend.sigmaMaxKt / 1e6, chk.bend.sigmaAdm / 1e6];
+                    ok(i) = logical(chk.bend.ok);
+                    verdict(i) = string(MecaStruct_App.okText(chk.bend.ok));
+                catch err
+                    ok(i) = false;
+                    verdict(i) = "erreur : " + string(err.message);
+                end
+            end
+            ok(isnan(v(:, 1))) = false;
+            row = nan(1, 9);
+            row([1 3 5 7 8]) = max(v(:, [1 3 5 7 8]), [], 1, 'omitnan');
+            row([2 4 6]) = min(v(:, [2 4 6]), [], 1, 'omitnan');
+            r9 = v(~isnan(v(:, 9)), 9);
+            if ~isempty(r9), row(9) = r9(1); end
+            allOk = all(ok);
+            T = table([string(c(:, 1)); "Enveloppe"], [v(:, 1); row(1)], [v(:, 2); row(2)], [v(:, 3); row(3)], [v(:, 4); row(4)], ...
+                [v(:, 5); row(5)], [v(:, 6); row(6)], [v(:, 7); row(7)], [v(:, 8); row(8)], [v(:, 9); row(9)], ...
+                [verdict; string(MecaStruct_App.okText(allOk))], 'VariableNames', {'Combinaison', 'Mfz max (kN·m)', ...
+                'Mfz min (kN·m)', 'Ty max (kN)', 'Ty min (kN)', 'N max (kN)', 'N min (kN)', 'f max (mm)', ...
+                'Kt·σ max (MPa)', 'σadm (MPa)', 'Résistance'});
+            B.W.Tables.Combo.Data = T;
+            B.W.ResGroup.SelectedTab = ancestor(B.W.Tables.Combo, 'uitab');
+            app.Results.combos = T;
+            B.W.Status.Text = sprintf('%sCombinaisons : %d calculée(s), enveloppe Kt·σ max = %.4g MPa (%s)', note, n, row(8), ...
+                MecaStruct_App.okText(allOk));
+        end
+
+        function [T, env] = computeMovingLoad(app)
+            %COMPUTEMOVINGLOAD Enveloppe d'un convoi de charges mobiles (1 à n essieux) sur la poutre.
+            %   La poutre est résolue pour chaque position du convoi ; l'enveloppe de Mfz, Ty et des réactions
+            %   est le max et le min sur les positions (grille réglable plus positions critiques, voir plus bas). Avec « charges fixes »
+            %   décoché, seul le convoi est appliqué (ni charges saisies, ni tassement, ni température).
+            %   T : table de l'enveloppe le long de la poutre (101 points) ; env : s, Mmax, Mmin, Tmax, Tmin,
+            %   extrema exacts (de chaque position) et réactions extrêmes.
+            B = app.H.Beam;
+            model = app.readBeamModel();
+            L = model.L;
+            P = MecaStruct_App.parseNumbers(B.mvP.Value, 'Essieux') * 1e3;
+            if isempty(P)
+                error('MecaStruct:App:invalidInput', 'Charge mobile : saisissez au moins une charge d''essieu (kN).');
+            end
+            gaps = MecaStruct_App.parseNumbers(B.mvE.Value, 'Écartements');
+            if isscalar(gaps)
+                gaps = repmat(gaps, 1, numel(P) - 1);   % un seul écartement pour tous (aucun pour un essieu seul)
+            end
+            if numel(gaps) ~= numel(P) - 1 || any(gaps <= 0)
+                error('MecaStruct:App:invalidInput', 'Charge mobile : %d essieu(x) demandent %d écartement(s) positif(s) (ou un seul pour tous).', numel(P), numel(P) - 1);
+            end
+            if numel(P) > 20
+                error('MecaStruct:App:invalidInput', 'Charge mobile : 20 essieux au plus.');
+            end
+            nPos = round(B.mvN.Value);
+            if ~(nPos >= 2 && nPos <= 500)
+                error('MecaStruct:App:invalidInput', 'Charge mobile : 2 à 500 positions de base.');
+            end
+            offs = [0 cumsum(gaps)];
+            if ~B.mvFixed.Value
+                model.pointLoads = struct('pos', {}, 'Fx', {}, 'Fy', {}, 'Fz', {}, 'name', {});
+                model.pointMoments = struct('pos', {}, 'Mx', {}, 'My', {}, 'Mz', {}, 'name', {});
+                model.distLoads = struct('a', {}, 'b', {}, 'dir', {}, 'coeffs', {}, 'name', {});
+                model.thermal = struct('epsX', 0, 'kv', 0, 'kw', 0);
+                for i = 1:numel(model.supports)
+                    model.supports(i).dx = 0; model.supports(i).dy = 0; model.supports(i).dz = 0;
+                end
+            end
+            nF = numel(model.pointLoads);
+            s = linspace(0, L, 101);
+            hi = -inf(size(s)); lo = inf(size(s)); thi = -inf(size(s)); tlo = inf(size(s));
+            ext = struct('Mmax', -inf, 'Mmin', inf, 'Tmax', -inf, 'Tmin', inf);
+            ns = numel(model.supports);
+            Rmax = -inf(1, ns); Rmin = inf(1, ns);
+            % Positions du convoi : la grille, puis chaque essieu sur un appui, une rotule ou un point du tableau (moment et
+            % réaction sont linéaires entre ces positions), et la symétrie « essieu et résultante de part et d'autre du
+            % milieu » qui donne le moment maximal sous un essieu sur appuis simples.
+            pts = [[model.supports.pos], [model.hinges.pos], s];
+            cand = [linspace(-offs(end), L, nPos), reshape(pts(:) - offs, 1, [])];
+            if abs(sum(P)) > 0
+                offR = sum(P .* offs) / sum(P);
+                cand = [cand, (L - offs - offR) / 2];
+            end
+            x0 = unique(cand);
+            used = 0;
+            for p = 1:numel(x0)
+                xs = x0(p) + offs;
+                on = xs >= -1e-9 & xs <= L + 1e-9;   % tolérance : un essieu posé sur un appui reste compté
+                if ~any(on), continue, end
+                m = model;
+                for k = find(on)
+                    m.pointLoads(end + 1) = struct('pos', min(max(xs(k), 0), L), 'Fx', 0, 'Fy', P(k), 'Fz', 0, 'name', sprintf('E%d', k)); %#ok<AGROW>
+                end
+                sol = BeamAndTrussSolver.solveBeam(m, struct('internalMethod', 'coupures', 'hyperMethod', 'menabrea', 'useSymbolic', false));
+                M = BeamAndTrussSolver.ppEval(sol.Mfz, s, 'left');
+                M2 = BeamAndTrussSolver.ppEval(sol.Mfz, s, 'right');
+                Ty = BeamAndTrussSolver.ppEval(sol.Ty, s, 'left');
+                Ty2 = BeamAndTrussSolver.ppEval(sol.Ty, s, 'right');
+                hi = max(hi, max(M(:).', M2(:).')); lo = min(lo, min(M(:).', M2(:).'));
+                thi = max(thi, max(Ty(:).', Ty2(:).')); tlo = min(tlo, min(Ty(:).', Ty2(:).'));
+                e = sol.extrema;
+                ext.Mmax = max(ext.Mmax, e.Mfz.max); ext.Mmin = min(ext.Mmin, e.Mfz.min);
+                ext.Tmax = max(ext.Tmax, e.Ty.max); ext.Tmin = min(ext.Tmin, e.Ty.min);
+                R = [sol.reactions.Ry];
+                Rmax = max(Rmax, R); Rmin = min(Rmin, R);
+                used = used + 1;
+            end
+            if used == 0
+                error('MecaStruct:App:invalidInput', 'Charge mobile : aucun essieu sur la poutre.');
+            end
+            env = struct('s', s, 'Mmax', hi, 'Mmin', lo, 'Tmax', thi, 'Tmin', tlo, 'extrema', ext, ...
+                'Rmax', Rmax, 'Rmin', Rmin, 'names', {{model.supports.name}}, 'positions', used, 'fixedLoads', nF);
+            T = table(s(:), hi(:) / 1e3, lo(:) / 1e3, thi(:) / 1e3, tlo(:) / 1e3, 'VariableNames', ...
+                {'s (m)', 'Mfz max (kN·m)', 'Mfz min (kN·m)', 'Ty max (kN)', 'Ty min (kN)'});
+            app.Results.moving = struct('table', T, 'env', env);
+            B.W.Tables.Mov.Data = T;
+            PlotEngine.movingEnvelope(B.W.Axes{5}, env);
+            app.finishAxes(B.W.Axes{5});
+            if strcmp(app.UIFigure.Visible, 'on')
+                B.W.PlotGroup.SelectedTab = B.W.PlotGroup.Children(5);   % montre l'enveloppe à l'utilisateur
+            end
+            rt = strings(1, ns);
+            for i = 1:ns
+                rt(i) = sprintf('%s : %.4g à %.4g kN', model.supports(i).name, Rmin(i) / 1e3, Rmax(i) / 1e3);
+            end
+            B.W.Status.Text = sprintf('%sCharge mobile (%d positions) : Mfz de %.4g à %.4g kN·m, Ty de %.4g à %.4g kN ; réactions Ry %s', ...
+                MecaStruct_App.unreliableNote(sol), used, ext.Mmin / 1e3, ext.Mmax / 1e3, ext.Tmin / 1e3, ext.Tmax / 1e3, strjoin(rt, ' ; '));
         end
 
         function loadFromBeam(app, key, mode)
@@ -398,8 +893,8 @@ classdef MecaStruct_App < handle
                 end
             end
             H.s0.Value = s;
-            H.W.Status.Text = sprintf('Efforts lus sur la poutre en s = %.4g m : N = %.4g kN, Mfz = %.4g kN·m, Mfy = %.4g kN·m', ...
-                s, H.N.Value, H.Mfz.Value, H.Mfy.Value);
+            H.W.Status.Text = sprintf('%sEfforts lus sur la poutre en s = %.4g m : N = %.4g kN, Mfz = %.4g kN·m, Mfy = %.4g kN·m', ...
+                MecaStruct_App.unreliableNote(R.sol), s, H.N.Value, H.Mfz.Value, H.Mfy.Value);
             % la contrainte se calcule avec la section de l'onglet Sections, pas forcément celle de la poutre
             Pb = app.beamSectionProps();
             sameSec = ~isempty(app.BeamSection) && ~isempty(app.SectionData) && isequal(app.BeamSection.sec, app.SectionData.sec);
@@ -1160,6 +1655,13 @@ classdef MecaStruct_App < handle
                 'PoutreHyperstatique', 'Beam', 'hyperstatique', @() app.computeBeam()
                 'PoutreConsole', 'Beam', 'console', @() app.computeBeam()
                 'PoutreDeuxTravees', 'Beam', 'deuxtravees', @() app.computeBeam()
+                'PoutreGerber', 'Beam', 'gerber', @() app.computeBeam()
+                'PoutreTassement', 'Beam', 'tassement', @() app.computeBeam()
+                'CombinaisonsPoutre', '', '', @() app.computeCombinations()
+                'EurocodePoutre', '', '', @() app.checkEurocode()
+                'FatiguePoutre', '', '', @() app.checkFatigue()
+                'DimensionnementPoutre', '', '', @() app.findLightestProfile(app.H.Beam.pfam.Value, app.H.Beam.pdef.Value)
+                'ChargeMobile', '', '', @() app.computeMovingLoad()
                 'EnvoiTenseur', '', '', @() app.sendToTensor()
                 'Treillis', 'Tr', '', @() app.computeTruss()
                 'Traction', 'Tra', '', @() app.computeTraction()
@@ -1224,26 +1726,343 @@ classdef MecaStruct_App < handle
             MecaStruct_App.openInBrowser(f);
         end
 
-        function f = exportValidation(app, key, folder)
-            %EXPORTVALIDATION Génère le dossier de validation HTML de l'onglet affiché et l'ouvre.
+        function f = exportValidation(app, key, folder, format)
+            %EXPORTVALIDATION Génère le dossier de validation de l'onglet affiché (HTML ou PDF) et l'ouvre.
             %   f = app.exportValidation() utilise l'onglet actif ; app.exportValidation(key) une
             %   zone de travail précise ('Sec', 'Beam', 'Tr', 'Tra', 'Cis', 'Tor', 'Fle', 'Fla',
-            %   'Ten', 'Hoo', 'Jau') ; le 3e argument choisit le dossier de sortie.
-            %   Le fichier est autonome (images intégrées) : il peut être envoyé tel quel.
+            %   'Ten', 'Hoo', 'Jau') ; le 3e argument choisit le dossier de sortie, le 4e le format
+            %   ('html' ou 'pdf'). Sans format et fenêtre visible, l'application le demande ; sinon HTML.
+            %   Le fichier HTML est autonome (images intégrées) : il peut être envoyé tel quel.
             if nargin < 2 || isempty(key)
                 key = app.activeWorkKey();
             end
-            if any(strcmp(key, {'DB', 'Conv'}))
+            if any(strcmp(key, {'Home', 'DB', 'Conv'}))
                 error('MecaStruct:App:noValidation', 'Pas de dossier de validation pour cet onglet : ouvrir un onglet de calcul.');
             end
             if nargin < 3
                 folder = '';
             end
+            if nargin < 4 || isempty(format)
+                format = 'html';
+                if strcmp(app.UIFigure.Visible, 'on')
+                    ch = uiconfirm(app.UIFigure, ['Format du dossier de validation :' newline newline ...
+                        'HTML : fichier autonome, à ouvrir dans un navigateur.' newline ...
+                        'PDF : prêt à remettre (Edge ou Chrome sans fenêtre ; les formules demandent Internet).'], ...
+                        'Format du dossier', 'Options', {'HTML', 'PDF', 'Annuler'}, 'DefaultOption', 1, 'CancelOption', 3);
+                    if strcmp(ch, 'Annuler')
+                        f = '';
+                        return
+                    end
+                    format = lower(ch);
+                end
+            end
             app.H.(key).W.Status.Text = 'Génération du dossier de validation...';
             drawnow;
-            f = ValidationReport.generate(app, key, folder);
+            f = ValidationReport.generate(app, key, folder, format);
             app.H.(key).W.Status.Text = ['Dossier de validation : ' f];
             MecaStruct_App.openInBrowser(f);
+        end
+
+        function f = saveProblem(app, key, f)
+            %SAVEPROBLEM Enregistre la saisie d'un onglet (Beam, Tr...) dans un fichier .mat.
+            %   app.saveProblem('Beam', fichier) ; sans fichier, ouvre la boîte « Enregistrer sous ».
+            if nargin < 3 || isempty(f)
+                [n, p] = uiputfile('*.mat', 'Enregistrer mon problème', ['Probleme_' key '.mat']);
+                if isequal(n, 0)
+                    f = '';
+                    return
+                end
+                f = fullfile(p, n);
+            end
+            problem = struct('app', 'MecaStruct', 'key', key, 'values', {app.captureInputs(key)}); %#ok<NASGU>
+            save(f, 'problem');
+        end
+
+        function n = loadProblem(app, key, f)
+            %LOADPROBLEM Recharge un problème enregistré par saveProblem ; renvoie le nombre de champs non restaurés.
+            if nargin < 3 || isempty(f)
+                [n0, p] = uigetfile('*.mat', 'Ouvrir un problème');
+                if isequal(n0, 0)
+                    n = 0;
+                    return
+                end
+                f = fullfile(p, n0);
+            end
+            S = load(f, 'problem');   % une seule variable : un fichier échangé ne charge rien d'autre
+            if ~isfield(S, 'problem') || ~strcmp(S.problem.key, key)
+                error('MecaStruct:App:badProblemFile', ['Ce fichier n''est pas un problème enregistré depuis cet onglet ' ...
+                    '(ou il date d''une autre version de l''application).']);
+            end
+            n = app.restoreInputs(key, S.problem.values);
+            app.H.(key).W.Status.Text = sprintf('Problème ouvert : %s', f);
+        end
+
+        function f = saveProject(app, f)
+            %SAVEPROJECT Enregistre la saisie de tous les onglets de calcul dans un seul fichier .mat.
+            if nargin < 2 || isempty(f)
+                [n, p] = uiputfile('*.mat', 'Enregistrer tout le projet', 'Projet_MecaStruct.mat');
+                if isequal(n, 0)
+                    f = '';
+                    return
+                end
+                f = fullfile(p, n);
+            end
+            project = struct('app', 'MecaStruct'); %#ok<NASGU>
+            for key = MecaStruct_App.projectKeys()
+                project.(key{1}) = app.captureInputs(key{1});
+            end
+            save(f, 'project');
+        end
+
+        function failed = loadProject(app, f)
+            %LOADPROJECT Recharge un projet enregistré par saveProject ; renvoie les onglets non restaurés (cellstr).
+            if nargin < 2 || isempty(f)
+                [n0, p] = uigetfile('*.mat', 'Ouvrir un projet');
+                if isequal(n0, 0)
+                    failed = {};
+                    return
+                end
+                f = fullfile(p, n0);
+            end
+            S = load(f, 'project');
+            if ~isfield(S, 'project') || ~isfield(S.project, 'app')
+                error('MecaStruct:App:badProblemFile', 'Ce fichier n''est pas un projet MecaStruct.');
+            end
+            failed = {};
+            for key = MecaStruct_App.projectKeys()
+                k = key{1};
+                try
+                    app.restoreInputs(k, S.project.(k));
+                catch
+                    failed{end + 1} = k; %#ok<AGROW>
+                end
+            end
+        end
+
+        function files = exportResults(app, key, f)
+            %EXPORTRESULTS Écrit les tableaux de résultats d'un onglet : .xlsx (une feuille par tableau) ou .csv (un fichier par tableau).
+            %   Poutres : feuilles « Enveloppe » (max/min de chaque effort) et « Efforts » (valeurs le long de la poutre) en plus.
+            sheets = app.resultSheets(key);
+            if isempty(sheets)
+                error('MecaStruct:App:noResults', 'Aucun résultat à exporter : cliquez d''abord sur « Calculer ».');
+            end
+            [d, base, ext] = fileparts(f);
+            files = {};
+            if strcmpi(ext, '.csv')
+                for k = 1:size(sheets, 1)
+                    files{end + 1} = fullfile(d, [base '_' sheets{k, 1} '.csv']); %#ok<AGROW>
+                    writetable(sheets{k, 2}, files{end});
+                end
+            else
+                for k = 1:size(sheets, 1)
+                    writetable(sheets{k, 2}, f, 'Sheet', sheets{k, 1});
+                end
+                files = {f};
+            end
+        end
+
+        function openProjectDialog(app)
+            failed = app.loadProject();
+            if ~isempty(failed) && strcmp(app.UIFigure.Visible, 'on')
+                uialert(app.UIFigure, ['Onglets non restaurés (version différente) : ' strjoin(failed, ', ')], ...
+                    'Ouvrir un projet', 'Icon', 'warning');
+            end
+        end
+
+        function exportResultsDialog(app, key)
+            [n, p] = uiputfile({'*.xlsx', 'Excel (une feuille par tableau)'; '*.csv', 'CSV (un fichier par tableau)'}, ...
+                'Exporter les tableaux de résultats', ['MecaStruct_' key '.xlsx']);
+            if isequal(n, 0)
+                return
+            end
+            files = app.exportResults(key, fullfile(p, n));
+            app.H.(key).W.Status.Text = sprintf('Tableaux exportés : %s', strjoin(files, ', '));
+        end
+
+        function n = guidedTour(app)
+            %GUIDEDTOUR Visite guidée : poutre sur deux appuis, du chargement de l'exemple à la vérification.
+            %   Fenêtre masquée : renvoie seulement le nombre d'étapes (sans boîtes de dialogue).
+            steps = {
+                'Poutres', 'Étape 1/5 : voici une poutre sur deux appuis. Le tableau Appuis donne leur position et leur type (la légende dessous dit ce que chacun bloque).'
+                'Poutres', 'Étape 2/5 : les tableaux Forces et Charges réparties donnent le chargement. Une force vers le bas est négative. « Charge rapide » aide à saisir une charge répartie.'
+                'Poutres', 'Étape 3/5 : le calcul est lancé pour vous. Regardez le schéma, puis les diagrammes de T et de Mf : le moment est maximal où T change de signe.'
+                'Poutres', 'Étape 4/5 : lisez le rapport (en bas). Sa première ligne est le verdict : la poutre résiste-t-elle, avec quelle marge ?'
+                'Flambage', 'Étape 5/5 : une poutre comprimée doit aussi être vérifiée au flambage. Chargez un profilé et cliquez sur Calculer. Fin de la visite.'};
+            n = size(steps, 1);
+            visible = strcmp(app.UIFigure.Visible, 'on');
+            if ~visible
+                return
+            end
+            for k = 1:n
+                app.selectTab(steps{k, 1});
+                if k == 1
+                    app.loadExample('Poutres', 'isostatique');
+                elseif k == 3
+                    app.computeBeam();
+                end
+                ch = uiconfirm(app.UIFigure, steps{k, 2}, 'Visite guidée', 'Options', {'Suivant', 'Arrêter'}, ...
+                    'DefaultOption', 1, 'CancelOption', 2);
+                if ~strcmp(ch, 'Suivant')
+                    return
+                end
+            end
+        end
+
+        function addQuickLoad(app)
+            %ADDQUICKLOAD Ajoute au tableau des charges réparties la charge décrite par « Charge rapide ».
+            B = app.H.Beam;
+            a = B.qa.Value;
+            b = B.qb.Value;
+            p1 = B.qp1.Value;
+            p2 = B.qp2.Value;
+            if b <= a
+                error('MecaStruct:App:invalidLoad', 'La charge doit finir après son début (b > a).');
+            end
+            switch B.qshape.Value
+                case 'Uniforme'
+                    row = {a, b, B.qdir.Value, 'uniforme', sprintf('%.10g', p1), '', B.qcase.Value};
+                case 'Triangulaire croissante (0 → p)'
+                    row = {a, b, B.qdir.Value, 'linéaire', sprintf('0 %.10g', p1), '', B.qcase.Value};
+                case 'Triangulaire décroissante (p → 0)'
+                    row = {a, b, B.qdir.Value, 'linéaire', sprintf('%.10g 0', p1), '', B.qcase.Value};
+                otherwise
+                    row = {a, b, B.qdir.Value, 'linéaire', sprintf('%.10g %.10g', p1, p2), '', B.qcase.Value};
+            end
+            app.addTableRow(B.dl, row);
+        end
+
+        function pushBeamHistory(app)
+            %PUSHBEAMHISTORY Mémorise l'état de la saisie de Poutres (annuler / rétablir) et redessine l'aperçu.
+            if app.HistBusy
+                return
+            end
+            snap = struct('vals', {app.captureInputs('Beam')}, 'sec', app.BeamSection, 'use', app.BeamUsesSection, ...
+                'info', app.H.Beam.secInfo.Text);
+            if app.BeamHistPos >= 1 && isequaln(app.BeamHist{app.BeamHistPos}.vals, snap.vals)
+                return
+            end
+            app.BeamHist = [app.BeamHist(1:app.BeamHistPos), {snap}];
+            if numel(app.BeamHist) > 60
+                app.BeamHist(1) = [];
+            end
+            app.BeamHistPos = numel(app.BeamHist);
+            app.previewBeam();
+        end
+
+        function resetBeamHistory(app)
+            % Repart d'un état de référence (après un exemple ou l'ouverture d'un problème).
+            app.BeamHist = {};
+            app.BeamHistPos = 0;
+            app.pushBeamHistory();
+        end
+
+        function undoBeam(app, step)
+            %UNDOBEAM Annule (step = -1, défaut) ou rétablit (step = +1) la dernière modification de la saisie de Poutres.
+            if nargin < 2
+                step = -1;
+            end
+            B = app.H.Beam;
+            t = app.BeamHistPos + step;
+            if t < 1 || t > numel(app.BeamHist)
+                if step < 0
+                    B.W.Status.Text = 'Rien à annuler.';
+                else
+                    B.W.Status.Text = 'Rien à rétablir.';
+                end
+                return
+            end
+            snap = app.BeamHist{t};
+            items = MecaStruct_App.inputWidgets(B.W.In);
+            if numel(items) ~= size(snap.vals, 1)
+                return
+            end
+            app.HistBusy = true;
+            try
+                for k = 1:numel(items)
+                    try
+                        if isa(items(k), 'matlab.ui.control.Table')
+                            items(k).Data = snap.vals{k, 2};
+                        else
+                            items(k).Value = snap.vals{k, 2};
+                        end
+                    catch
+                    end
+                end
+                app.BeamSection = snap.sec;
+                app.BeamUsesSection = snap.use;
+                B.secInfo.Text = snap.info;
+            catch err
+                app.HistBusy = false;
+                rethrow(err);
+            end
+            app.HistBusy = false;
+            app.BeamHistPos = t;
+            app.previewBeam();
+            if step < 0
+                B.W.Status.Text = 'Modification annulée. Cliquez sur « Calculer » pour mettre à jour les résultats.';
+            else
+                B.W.Status.Text = 'Modification rétablie. Cliquez sur « Calculer » pour mettre à jour les résultats.';
+            end
+        end
+
+        function chainEdit(app, orig, src, evt)
+            % Appelle le rappel d'origine d'un champ de Poutres puis mémorise l'état.
+            if isa(orig, 'function_handle')
+                orig(src, evt);
+            end
+            app.pushBeamHistory();
+        end
+
+        function previewBeam(app)
+            %PREVIEWBEAM Redessine le schéma de la poutre avec la saisie courante (sans calcul) ; silencieux si la saisie est incomplète.
+            B = app.H.Beam;
+            ax = B.W.Axes{1}(1);
+            try
+                model = app.readBeamModel();
+                PlotEngine.beamSchematic(ax, model);
+            catch
+                return
+            end
+            app.armSchematic(ax);
+            B.W.Status.Text = 'Saisie modifiée : cliquez sur « Calculer » pour mettre à jour les résultats. Un clic sur le schéma ajoute un appui, une force ou une rotule.';
+        end
+
+        function armSchematic(app, ax)
+            % Un clic sur le schéma appelle onSchematicClick (les tracés ne captent pas le clic).
+            set(ax.Children, 'HitTest', 'off');
+            ax.ButtonDownFcn = @(~, e) app.safeRun(@() app.onSchematicClick(e.IntersectionPoint(1)), 'Schéma');
+        end
+
+        function onSchematicClick(app, x, kind)
+            %ONSCHEMATICCLICK Ajoute un appui simple, une force verticale de −10 kN ou une rotule à l'abscisse x du schéma.
+            %   app.onSchematicClick(x) demande quoi ajouter (fenêtre visible) ; app.onSchematicClick(x, kind) :
+            %   kind = 'appui', 'force' ou 'rotule'.
+            B = app.H.Beam;
+            L = B.L.Value;
+            x = min(max(round(x, 3), 0), L);
+            if nargin < 3
+                if ~strcmp(app.UIFigure.Visible, 'on')
+                    return
+                end
+                opts = {'Appui simple', 'Force −10 kN', 'Rotule', 'Annuler'};
+                ch = uiconfirm(app.UIFigure, sprintf('Ajouter à s = %.3g m :', x), 'Schéma de la poutre', ...
+                    'Options', opts, 'DefaultOption', 4, 'CancelOption', 4);
+                kinds = {'appui', 'force', 'rotule', ''};
+                kind = kinds{strcmp(ch, opts)};
+                if isempty(kind)
+                    return
+                end
+            end
+            switch kind
+                case 'appui'
+                    app.addTableRow(B.sup, {x, 'appui_simple', ''});
+                case 'force'
+                    app.addTableRow(B.pl, {x, 0, -10, 0, '', 'G'});
+                case 'rotule'
+                    app.addTableRow(B.hg, {x, ''});
+                otherwise
+                    error('MecaStruct:App:invalidInput', 'Ajout au schéma : kind doit valoir ''appui'', ''force'' ou ''rotule''.');
+            end
         end
 
         function showFormula(app, key)
@@ -1337,10 +2156,12 @@ classdef MecaStruct_App < handle
             end
             m = struct('Name', name, 'Category', cat, 'E', app.si(D.mE, 'GPa'), 'G', G, 'nu', D.mNu.Value, ...
                 'Re', app.si(D.mRe, 'MPa'), 'Rm', app.si(D.mRm, 'MPa'), 'alpha', app.si(D.mAlpha, '1e-6/°C'), ...
-                'rho', D.mRho.Value, 'Note', 'Matériau utilisateur (saisi dans l''interface).');
+                'rho', D.mRho.Value, 'Note', 'Matériau utilisateur (saisi dans l''interface).', ...
+                'Author', strtrim(D.mAuthor.Value));
             app.DM.addMaterial(m);
             app.refreshMaterialTable();
             app.refreshMaterialLists(name);
+            app.refreshAuthorLists();
         end
 
         function addProfileFromForm(app)
@@ -1352,10 +2173,11 @@ classdef MecaStruct_App < handle
                 error('MecaStruct:App:invalidProfile', 'La désignation du profilé est obligatoire.');
             end
             p = struct('Name', name, 'h', app.si(D.ph, 'mm'), 'b', app.si(D.pb, 'mm'), 'a', app.si(D.pa, 'mm'), ...
-                'e', app.si(D.pe, 'mm'), 'r', app.si(D.pr, 'mm'));
+                'e', app.si(D.pe, 'mm'), 'r', app.si(D.pr, 'mm'), 'Author', strtrim(D.pAuthor.Value));
             app.DM.addProfile(D.pFam.Value, p);
             app.refreshProfileTable();
             app.refreshProfileLists();
+            app.refreshAuthorLists();
         end
     end
 
@@ -1468,7 +2290,7 @@ classdef MecaStruct_App < handle
     %% =========================================================================================
     %  Construction de l'interface
     %  =========================================================================================
-    methods (Access = private)
+    methods (Access = {?ValidationReport})
 
         function buildUI(app)
             % Grille principale : onglets à gauche, formulaire rapide à droite.
@@ -1478,7 +2300,8 @@ classdef MecaStruct_App < handle
             app.TabGroup = uitabgroup(g);
             app.TabGroup.Layout.Row = 1;
             app.TabGroup.Layout.Column = 1;
-            defs = {'DB', 'Base de données', 'materiaux'
+            defs = {'Home', 'Accueil', 'materiaux'
+                'DB', 'Base de données', 'materiaux'
                 'Sec', 'Sections', 'geometrie'
                 'Beam', 'Poutres', 'cohesion'
                 'Tr', 'Treillis', 'treillis'
@@ -1491,6 +2314,7 @@ classdef MecaStruct_App < handle
                 app.Tabs.(defs{k, 1}) = uitab(app.TabGroup, 'Title', defs{k, 2}, 'Tag', defs{k, 1}, ...
                     'UserData', defs{k, 3});
             end
+            app.buildHomeTab();
             app.buildDatabaseTab();
             app.buildSectionsTab();
             app.buildBeamTab();
@@ -1502,6 +2326,44 @@ classdef MecaStruct_App < handle
             app.buildConverterTab();
             app.buildFormulaPanel(g);
             app.TabGroup.SelectionChangedFcn = @(~, ~) app.safeRun(@() app.updateFormula(), 'Formulaire');
+        end
+
+        function buildHomeTab(app)
+            % Onglet Accueil : par où commencer, conventions de signe et unités de saisie.
+            g = uigridlayout(app.Tabs.Home, [11 1]);
+            g.RowHeight = {34, 40, 40, 40, 40, 40, 40, 40, 36, 150, '1x'};
+            g.Padding = [20 14 20 14];
+            g.RowSpacing = 8;
+            uilabel(g, 'Text', 'Bienvenue dans MecaStruct RdM Pro', 'FontSize', 22, 'FontWeight', 'bold', ...
+                'FontColor', [0 0.35 0.65]);
+            uilabel(g, 'WordWrap', 'on', 'Text', ['Chaque onglet est déjà rempli avec un exemple d''école : cliquez sur ' ...
+                '« Calculer » pour voir un résultat, puis changez les valeurs. Que voulez-vous faire ?']);
+            go = @(name) app.cbk(@() app.selectTab(name), 'Accueil');
+            btn = {'Calculer une poutre (réactions, diagrammes, flèche)', 'Poutres'
+                'Dimensionner un arbre en torsion', 'Torsion'
+                'Vérifier une poutre au flambage', 'Flambage'
+                'Convertir une unité (psi, kip, in…)', 'Convertisseur'};
+            for k = 1:size(btn, 1)
+                uibutton(g, 'Text', btn{k, 1}, 'FontSize', 14, 'HorizontalAlignment', 'left', ...
+                    'ButtonPushedFcn', go(btn{k, 2}));
+            end
+            MecaStruct_App.styleButton(uibutton(g, 'Text', 'Visite guidée en 5 étapes : une poutre de A à Z', ...
+                'ButtonPushedFcn', app.cbk(@() app.guidedTour(), 'Visite guidée')), 'primary');
+            MecaStruct_App.styleButton(uibutton(g, 'Text', 'Ouvrir le guide d''utilisation (captures d''écran et rappels de RDM)', ...
+                'ButtonPushedFcn', app.cbk(@() app.openDoc('GUIDE_UTILISATEUR.html'), 'Guide')), 'primary');
+            pg = uigridlayout(g, [1 2]);
+            pg.Padding = [0 0 0 0];
+            uibutton(pg, 'Text', 'Enregistrer tout le projet (tous les onglets)', ...
+                'ButtonPushedFcn', app.cbk(@() app.saveProject(), 'Enregistrement'));
+            uibutton(pg, 'Text', 'Ouvrir un projet', 'ButtonPushedFcn', app.cbk(@() app.openProjectDialog(), 'Ouverture'));
+            uilabel(g, 'Text', 'À retenir avant de saisir','FontWeight', 'bold', 'FontColor', [0 0.35 0.65]);
+            uilabel(g, 'WordWrap', 'on', 'VerticalAlignment', 'top', 'Text', [ ...
+                'Unités de saisie : sections en mm, longueurs de poutre en m, forces en kN, moments en kN·m, ' ...
+                'charges réparties en kN/m, E et G en GPa, contraintes en MPa.' newline newline ...
+                'Signes : une force vers le bas est négative (Fy < 0). N > 0 : traction. ' ...
+                'Mfz > 0 : fibres du haut comprimées, fibres du bas tendues. ' newline newline ...
+                'Un tableau (appuis, forces…) se remplit avec « Ajouter » ; « Supprimer la sélection » retire la ligne choisie. ' ...
+                'Le panneau de droite affiche la fiche de formules de l''onglet ouvert.']);
         end
 
         function buildConverterTab(app)
@@ -1631,7 +2493,9 @@ classdef MecaStruct_App < handle
             app.BtnNote = uibutton(bg, 'Text', 'Note de calcul', 'FontWeight', 'bold', 'Visible', 'off', ...
                 'Tooltip', 'Ouvre le document général : hypothèses, équations, conditions aux limites, démonstrations.', ...
                 'ButtonPushedFcn', @(~, ~) app.safeRun(@() app.openDoc('NOTE_DE_CALCUL.html'), 'Note de calcul'));
-            app.BtnGuide = uibutton(bg, 'Text', 'Guide d''utilisation', 'Visible', 'off', ...
+            MecaStruct_App.styleButton(app.BtnVal, 'accent');
+            MecaStruct_App.styleButton(app.BtnNote, 'accent');
+            app.BtnGuide = uibutton(bg, 'Text', 'Guide',...
                 'Tooltip', 'Ouvre le guide d''utilisation avec captures d''écran et rappels de RDM.', ...
                 'ButtonPushedFcn', @(~, ~) app.safeRun(@() app.openDoc('GUIDE_UTILISATEUR.html'), 'Guide'));
             app.FormulaPanel = uipanel(pg, 'Scrollable', 'on', 'BorderType', 'none');
@@ -1662,12 +2526,14 @@ classdef MecaStruct_App < handle
             rg.RowHeight = {26, '1.8x', '1x'};
             rg.Padding = [0 0 0 0];
             rg.RowSpacing = 4;
-            bar = uigridlayout(rg, [1 3]);
-            bar.ColumnWidth = {'1x', 120, 120};
+            bar = uigridlayout(rg, [1 4]);
+            bar.ColumnWidth = {'1x', 120, 120, 230};
             bar.Padding = [0 0 0 0];
             W.Status = uilabel(bar, 'Text', 'Saisir les données puis cliquer sur « Calculer ».', 'FontWeight', 'bold');
             uibutton(bar, 'Text', 'Exporter PNG', 'ButtonPushedFcn', @(~, ~) app.safeRun(@() app.exportDialog(key, 'png'), 'Export'));
             uibutton(bar, 'Text', 'Exporter PDF', 'ButtonPushedFcn', @(~, ~) app.safeRun(@() app.exportDialog(key, 'pdf'), 'Export'));
+            uibutton(bar, 'Text', 'Exporter en tableau (.xlsx / .csv)', 'Tooltip', 'Écrit les tableaux de résultats : un classeur Excel (.xlsx, une feuille par tableau) ou des fichiers CSV (un par tableau).', ...
+                'ButtonPushedFcn', @(~, ~) app.safeRun(@() app.exportResultsDialog(key), 'Export'));
             W.PlotGroup = uitabgroup(rg);
             W.Axes = cell(1, size(plotDefs, 1));
             for k = 1:size(plotDefs, 1)
@@ -1723,7 +2589,153 @@ classdef MecaStruct_App < handle
             end
         end
 
-        function [h, lb] = addRow(~, g, label, kind, varargin)
+        function vals = captureInputs(app, key)
+            % Classe, valeur et clé (libellé de la ligne) de chaque champ de saisie de l'onglet key.
+            items = MecaStruct_App.inputWidgets(app.H.(key).W.In);
+            vals = cell(numel(items), 3);
+            for k = 1:numel(items)
+                vals{k, 1} = class(items(k));
+                if isa(items(k), 'matlab.ui.control.Table')
+                    vals{k, 2} = items(k).Data;
+                else
+                    vals{k, 2} = items(k).Value;
+                end
+                vals{k, 3} = MecaStruct_App.inputKey(items(k));
+            end
+        end
+
+        function n = restoreInputs(app, key, vals)
+            % Remet les valeurs de captureInputs ; n = champs non restaurés (introuvables, autre classe, valeur refusée).
+            % Fichiers récents (3 colonnes) : champ par champ d'après la clé, donc indépendant de l'ordre des champs.
+            % Anciens fichiers (2 colonnes) : par position, en ignorant les champs ajoutés depuis (balise MSv2).
+            items = MecaStruct_App.inputWidgets(app.H.(key).W.In);
+            if size(vals, 2) < 3
+                isNew = arrayfun(@(h) strcmp(h.Tag, 'MSv2'), items);
+                if size(vals, 1) == numel(items) - nnz(isNew)
+                    items = items(~isNew);   % fichier d'une version sans ces champs
+                end
+                if size(vals, 1) ~= numel(items)
+                    error('MecaStruct:App:badProblemFile', ['Ce fichier n''est pas un problème enregistré depuis cet onglet ' ...
+                        '(ou il date d''une autre version de l''application).']);
+                end
+                target = 1:numel(items);
+            else
+                target = MecaStruct_App.matchInputs(items, vals);
+            end
+            n = 0;
+            for k = 1:numel(target)
+                if target(k) == 0
+                    n = n + 1;
+                    continue
+                end
+                try
+                    if isa(items(target(k)), 'matlab.ui.control.Table')
+                        items(target(k)).Data = vals{k, 2};
+                    else
+                        items(target(k)).Value = vals{k, 2};
+                    end
+                catch
+                    n = n + 1;
+                end
+            end
+            if strcmp(key, 'Beam')
+                app.markBeamManual();
+                app.resetBeamHistory();
+            end
+        end
+
+        function sheets = resultSheets(app, key)
+            % {nom de feuille, table} pour chaque tableau de résultats non vide de l'onglet key.
+            sheets = cell(0, 2);
+            tbl = app.H.(key).W.Tables;
+            for nm = fieldnames(tbl)'
+                u = tbl.(nm{1});
+                d = u.Data;
+                if isempty(d)
+                    continue
+                end
+                if istable(d)
+                    T = d;
+                else
+                    if iscell(d), T = cell2table(d); else, T = array2table(d); end
+                    cn = u.ColumnName;
+                    if iscellstr(cn) && numel(cn) == width(T) %#ok<ISCLSTR>
+                        T.Properties.VariableNames = matlab.lang.makeUniqueStrings(matlab.lang.makeValidName(cn), {}, namelengthmax);
+                    end
+                end
+                name = strtrim(regexprep(char(ancestor(u, 'uitab').Title), '[\[\]:*?/\\]', ' '));
+                sheets(end + 1, :) = {name(1:min(end, 31)), T}; %#ok<AGROW>
+            end
+            if strcmp(key, 'Beam') && isfield(app.Results, 'beam') && ~isempty(app.Results.beam)
+                sheets = [sheets; MecaStruct_App.beamEffortSheets(app.Results.beam.sol)];
+            end
+        end
+
+        function confirmOverwrite(app, fcn, s, e)
+            % « Charger l'exemple » écrase la saisie : demande confirmation (fenêtre visible seulement).
+            if strcmp(app.UIFigure.Visible, 'on')
+                ch = uiconfirm(app.UIFigure, 'Remplacer les valeurs saisies de cet onglet par l''exemple ?', ...
+                    'Charger l''exemple', 'Options', {'Remplacer', 'Annuler'}, 'DefaultOption', 2, 'CancelOption', 2);
+                if ~strcmp(ch, 'Remplacer')
+                    return
+                end
+            end
+            fcn(s, e);
+        end
+
+        function [h, lb] = addRow(app, g, label, kind, varargin)
+            % Ajoute une ligne au panneau de saisie g ; les lignes qui suivent un titre forment une section repliable
+            % (titre + 'closed' : fermée au départ).
+            [h, lb] = app.addRowRaw(g, label, kind, varargin{:});
+            if any(strcmp(kind, {'num', 'drop', 'text', 'check'}))
+                h.UserData = label;   % clé de restauration des problèmes enregistrés
+            elseif strcmp(kind, 'table')
+                h.UserData = ['table ' strjoin(varargin{2}, ' | ')];
+            end
+            if strcmp(kind, 'title')
+                setappdata(g, 'MSsection', h);
+            elseif isappdata(g, 'MSsection')
+                hs = h;
+                if strcmp(kind, 'checks')
+                    hs = h(1).Parent;   % la sous-grille qui porte les cases
+                end
+                hs = [lb(:); hs(:)];
+                btn = getappdata(g, 'MSsection');
+                s = btn.UserData;
+                rh = g.RowHeight;
+                r = g.UserData;
+                s.rows(end + 1) = r;
+                s.h(end + 1) = rh{r};
+                s.handles = [s.handles; hs];
+                if ~s.open
+                    rh{r} = 0;
+                    g.RowHeight = rh;
+                    set(hs, 'Visible', false);
+                end
+                btn.UserData = s;
+            end
+        end
+
+        function toggleSection(app, btn) %#ok<INUSL>
+            % Plie ou déplie la section du titre btn : lignes à hauteur 0 et champs masqués (les valeurs saisies sont conservées).
+            s = btn.UserData;
+            g = btn.Parent;
+            s.open = ~s.open;
+            rh = g.RowHeight;
+            for k = 1:numel(s.rows)
+                if s.open
+                    rh{s.rows(k)} = s.h(k);
+                else
+                    rh{s.rows(k)} = 0;
+                end
+            end
+            g.RowHeight = rh;
+            set(s.handles(isgraphics(s.handles)), 'Visible', s.open);
+            btn.Text = MecaStruct_App.sectionText(s.label, s.open);
+            btn.UserData = s;
+        end
+
+        function [h, lb] = addRowRaw(app, g, label, kind, varargin)
             % Ajoute une ligne au panneau de saisie g (grille à 2 colonnes, hauteur en pixels).
             r = g.UserData + 1;
             g.UserData = r;
@@ -1744,16 +2756,25 @@ classdef MecaStruct_App < handle
             span = true;
             switch kind
                 case 'title'
-                    h = uilabel(g, 'Text', label, 'FontWeight', 'bold', 'FontColor', [0 0.35 0.65]);
+                    isOpen = isempty(varargin) || ~strcmp(varargin{1}, 'closed');
+                    h = uibutton(g, 'Text', MecaStruct_App.sectionText(label, isOpen), 'FontWeight', 'bold', ...
+                        'BackgroundColor', [0.17 0.33 0.50], 'FontColor', [1 1 1], 'HorizontalAlignment', 'left', ...
+                        'Tooltip', 'Cliquer pour plier ou déplier cette section.', ...
+                        'ButtonPushedFcn', @(s, ~) app.toggleSection(s));
+                    h.UserData = struct('label', label, 'open', isOpen, 'rows', [], 'h', [], 'handles', gobjects(0, 1));
                 case 'note'
                     h = uilabel(g, 'Text', label, 'WordWrap', 'on', 'FontAngle', 'italic', 'VerticalAlignment', 'top');
                 case 'button'
-                    h = uibutton(g, 'Text', label, 'ButtonPushedFcn', varargin{1});
+                    fcn = varargin{1};
+                    if ~isempty(regexp(label, '^(Re)?charger l''exemple', 'once', 'ignorecase'))
+                        fcn = @(s, e) app.confirmOverwrite(fcn, s, e);
+                    end
+                    h = MecaStruct_App.styleButton(uibutton(g, 'Text', label, 'ButtonPushedFcn', fcn));
                 case 'buttons'
                     c = varargin{1};
                     h = gobjects(1, 2);
                     for j = 1:2
-                        h(j) = uibutton(g, 'Text', c{2 * j - 1}, 'ButtonPushedFcn', c{2 * j});
+                        h(j) = MecaStruct_App.styleButton(uibutton(g, 'Text', c{2 * j - 1}, 'ButtonPushedFcn', c{2 * j}));
                         h(j).Layout.Row = r;
                         h(j).Layout.Column = j;
                     end
@@ -1852,12 +2873,16 @@ classdef MecaStruct_App < handle
             D.mRm = app.addRow(fm, 'Rm (MPa)', 'num');
             D.mAlpha = app.addRow(fm, 'α (10⁻⁶/°C)', 'num');
             D.mRho = app.addRow(fm, 'ρ (kg/m³)', 'num');
+            D.mAuthor = app.addRow(fm, 'Ajouté par', 'drop', {'Utilisateur'});
+            D.mAuthor.Editable = 'on';
+            D.mAuthor.Tooltip = 'Choisir un nom dans la liste ou taper le sien : il apparaît dans la colonne « Ajouté par ».';
             D.mE.ValueChangedFcn = @(~, ~) app.autoG();
             D.mNu.ValueChangedFcn = @(~, ~) app.autoG();
             app.addRow(fm, '', 'buttons', {'Ajouter / remplacer', app.cbk(@() app.addMaterialFromForm(), 'Matériaux'), ...
                 'Supprimer la sélection', app.cbk(@() app.removeSelectedMaterial(), 'Matériaux')});
-            app.addRow(fm, ['G est complété automatiquement par G = E/(2(1+ν)). Les matériaux utilisateur ' ...
-                '(colonne « Utilisateur » cochée) sont modifiables directement dans la table.'], 'note', 70);
+            app.addRow(fm, ['G est complété automatiquement par G = E/(2(1+ν)). La colonne « Ajouté par » ' ...
+                'indique l''origine : « Base fournie » (non modifiable) ou le nom de celui qui a ajouté la ligne ' ...
+                '(modifiable directement dans la table).'], 'note', 90);
             D.mE.Value = 210; D.mNu.Value = 0.3; D.mRe.Value = 300; D.mRm.Value = 500; D.mAlpha.Value = 12; D.mRho.Value = 7850;
             D.mName.Value = 'Acier utilisateur'; D.mCat.Value = 'Utilisateur';
 
@@ -1888,6 +2913,9 @@ classdef MecaStruct_App < handle
             D.pa = app.addRow(fp, 'a — âme (mm)', 'num');
             D.pe = app.addRow(fp, 'e — aile (mm)', 'num');
             D.pr = app.addRow(fp, 'r — congé (mm)', 'num');
+            D.pAuthor = app.addRow(fp, 'Ajouté par', 'drop', {'Utilisateur'});
+            D.pAuthor.Editable = 'on';
+            D.pAuthor.Tooltip = 'Choisir un nom dans la liste ou taper le sien : il apparaît dans la colonne « Ajouté par ».';
             app.addRow(fp, 'Ajouter le profilé', 'button', app.cbk(@() app.addProfileFromForm(), 'Profilés'));
             app.addRow(fp, 'S, Iz, Iy, W et r sont calculés sur la géométrie simplifiée (épaisseurs constantes).', 'note', 50);
             D.pName.Value = 'IPE 210 util'; D.ph.Value = 210; D.pb.Value = 105; D.pa.Value = 6; D.pe.Value = 9; D.pr.Value = 12;
@@ -1932,13 +2960,14 @@ classdef MecaStruct_App < handle
             app.refreshMaterialLists();
             app.refreshProfileLists();
             app.refreshBearingList();
+            app.refreshAuthorLists();
         end
 
         function refreshMaterialTable(app)
             M = app.DM.Materials;
             T = table(M.Name, M.Category, M.E / 1e9, M.G / 1e9, M.nu, M.Re / 1e6, M.Rm / 1e6, M.alpha * 1e6, ...
-                M.rho, M.IsUser, M.Note, 'VariableNames', {'Nom', 'Catégorie', 'E (GPa)', 'G (GPa)', 'ν (-)', ...
-                'Re (MPa)', 'Rm (MPa)', 'α (1e-6/°C)', 'ρ (kg/m³)', 'Utilisateur', 'Note'});
+                M.rho, M.Author, M.Note, 'VariableNames', {'Nom', 'Catégorie', 'E (GPa)', 'G (GPa)', 'ν (-)', ...
+                'Re (MPa)', 'Rm (MPa)', 'α (1e-6/°C)', 'ρ (kg/m³)', 'Ajouté par', 'Note'});
             tb = app.H.DB.MatTable;
             tb.Data = T;
             tb.ColumnEditable = [false false true(1, 7) false false];
@@ -1948,9 +2977,25 @@ classdef MecaStruct_App < handle
             D = app.H.DB;
             P = app.DM.Profiles.(D.pFam.Value);
             D.ProfTable.Data = table(P.Name, P.h * 1e3, P.b * 1e3, P.a * 1e3, P.e * 1e3, P.r * 1e3, P.S * 1e4, ...
-                P.Iz * 1e8, P.Iy * 1e8, P.Wz * 1e6, P.Wy * 1e6, P.rz * 1e3, P.ry * 1e3, P.mass, P.c * 1e3, P.IsUser, ...
+                P.Iz * 1e8, P.Iy * 1e8, P.Wz * 1e6, P.Wy * 1e6, P.rz * 1e3, P.ry * 1e3, P.mass, P.c * 1e3, P.Author, ...
                 'VariableNames', {'Désignation', 'h (mm)', 'b (mm)', 'a (mm)', 'e (mm)', 'r (mm)', 'S (cm²)', ...
-                'Iz (cm⁴)', 'Iy (cm⁴)', 'Wz (cm³)', 'Wy (cm³)', 'rz (mm)', 'ry (mm)', 'masse (kg/m)', 'c (mm)', 'Utilisateur'});
+                'Iz (cm⁴)', 'Iy (cm⁴)', 'Wz (cm³)', 'Wy (cm³)', 'rz (mm)', 'ry (mm)', 'masse (kg/m)', 'c (mm)', 'Ajouté par'});
+        end
+
+        function refreshAuthorLists(app)
+            %REFRESHAUTHORLISTS Met à jour les listes « Ajouté par » des formulaires (noms déjà utilisés ; on peut en saisir un autre).
+            D = app.H.DB;
+            P = app.DM.Profiles;
+            names = app.DM.Materials.Author(app.DM.Materials.IsUser);
+            for f = fieldnames(P)'
+                names = [names; P.(f{1}).Author(P.(f{1}).IsUser)]; %#ok<AGROW>
+            end
+            items = cellstr(unique(["Utilisateur"; names(:)], 'stable'));
+            for dd = [D.mAuthor, D.pAuthor]
+                old = dd.Value;
+                dd.Items = items;
+                dd.Value = old;
+            end
         end
 
         function refreshBearingTable(app)
@@ -2031,7 +3076,7 @@ classdef MecaStruct_App < handle
             col = e.Indices(2);
             if ~M.IsUser(row)
                 app.refreshMaterialTable();
-                error('MecaStruct:App:readOnly', ['Seuls les matériaux utilisateur sont modifiables : ajoutez un ' ...
+                error('MecaStruct:App:readOnly', ['Les matériaux de la « Base fournie » ne sont pas modifiables : ajoutez un ' ...
                     'matériau (formulaire de droite) pour personnaliser une valeur.']);
             end
             fields = {'', '', 'E', 'G', 'nu', 'Re', 'Rm', 'alpha', 'rho'};
@@ -2136,6 +3181,11 @@ classdef MecaStruct_App < handle
             S.fam = app.addRow(g, 'Famille de profilé', 'drop', cellstr(app.DM.listProfileFamilies()));
             S.fam.ValueChangedFcn = app.cbk(@() app.onFamilyChange('Sec'), 'Sections');
             S.prof = app.addRow(g, 'Profilé du catalogue', 'drop', {'-'});
+            presets = DataManager.sectionPresets();
+            S.preset = app.addRow(g, 'Tube ou cornière courant', 'drop', {presets.name});
+            S.preset.Tag = 'MSv2';   % champ ajouté après la première version des fichiers de problème
+            S.preset.Tooltip = 'Dimensions nominales de tubes carrés / rectangulaires, ronds et de cornières égales. Congés et arrondis ignorés : écart de quelques % avec les tables.';
+            app.addRow(g, 'Remplir les dimensions du tube ou de la cornière', 'button', app.cbk(@() app.applySectionPreset(), 'Sections'));
             S.mode = app.addRow(g, 'Méthode intégrale', 'drop', {'symbolique (int)', 'numérique (integral2)'}, {'symbolique', 'numerique'});
             S.mat = app.addRow(g, 'Matériau', 'drop', cellstr(app.DM.listMaterials()));
             app.addRow(g, '2. Efforts pour σ(y) et τ(y) (facultatif)', 'title');
@@ -2209,16 +3259,25 @@ classdef MecaStruct_App < handle
         function buildBeamTab(app)
             W = app.makeWork(app.Tabs.Beam, 470, 'Beam', ...
                 {'Schéma', [1 1], 'equilibre'; 'Diagrammes', [6 1], 'cohesion'; 'Déformée α(s), v(s)', [2 1], 'deformee'; ...
-                'Équations par tronçon', [1 1], 'cohesion'}, ...
+                'Équations par tronçon', [1 1], 'cohesion'; 'Charge mobile', [2 1], 'cohesion'}, ...
                 {'Reac', 'Réactions'; 'Eq', 'Équations (texte, SI)'; 'Defl', 'Flèche : 4 méthodes'; ...
-                'Energy', 'Énergie'; 'Check', 'Vérification'});
+                'Energy', 'Énergie'; 'Check', 'Vérification'; 'Combo', 'Combinaisons'; 'Mov', 'Charge mobile'; ...
+                'Prof', 'Profilés'; 'EC3', 'Eurocode 3'; 'Fat', 'Fatigue'});
             W.PlotGroup.SelectionChangedFcn = @(~, ~) app.safeRun(@() app.updateFormula(), 'Formulaire');
             g = W.In;
             B = struct('W', W);
+            hu = app.addRow(g, '', 'buttons', {'↶ Annuler', app.cbk(@() app.undoBeam(-1), 'Annuler'), ...
+                '↷ Rétablir', app.cbk(@() app.undoBeam(1), 'Rétablir')});
+            hu(1).Tooltip = 'Annule la dernière modification de la saisie (champs et tableaux de cet onglet).';
+            hu(2).Tooltip = 'Rétablit la modification annulée.';
+            app.addRow(g, '', 'buttons', {'Enregistrer mon problème', app.cbk(@() app.saveProblem('Beam'), 'Enregistrement'), ...
+                'Ouvrir un problème', app.cbk(@() app.loadProblem('Beam'), 'Ouverture')});
             app.addRow(g, 'Exemples', 'title');
-            B.example = app.addRow(g, 'Exemple d''école', 'drop', {'Appui-appui : charge uniforme + force', ...
+            B.example =app.addRow(g, 'Exemple d''école', 'drop', {'Appui-appui : charge uniforme + force', ...
                 'Encastrée-appuyée : charge uniforme (hyperstatique)', 'Console : force en bout', ...
-                'Deux travées égales : charge uniforme'}, {'isostatique', 'hyperstatique', 'console', 'deuxtravees'});
+                'Deux travées égales : charge uniforme', 'Poutre Gerber : rotule dans la première travée', ...
+                'Deux travées : tassement de 10 mm de l''appui B'}, ...
+                {'isostatique', 'hyperstatique', 'console', 'deuxtravees', 'gerber', 'tassement'});
             app.addRow(g, 'Charger l''exemple', 'button', app.cbk(@() app.loadExample('Poutres', app.H.Beam.example.Value), 'Poutres'));
             app.addRow(g, 'Poutre et matériau', 'title');
             B.L = app.addRow(g, 'Longueur L (m)', 'num');
@@ -2243,6 +3302,22 @@ classdef MecaStruct_App < handle
             for f = {'S', 'Iz', 'Iy', 'Ix', 'Iyz', 'ky', 'kz', 'vy', 'vz'}
                 B.(f{1}).ValueChangedFcn = @(~, ~) app.markBeamManual();
             end
+            tips = {'L', 'Longueur de la poutre entre ses deux extrémités, en mètres.'
+                'E', 'Module d''Young : rigidité du matériau (acier ≈ 190–210 GPa).'
+                'G', 'Module de cisaillement : G = E / (2(1+ν)).'
+                'Re', 'Limite élastique : contrainte au-delà de laquelle le matériau se déforme définitivement.'
+                'S', 'Aire de la section droite.'
+                'Iz', 'Moment quadratique pour la flexion dans le plan (x,y), charges verticales.'
+                'Iy', 'Moment quadratique pour la flexion dans le plan (x,z), charges horizontales.'
+                'Ix', 'Constante de torsion (moment quadratique polaire pour un arbre rond).'
+                'Iyz', 'Produit d''inertie : 0 si y et z sont les axes principaux (cas courant).'
+                'ky', 'Section réduite : le cisaillement est repris par S/ky ; 1 par défaut.'
+                'kz', 'Section réduite : le cisaillement est repris par S/kz ; 1 par défaut.'
+                'vy', 'Distance du centre de gravité à la fibre la plus éloignée selon y.'
+                'vz', 'Distance du centre de gravité à la fibre la plus éloignée selon z.'
+                's', 'Coefficient de sécurité : on exige σ ≤ Re / s (typiquement 1,5 à 3).'
+                'Kt', 'Coefficient de concentration de contrainte (1 si aucun trou ni épaulement).'};
+            B.tips = tips;
             hb = app.addRow(g, '', 'buttons', {'← Importer depuis Sections', app.cbk(@() app.useSectionForBeam(), 'Poutres'), ...
                 'Voir la section', app.cbk(@() app.showBeamSection(), 'Poutres')});
             hb(1).Tooltip = 'Recopie S, Iz, Iy, Ix, Iyz, ky, kz, fibres extrêmes et matériau depuis l''onglet Sections.';
@@ -2251,30 +3326,156 @@ classdef MecaStruct_App < handle
             B.sup = app.addRow(g, '', 'table', 110, {'Position (m)', 'Type', 'Nom'}, {'numeric', app.SupportTypes, 'char'});
             app.addRow(g, '', 'buttons', {'Ajouter un appui', app.cbk(@() app.addTableRow(app.H.Beam.sup, {0, 'appui_simple', ''}), 'Poutres'), ...
                 'Supprimer la sélection', app.cbk(@() app.delTableRow(app.H.Beam.sup), 'Poutres')});
+            app.addRow(g, ['Ce que bloque chaque appui : appui_simple et pivot_glissant = déplacements transversaux y et z ' ...
+                '(la poutre glisse selon x) ; rotule et pivot = x, y et z (rotations libres) ; ' ...
+                'encastrement = tout (déplacements et rotations).'], 'note', 62);
+            app.addRow(g, 'Ressorts, tassements, rotules, température', 'title', 'closed');
+            app.addRow(g, ['Ressort : appui élastique de raideur k (0 = appui rigide), le déplacement vaut −R/k. Tassement : déplacement imposé de l''appui ' ...
+                '(mm, > 0 dans le sens de l''axe, y > 0 vers le haut). L''appui est désigné par son nom (colonne Nom du tableau Appuis).'], 'note', 62);
+            B.supx = app.addRow(g, '', 'table', 90, {'Appui (nom)', 'Ressort k (kN/m)', 'Tassement x (mm)', 'Tassement y (mm)', 'Tassement z (mm)'}, ...
+                {'char', 'numeric', 'numeric', 'numeric', 'numeric'});
+            app.addRow(g, '', 'buttons', {'Ajouter une ligne', app.cbk(@() app.addTableRow(app.H.Beam.supx, {'A', 0, 0, 0, 0}), 'Poutres'), ...
+                'Supprimer la sélection', app.cbk(@() app.delTableRow(app.H.Beam.supx), 'Poutres')});
+            app.addRow(g, ['Rotule intermédiaire : le moment de flexion y est nul au point choisi (poutre Gerber) ; la pente y est discontinue. ' ...
+                'Pas sur un appui.'], 'note', 40);
+            B.hg = app.addRow(g, '', 'table', 70, {'Position (m)', 'Nom'}, {'numeric', 'char'});
+            app.addRow(g, '', 'buttons', {'Ajouter une rotule', app.cbk(@() app.addTableRow(app.H.Beam.hg, {1, ''}), 'Poutres'), ...
+                'Supprimer la sélection', app.cbk(@() app.delTableRow(app.H.Beam.hg), 'Poutres')});
+            app.addRow(g, ['Température : α vient du matériau. ΔT uniforme : allongement α·ΔT (efforts si la poutre est empêchée de s''allonger). ' ...
+                'Gradient : T(face +y) − T(face −y), la hauteur est 2·|y|max (idem z) ; fibre chaude en haut : la poutre se cambre.'], 'note', 62);
+            B.thDT = app.addRow(g, 'ΔT uniforme (°C)', 'num');
+            B.thGy = app.addRow(g, 'Gradient selon y : T(+y) − T(−y) (°C)', 'num');
+            B.thGz = app.addRow(g, 'Gradient selon z : T(+z) − T(−z) (°C)', 'num');
+            for f = {'supx', 'hg', 'thDT', 'thGy', 'thGz'}
+                B.(f{1}).Tag = 'MSv2';   % champs ajoutés après la première version des fichiers de problème
+            end
             app.addRow(g, 'Forces ponctuelles (composantes globales)', 'title');
-            B.pl = app.addRow(g, '', 'table', 110, {'Position (m)', 'Fx (kN)', 'Fy (kN)', 'Fz (kN)', 'Nom'});
-            app.addRow(g, '', 'buttons', {'Ajouter une force', app.cbk(@() app.addTableRow(app.H.Beam.pl, {0, 0, -10, 0, ''}), 'Poutres'), ...
+            app.addRow(g, 'Signes : Fy < 0 = force vers le bas ; Fx > 0 = dans le sens de x (vers la droite) ; Mz > 0 = sens trigonométrique (axes directs).', 'note', 40);
+            B.pl = app.addRow(g, '', 'table', 110, {'Position (m)', 'Fx (kN)', 'Fy (kN)', 'Fz (kN)', 'Nom', 'Cas'}, ...
+                {'numeric', 'numeric', 'numeric', 'numeric', 'char', app.LoadCases});
+            app.addRow(g, '', 'buttons', {'Ajouter une force', app.cbk(@() app.addTableRow(app.H.Beam.pl, {0, 0, -10, 0, '', 'G'}), 'Poutres'), ...
                 'Supprimer la sélection', app.cbk(@() app.delTableRow(app.H.Beam.pl), 'Poutres')});
             app.addRow(g, 'Couples ponctuels', 'title');
-            B.pm = app.addRow(g, '', 'table', 90, {'Position (m)', 'Mx (kN·m)', 'My (kN·m)', 'Mz (kN·m)', 'Nom'});
-            app.addRow(g, '', 'buttons', {'Ajouter un couple', app.cbk(@() app.addTableRow(app.H.Beam.pm, {0, 0, 0, 1, ''}), 'Poutres'), ...
+            B.pm = app.addRow(g, '', 'table', 90, {'Position (m)', 'Mx (kN·m)', 'My (kN·m)', 'Mz (kN·m)', 'Nom', 'Cas'}, ...
+                {'numeric', 'numeric', 'numeric', 'numeric', 'char', app.LoadCases});
+            app.addRow(g, '', 'buttons', {'Ajouter un couple', app.cbk(@() app.addTableRow(app.H.Beam.pm, {0, 0, 0, 1, '', 'G'}), 'Poutres'), ...
                 'Supprimer la sélection', app.cbk(@() app.delTableRow(app.H.Beam.pm), 'Poutres')});
             app.addRow(g, 'Charges réparties', 'title');
-            B.dl = app.addRow(g, '', 'table', 110, {'a (m)', 'b (m)', 'Dir.', 'Type', 'Valeurs (kN/m)', 'Nom'}, ...
-                {'numeric', 'numeric', {'x', 'y', 'z'}, {'uniforme', 'linéaire', 'polynomiale'}, 'char', 'char'});
-            app.addRow(g, '', 'buttons', {'Ajouter une charge', app.cbk(@() app.addTableRow(app.H.Beam.dl, {0, 1, 'y', 'uniforme', '-10', ''}), 'Poutres'), ...
+            B.dl = app.addRow(g, '', 'table', 110, {'a (m)', 'b (m)', 'Dir.', 'Type', 'Valeurs (kN/m)', 'Nom', 'Cas'}, ...
+                {'numeric', 'numeric', {'x', 'y', 'z'}, {'uniforme', 'linéaire', 'polynomiale'}, 'char', 'char', app.LoadCases});
+            app.addRow(g, '', 'buttons', {'Ajouter une charge', app.cbk(@() app.addTableRow(app.H.Beam.dl, {0, 1, 'y', 'uniforme', '-10', '', 'G'}), 'Poutres'), ...
                 'Supprimer la sélection', app.cbk(@() app.delTableRow(app.H.Beam.dl), 'Poutres')});
+            app.addRow(g, 'Charge rapide (ajoute une ligne au tableau ci-dessus)', 'title', 'closed');
+            B.qshape = app.addRow(g, 'Forme', 'drop', {'Uniforme', 'Triangulaire croissante (0 → p)', ...
+                'Triangulaire décroissante (p → 0)', 'Trapèze (p1 → p2)'});
+            B.qdir = app.addRow(g, 'Direction', 'drop', {'x', 'y', 'z'});
+            B.qdir.Value = 'y';
+            B.qcase = app.addRow(g, 'Cas de charge', 'drop', app.LoadCases);
+            B.qa = app.addRow(g, 'Début a (m)', 'num');
+            B.qb = app.addRow(g, 'Fin b (m)', 'num');
+            B.qb.Value = 1;
+            B.qp1 = app.addRow(g, 'p ou p1 (kN/m, < 0 : vers le bas)', 'num');
+            B.qp1.Value = -10;
+            B.qp2 = app.addRow(g, 'p2 (kN/m, trapèze seulement)', 'num');
+            app.addRow(g, 'Ajouter cette charge', 'button', app.cbk(@() app.addQuickLoad(), 'Charge rapide'));
             app.addRow(g, ['Valeurs : uniforme « p0 » ; linéaire « p1 p2 » (de a à b) ; polynomiale : coefficients ' ...
                 'en ξ = s − a, ordre décroissant (kN/m, kN/m², ...). py < 0 : charge descendante.'], 'note', 50);
             app.addRow(g, 'Calcul et affichage', 'title');
             B.comps = app.addRow(g, 'Diagrammes', 'checks', app.Comps);
             B.plane = app.addRow(g, 'Plan de la déformée', 'drop', {'(x,y) : v, Mfz, Iz', '(x,z) : w, Mfy, Iy'}, {'xy', 'xz'});
             B.shear = app.addRow(g, 'Tranchant dans Castigliano', 'check');
+            B.selfw = app.addRow(g, 'Poids propre (ρ·S·g, cas G)', 'check');
+            B.selfw.Tooltip = 'Ajoute une charge répartie descendante ρ·S·g sur toute la poutre (ρ du matériau choisi).';
+            app.addRow(g, 'Combinaisons de cas (G permanentes, Q exploitation, W vent, S neige)', 'title', 'closed');
+            app.addRow(g, ['Chaque charge porte un cas (colonne Cas). « Calculer » additionne tous les cas avec le coefficient 1. ' ...
+                '« Calculer les combinaisons » résout chaque ligne avec ses coefficients puis donne l''enveloppe (onglet Combinaisons).'], 'note', 62);
+            B.combo = app.addRow(g, '', 'table', 90, {'Combinaison', 'γG', 'γQ', 'γW', 'γS'}, ...
+                {'char', 'numeric', 'numeric', 'numeric', 'numeric'});
+            app.addRow(g, '', 'buttons', {'Ajouter une combinaison', app.cbk(@() app.addTableRow(app.H.Beam.combo, {'Nouvelle', 1, 1, 0, 0}), 'Poutres'), ...
+                'Supprimer la sélection', app.cbk(@() app.delTableRow(app.H.Beam.combo), 'Poutres')});
+            app.addRow(g, 'Calculer les combinaisons', 'button', app.cbk(@() app.computeCombinations(), 'Combinaisons'));
+            app.addRow(g, 'Charge mobile (convoi d''essieux, enveloppe)', 'title', 'closed');
+            app.addRow(g, ['Un convoi d''essieux verticaux (Fy) traverse la poutre. La poutre est résolue pour chaque position, puis l''enveloppe de Mfz, Ty ' ...
+                'et des réactions est tracée (onglet graphique « Charge mobile » et tableau). Essieux de gauche à droite, F < 0 = vers le bas.'], 'note', 62);
+            B.mvP = app.addRow(g, 'Essieux (kN, de gauche à droite)', 'text');
+            B.mvP.Value = '-100';
+            B.mvE = app.addRow(g, 'Écartement(s) entre essieux (m)', 'text');
+            B.mvE.Value = '1.5';
+            B.mvN = app.addRow(g, 'Positions de base du convoi (+ positions critiques)', 'num');
+            B.mvN.Value = 61;
+            B.mvFixed = app.addRow(g, 'Ajouter les charges fixes saisies', 'check');
+            app.addRow(g, 'Calculer l''enveloppe de la charge mobile', 'button', app.cbk(@() app.computeMovingLoad(), 'Charge mobile'));
+            for f = {'mvP', 'mvE', 'mvN', 'mvFixed'}
+                B.(f{1}).Tag = 'MSv2';
+            end
+            app.addRow(g, 'Dimensionnement : profilé le plus léger', 'title', 'closed');
+            B.pfam = app.addRow(g, 'Famille de profilés', 'drop', {'IPE', 'HEA', 'HEB', 'IPN', 'UPN', 'UAP'});
+            B.pdef = app.addRow(g, 'Flèche max L / … (0 = ignorée)', 'num');
+            B.pdef.Tooltip = 'Exemple : 300 impose f ≤ L/300. En plus de la condition de résistance Kt·σ ≤ Re/s.';
+            app.addRow(g, 'Chercher le profilé le plus léger', 'button', ...
+                app.cbk(@() app.findLightestProfile(app.H.Beam.pfam.Value, app.H.Beam.pdef.Value), 'Dimensionnement'));
+            app.addRow(g, 'Eurocode 3 simplifié (flexion + tranchant)', 'title', 'closed');
+            app.addRow(g, ['Profilés IPE, HEA, HEB, IPN et sections en I, classes 1 à 3, fy = Re : flexion, tranchant, voilement de l''âme par ' ...
+                'cisaillement, déversement, flambement et interaction N + M (6.3.3, flexion autour de l''axe fort). Utiliser l''enveloppe d''une ' ...
+                'combinaison ELU (γG = 1,35, γQ = 1,5).'], 'note', 62);
+            B.na = app.addRow(g, 'Annexe nationale', 'drop', {'Valeurs recommandées de l''EN', 'France (NF EN 1993-1-1/NA)', 'Autre : saisir γM0 et γM1'}, ...
+                {'EN', 'FR', 'autre'});
+            B.na.Tooltip = 'La France retient γM0 = γM1 = 1,0 et γM2 = 1,25 : mêmes valeurs que l''EN. Pour un autre pays, saisir ses valeurs.';
+            B.na.ValueChangedFcn = @(~, ~) app.applyNationalAnnex();
+            B.gM0 = app.addRow(g, 'γM0 (-), résistance des sections', 'num');
+            B.gM1 = app.addRow(g, 'γM1 (-), stabilité (déversement)', 'num');
+            B.Cmy = app.addRow(g, 'Cmy (-), moment équivalent, flambement (1 = prudent)', 'num');
+            B.CmLT = app.addRow(g, 'CmLT (-), moment équivalent, déversement (1 = prudent)', 'num');
+            B.Cmy.Tooltip = 'Tableau B.3 de l''EN 1993-1-1 : 0,6 + 0,4ψ (moment linéaire, ψ = rapport des moments d''extrémité), 0,95 à 0,9 (charge répartie). Entre 0,4 et 1.';
+            B.CmLT.Tooltip = 'Idem pour le déversement. Entre 0,4 et 1 ; 1 est toujours du côté de la sécurité.';
+            for f = {'na', 'Cmy', 'CmLT'}
+                B.(f{1}).Tag = 'MSv2';
+            end
+            B.Lcr = app.addRow(g, 'Lcr : longueur entre maintiens latéraux (m, 0 = L)', 'num');
+            B.LcrF = app.addRow(g, 'Lcr,y : longueur de flambement dans le plan fort (m, 0 = L)', 'num');
+            B.LcrF.Tooltip = 'Flambement autour de l''axe fort (y-y) : les entretoises latérales n''y changent rien. Par défaut (0), la longueur de la poutre.';
+            B.LcrF.Tag = 'MSv2';   % champ ajouté après la première version des fichiers de problème
+            B.C1 = app.addRow(g, 'C1 : forme du moment (1 = uniforme, prudent)', 'num');
+            B.C1.Tooltip = 'NCCI SN003 : 1,13 pour une charge uniforme sur appuis simples ; 1,35 pour une charge ponctuelle centrée ; 1,77 pour des moments d''extrémité ψ = 0.';
+            B.ecsrc = app.addRow(g, 'Efforts de calcul', 'drop', {'Dernier « Calculer »', 'Enveloppe des combinaisons'}, ...
+                {'courant', 'enveloppe'});
+            app.addRow(g, 'Vérifier selon l''Eurocode 3', 'button', app.cbk(@() app.checkEurocode(), 'Eurocode 3'));
+            app.addRow(g, 'Fatigue (Goodman)', 'title', 'closed');
+            B.fR = app.addRow(g, 'R = σmin / σmax (-1 alterné, 0 répété)', 'num');
+            B.fka = app.addRow(g, 'ka : état de surface (-)', 'num');
+            B.fkb = app.addRow(g, 'kb : effet de taille (-)', 'num');
+            B.fka.Tooltip = 'Poli 1 ; usiné 0,7 à 0,9 ; laminé 0,6 à 0,8 ; brut de forge 0,4 à 0,6 (acier).';
+            B.fkb.Tooltip = 'Petite pièce (d ≤ 8 mm) 1 ; 0,85 à 0,9 pour 10 à 50 mm ; 0,7 à 0,8 au-delà.';
+            app.addRow(g, 'Vérifier la fatigue', 'button', app.cbk(@() app.checkFatigue(), 'Fatigue'));
+            app.addRow(g, 'Sécurité et calcul', 'title');
             B.s = app.addRow(g, 'Coefficient de sécurité s (-)', 'num');
             B.Kt = app.addRow(g, 'Kt (-)', 'num');
-            B.btnCalc = app.addRow(g, 'Calculer', 'button', app.cbk(@() app.computeBeam(), 'Poutres'));
+            B.btnCalc = app.addRow(g, 'Calculer', 'button', app.cbk(@() app.computeBeam(true), 'Poutres'));
             app.addRow(g, 'Envoyer au tenseur (point le plus sollicité)', 'button', app.cbk(@() app.sendToTensor(), 'Poutres'));
+            for k = 1:size(B.tips, 1)
+                B.(B.tips{k, 1}).Tooltip = B.tips{k, 2};
+            end
+            B = rmfield(B, 'tips');
             app.H.Beam = B;
+            app.hookBeamHistory();
+        end
+
+        function hookBeamHistory(app)
+            % Chaque modification d'un champ ou d'un tableau de Poutres crée une entrée d'historique (annuler / rétablir) et redessine l'aperçu.
+            items = MecaStruct_App.inputWidgets(app.H.Beam.W.In);
+            for k = 1:numel(items)
+                w = items(k);
+                if isa(w, 'matlab.ui.control.Table')
+                    w.CellEditCallback = @(~, ~) app.pushBeamHistory();
+                elseif isprop(w, 'ValueChangedFcn')
+                    orig = w.ValueChangedFcn;
+                    if iscell(orig) && ~isempty(orig)
+                        c = orig;
+                        orig = @(s, e) c{1}(s, e, c{2:end});
+                    end
+                    w.ValueChangedFcn = @(s, e) app.chainEdit(orig, s, e);
+                end
+            end
         end
 
         function markBeamManual(app)
@@ -2285,7 +3486,7 @@ classdef MecaStruct_App < handle
 
         function loadBeamExample(app, variant)
             B = app.H.Beam;
-            if ~any(strcmp(variant, {'isostatique', 'hyperstatique', 'console', 'deuxtravees'}))
+            if ~any(strcmp(variant, {'isostatique', 'hyperstatique', 'console', 'deuxtravees', 'gerber', 'tassement'}))
                 variant = 'isostatique';
             end
             B.example.Value = variant;
@@ -2308,28 +3509,63 @@ classdef MecaStruct_App < handle
             app.BeamUsesSection = false;
             app.BeamSection = struct('sec', GeometryEngine.fromProfile(p), 'P', P, 'mat', B.mat.Value);
             B.secInfo.Text = 'Section utilisée : profilé IPE 300 (exemple, valeurs du catalogue).';
-            B.pm.Data = cell(0, 5);
+            B.pm.Data = cell(0, 6);
+            B.supx.Data = cell(0, 5);
+            B.hg.Data = cell(0, 2);
+            B.thDT.Value = 0;
+            B.thGy.Value = 0;
+            B.thGz.Value = 0;
+            B.selfw.Value = false;
+            B.na.Value = 'EN';
+            B.gM0.Value = 1;
+            B.gM1.Value = 1;
+            B.Cmy.Value = 1;
+            B.CmLT.Value = 1;
+            B.Lcr.Value = 0;
+            B.LcrF.Value = 0;
+            B.C1.Value = 1;
+            B.ecsrc.Value = 'courant';
+            B.mvP.Value = '-100';
+            B.mvE.Value = '1.5';
+            B.mvN.Value = 61;
+            B.mvFixed.Value = false;
+            B.fR.Value = 0;
+            B.fka.Value = 1;
+            B.fkb.Value = 1;
+            B.combo.Data = {'ELS', 1, 1, 0, 0; 'ELU', 1.35, 1.5, 0, 0};
             switch variant
                 case 'hyperstatique'
                     B.L.Value = 5;
                     B.sup.Data = {0, 'encastrement', 'A'; 5, 'appui_simple', 'B'};
-                    B.pl.Data = cell(0, 5);
-                    B.dl.Data = {0, 5, 'y', 'uniforme', '-10', 'q'};
+                    B.pl.Data = cell(0, 6);
+                    B.dl.Data = {0, 5, 'y', 'uniforme', '-10', 'q', 'G'};
                 case 'console'
                     B.L.Value = 3;
                     B.sup.Data = {0, 'encastrement', 'A'};
-                    B.pl.Data = {3, 0, -10, 0, 'F'};
-                    B.dl.Data = cell(0, 6);
+                    B.pl.Data = {3, 0, -10, 0, 'F', 'Q'};
+                    B.dl.Data = cell(0, 7);
                 case 'deuxtravees'
                     B.L.Value = 8;
                     B.sup.Data = {0, 'pivot', 'A'; 4, 'appui_simple', 'B'; 8, 'appui_simple', 'C'};
-                    B.pl.Data = cell(0, 5);
-                    B.dl.Data = {0, 8, 'y', 'uniforme', '-10', 'q'};
+                    B.pl.Data = cell(0, 6);
+                    B.dl.Data = {0, 8, 'y', 'uniforme', '-10', 'q', 'G'};
+                case 'gerber'
+                    B.L.Value = 8;
+                    B.sup.Data = {0, 'pivot', 'A'; 4, 'appui_simple', 'B'; 8, 'appui_simple', 'C'};
+                    B.hg.Data = {2, 'R1'};
+                    B.pl.Data = cell(0, 6);
+                    B.dl.Data = {0, 8, 'y', 'uniforme', '-10', 'q', 'G'};
+                case 'tassement'
+                    B.L.Value = 8;
+                    B.sup.Data = {0, 'pivot', 'A'; 4, 'appui_simple', 'B'; 8, 'appui_simple', 'C'};
+                    B.supx.Data = {'B', 0, 0, -10, 0};
+                    B.pl.Data = cell(0, 6);
+                    B.dl.Data = {0, 8, 'y', 'uniforme', '-10', 'q', 'G'};
                 otherwise
                     B.L.Value = 6;
                     B.sup.Data = {0, 'pivot', 'A'; 6, 'appui_simple', 'B'};
-                    B.pl.Data = {2, 0, -20, 0, 'F'};
-                    B.dl.Data = {0, 6, 'y', 'uniforme', '-10', 'q'};
+                    B.pl.Data = {2, 0, -20, 0, 'F', 'Q'};
+                    B.dl.Data = {0, 6, 'y', 'uniforme', '-10', 'q', 'G'};
             end
             vals = [false true false false false true];
             for k = 1:numel(B.comps)
@@ -2339,11 +3575,17 @@ classdef MecaStruct_App < handle
             B.shear.Value = true;
             B.s.Value = 1.5;
             B.Kt.Value = 1;
+            app.resetBeamHistory();
         end
 
-        function model = readBeamModel(app)
+        function model = readBeamModel(app, fac)
             % Modèle de poutre SI à partir des champs et des tables.
+            %   fac : coefficient de chaque cas (struct G, Q, W, S) ; défaut 1 partout. Un cas à 0 est omis.
             B = app.H.Beam;
+            if nargin < 2
+                fac = struct('G', 1, 'Q', 1, 'W', 1, 'S', 1);
+            end
+            kc = @(d, i, col) MecaStruct_App.caseFactor(fac, d, i, col);
             model = struct();
             model.L = B.L.Value;
             if ~(model.L > 0)
@@ -2368,39 +3610,111 @@ classdef MecaStruct_App < handle
                 sup(i).type = char(d{i, 2});
                 sup(i).name = char(string(d{i, 3}));
             end
+            for i = 1:numel(sup)
+                sup(i).spring = 0; sup(i).dx = 0; sup(i).dy = 0; sup(i).dz = 0;
+            end
+            d = B.supx.Data;
+            for i = 1:size(d, 1)
+                j = find(strcmp({sup.name}, char(string(d{i, 1}))), 1);
+                if isempty(j)
+                    error('MecaStruct:App:invalidInput', 'Ressorts et tassements : aucun appui ne s''appelle « %s ».', char(string(d{i, 1})));
+                end
+                sup(j).spring = DataManager.toSI(MecaStruct_App.cellNum(d{i, 2}, 'Ressort k'), 'kN/m');
+                % tassements et température : actions permanentes, rangées dans le cas G (pondérées par γG dans une combinaison)
+                sup(j).dx = fac.G * MecaStruct_App.cellNum(d{i, 3}, 'Tassement x') * 1e-3;
+                sup(j).dy = fac.G * MecaStruct_App.cellNum(d{i, 4}, 'Tassement y') * 1e-3;
+                sup(j).dz = fac.G * MecaStruct_App.cellNum(d{i, 5}, 'Tassement z') * 1e-3;
+            end
             model.supports = sup;
+            d = B.hg.Data;
+            hg = struct('pos', {}, 'name', {});
+            for i = 1:size(d, 1)
+                hg(i).pos = MecaStruct_App.cellNum(d{i, 1}, 'Rotule : position');
+                hg(i).name = char(string(d{i, 2}));
+            end
+            model.hinges = hg;
+            th = app.beamThermal();
+            model.thermal = struct('epsX', fac.G * th.epsX, 'kv', fac.G * th.kv, 'kw', fac.G * th.kw);
             d = B.pl.Data;
             pl = struct('pos', {}, 'Fx', {}, 'Fy', {}, 'Fz', {}, 'name', {});
             for i = 1:size(d, 1)
-                pl(i).pos = MecaStruct_App.cellNum(d{i, 1}, 'Force : position');
-                pl(i).Fx = DataManager.toSI(MecaStruct_App.cellNum(d{i, 2}, 'Fx'), 'kN');
-                pl(i).Fy = DataManager.toSI(MecaStruct_App.cellNum(d{i, 3}, 'Fy'), 'kN');
-                pl(i).Fz = DataManager.toSI(MecaStruct_App.cellNum(d{i, 4}, 'Fz'), 'kN');
-                pl(i).name = char(string(d{i, 5}));
+                k = kc(d, i, 6);
+                if k == 0, continue, end
+                n = numel(pl) + 1;
+                pl(n).pos = MecaStruct_App.cellNum(d{i, 1}, 'Force : position');
+                pl(n).Fx = k * DataManager.toSI(MecaStruct_App.cellNum(d{i, 2}, 'Fx'), 'kN');
+                pl(n).Fy = k * DataManager.toSI(MecaStruct_App.cellNum(d{i, 3}, 'Fy'), 'kN');
+                pl(n).Fz = k * DataManager.toSI(MecaStruct_App.cellNum(d{i, 4}, 'Fz'), 'kN');
+                pl(n).name = char(string(d{i, 5}));
             end
             model.pointLoads = pl;
             d = B.pm.Data;
             pm = struct('pos', {}, 'Mx', {}, 'My', {}, 'Mz', {}, 'name', {});
             for i = 1:size(d, 1)
-                pm(i).pos = MecaStruct_App.cellNum(d{i, 1}, 'Couple : position');
-                pm(i).Mx = DataManager.toSI(MecaStruct_App.cellNum(d{i, 2}, 'Mx'), 'kN.m');
-                pm(i).My = DataManager.toSI(MecaStruct_App.cellNum(d{i, 3}, 'My'), 'kN.m');
-                pm(i).Mz = DataManager.toSI(MecaStruct_App.cellNum(d{i, 4}, 'Mz'), 'kN.m');
-                pm(i).name = char(string(d{i, 5}));
+                k = kc(d, i, 6);
+                if k == 0, continue, end
+                n = numel(pm) + 1;
+                pm(n).pos = MecaStruct_App.cellNum(d{i, 1}, 'Couple : position');
+                pm(n).Mx = k * DataManager.toSI(MecaStruct_App.cellNum(d{i, 2}, 'Mx'), 'kN.m');
+                pm(n).My = k * DataManager.toSI(MecaStruct_App.cellNum(d{i, 3}, 'My'), 'kN.m');
+                pm(n).Mz = k * DataManager.toSI(MecaStruct_App.cellNum(d{i, 4}, 'Mz'), 'kN.m');
+                pm(n).name = char(string(d{i, 5}));
             end
             model.pointMoments = pm;
             d = B.dl.Data;
             dl = struct('a', {}, 'b', {}, 'dir', {}, 'coeffs', {}, 'name', {});
             for i = 1:size(d, 1)
+                k = kc(d, i, 7);
+                if k == 0, continue, end
+                n = numel(dl) + 1;
                 a = MecaStruct_App.cellNum(d{i, 1}, 'Charge répartie : a');
                 b = MecaStruct_App.cellNum(d{i, 2}, 'Charge répartie : b');
-                dl(i).a = a;
-                dl(i).b = b;
-                dl(i).dir = char(d{i, 3});
-                dl(i).coeffs = DataManager.toSI(MecaStruct_App.distCoeffs(d{i, 4}, d{i, 5}, a, b), 'kN/m');
-                dl(i).name = char(string(d{i, 6}));
+                dl(n).a = a;
+                dl(n).b = b;
+                dl(n).dir = char(d{i, 3});
+                dl(n).coeffs = k * DataManager.toSI(MecaStruct_App.distCoeffs(d{i, 4}, d{i, 5}, a, b), 'kN/m');
+                dl(n).name = char(string(d{i, 6}));
+            end
+            if B.selfw.Value && fac.G ~= 0
+                rho = app.DM.getMaterial(B.mat.Value).rho;
+                if ~(isfinite(rho) && rho > 0)
+                    error('MecaStruct:App:invalidInput', 'Poids propre : masse volumique inconnue pour « %s ».', B.mat.Value);
+                end
+                n = numel(dl) + 1;
+                dl(n).a = 0;
+                dl(n).b = model.L;
+                dl(n).dir = 'y';
+                dl(n).coeffs = -fac.G * rho * 9.80665 * model.S;
+                dl(n).name = 'poids propre';
             end
             model.distLoads = dl;
+        end
+
+        function th = beamThermal(app)
+            % Action thermique de la poutre : epsX = α·ΔT, courbures kv = −α·Δgy/hy et kw = −α·Δgz/hz (1/m).
+            %   v'' thermique = −α·(T(+y) − T(−y))/h : la face chaude s'allonge, la poutre se cambre vers elle.
+            B = app.H.Beam;
+            th = struct('epsX', 0, 'kv', 0, 'kw', 0);
+            if B.thDT.Value == 0 && B.thGy.Value == 0 && B.thGz.Value == 0
+                return
+            end
+            alpha = app.DM.getMaterial(B.mat.Value).alpha;
+            if ~(isfinite(alpha) && alpha > 0)
+                error('MecaStruct:App:invalidInput', 'Température : coefficient de dilatation inconnu pour « %s ».', B.mat.Value);
+            end
+            th.epsX = alpha * B.thDT.Value;
+            if B.thGy.Value ~= 0
+                if ~(B.vy.Value > 0)
+                    error('MecaStruct:App:invalidInput', 'Gradient thermique selon y : renseignez la fibre extrême |y|max (hauteur = 2·|y|max).');
+                end
+                th.kv = -alpha * B.thGy.Value / (2 * B.vy.Value * 1e-3);
+            end
+            if B.thGz.Value ~= 0
+                if ~(B.vz.Value > 0)
+                    error('MecaStruct:App:invalidInput', 'Gradient thermique selon z : renseignez la fibre extrême |z|max (hauteur = 2·|z|max).');
+                end
+                th.kw = -alpha * B.thGz.Value / (2 * B.vz.Value * 1e-3);
+            end
         end
 
         function comps = selectedComps(app, sol)
@@ -2498,8 +3812,10 @@ classdef MecaStruct_App < handle
             W.PlotGroup.Parent.RowHeight = {26, '5x', '1x'};   % schéma agrandi, rapport réduit
             g = W.In;
             T = struct('W', W);
+            app.addRow(g, '', 'buttons', {'Enregistrer mon problème', app.cbk(@() app.saveProblem('Tr'), 'Enregistrement'), ...
+                'Ouvrir un problème', app.cbk(@() app.loadProblem('Tr'), 'Ouverture')});
             app.addRow(g, 'Matériau et section des barres', 'title');
-            T.mat = app.addRow(g, 'Matériau', 'drop', cellstr(app.DM.listMaterials()));
+            T.mat =app.addRow(g, 'Matériau', 'drop', cellstr(app.DM.listMaterials()));
             T.E = app.addRow(g, 'E (GPa)', 'num');
             T.S = app.addRow(g, 'S (mm²)', 'num');
             T.scale = app.addRow(g, 'Amplification déformée (0 = auto)', 'num');
@@ -2941,7 +4257,7 @@ classdef MecaStruct_App < handle
             tb.ColumnName = cn;
         end
 
-        function addTableRow(~, tb, row)
+        function addTableRow(app, tb, row)
             d = tb.Data;
             if isempty(d)
                 d = row;
@@ -2949,9 +4265,18 @@ classdef MecaStruct_App < handle
                 d(end + 1, :) = row;
             end
             tb.Data = d;
+            app.noteTableEdit(tb);
         end
 
-        function delTableRow(~, tb)
+        function noteTableEdit(app, tb)
+            % Tableau de Poutres modifié par un bouton : entrée d'historique.
+            if isfield(app.H, 'Beam') && isfield(app.H.Beam, 'combo') && ...
+                    any(arrayfun(@(f) isequal(app.H.Beam.(f{1}), tb), {'sup', 'supx', 'hg', 'pl', 'pm', 'dl', 'combo'}))
+                app.pushBeamHistory();
+            end
+        end
+
+        function delTableRow(app, tb)
             d = tb.Data;
             if isempty(d)
                 return
@@ -2970,6 +4295,7 @@ classdef MecaStruct_App < handle
             rows = rows(rows >= 1 & rows <= size(d, 1));
             d(rows, :) = [];
             tb.Data = d;
+            app.noteTableEdit(tb);
         end
 
         function v = pickItem(~, dd, wanted)
@@ -3001,7 +4327,12 @@ classdef MecaStruct_App < handle
             catch err
                 app.logError(title, err);
                 if ~isempty(app.UIFigure) && isvalid(app.UIFigure) && strcmp(app.UIFigure.Visible, 'on')
-                    uialert(app.UIFigure, err.message, title, 'Icon', 'error');
+                    msg = err.message;
+                    hint = MecaStruct_App.errorHint(err.identifier);
+                    if ~isempty(hint)
+                        msg = sprintf('%s\n\nPiste : %s', msg, hint);
+                    end
+                    uialert(app.UIFigure, msg, title, 'Icon', 'error');
                 end
             end
         end
@@ -3017,15 +4348,16 @@ classdef MecaStruct_App < handle
             isDB = strcmp(wk, 'DB');
             isConv = strcmp(wk, 'Conv');
             if ~isempty(app.ButtonGrid) && isvalid(app.ButtonGrid)
-                app.BtnVal.Visible = ~isDB && ~isConv;
+                noVal = isDB || isConv || strcmp(wk, 'Home');
+                app.BtnVal.Visible = ~noVal;
                 app.BtnNote.Visible = isDB;
-                app.BtnGuide.Visible = isDB;
+                app.BtnGuide.Visible = true;
                 if isDB
                     app.ButtonGrid.ColumnWidth = {0, '1x', '1x'};
-                elseif isConv
-                    app.ButtonGrid.ColumnWidth = {0, 0, 0};
+                elseif noVal
+                    app.ButtonGrid.ColumnWidth = {0, 0, '1x'};
                 else
-                    app.ButtonGrid.ColumnWidth = {'1x', 0, 0};
+                    app.ButtonGrid.ColumnWidth = {'2x', 0, '1x'};
                 end
             end
             key = app.currentFormulaKey();
@@ -3077,6 +4409,134 @@ classdef MecaStruct_App < handle
     %  Utilitaires statiques privés
     %  =========================================================================================
     methods (Static, Access = private)
+
+        function btn = styleButton(btn, role)
+            % Couleur d'un bouton selon son rôle : primary (calcul), danger (suppression), accent (dossier, note), secondary
+            % (défaut). Sans rôle donné, il est déduit du libellé. Couleurs de milieu de gamme : lisibles en thème clair et sombre.
+            if nargin < 2
+                if ~isempty(regexp(btn.Text, '^(Calculer|Vérifier|Chercher)', 'once'))
+                    role = 'primary';
+                elseif ~isempty(regexp(btn.Text, '^Supprimer', 'once'))
+                    role = 'danger';
+                else
+                    role = 'secondary';
+                end
+            end
+            fills = struct('primary', [0.12 0.42 0.72], 'danger', [0.72 0.25 0.25], 'accent', [0.10 0.50 0.45]);
+            if isfield(fills, role)
+                btn.BackgroundColor = fills.(role);
+                btn.FontColor = [1 1 1];
+                btn.FontWeight = 'bold';
+            end
+        end
+
+        function t = sectionText(label, open)
+            % Texte du titre d'une section repliable : ▾ ouverte, ▸ fermée.
+            arrow = {char(9656), char(9662)};
+            t = [arrow{open + 1} ' ' label];
+        end
+
+        function k = caseFactor(fac, d, i, col)
+            % Coefficient du cas de charge de la ligne i (colonne col du tableau d) ; sans colonne Cas : cas G.
+            c = 'G';
+            if size(d, 2) >= col && ~isempty(d{i, col})
+                c = char(string(d{i, col}));
+            end
+            if ~isfield(fac, c)
+                error('MecaStruct:App:invalidInput', 'Cas de charge inconnu « %s » (attendu : G, Q, W ou S).', c);
+            end
+            k = fac.(c);
+        end
+
+        function k = projectKeys()
+            % Onglets de calcul enregistrés dans un projet.
+            k = {'Sec', 'Beam', 'Tr', 'Tra', 'Cis', 'Tor', 'Fle', 'Fla', 'Ten', 'Hoo', 'Jau'};
+        end
+
+        function sheets = beamEffortSheets(sol)
+            % Feuilles « Enveloppe » (max/min de chaque effort) et « Efforts » (valeurs le long de la poutre), en kN et kN·m.
+            comps = {'N', 'Ty', 'Tz', 'Mt', 'Mfy', 'Mfz'};
+            unit = {'kN', 'kN', 'kN', 'kN·m', 'kN·m', 'kN·m'};
+            ext = zeros(6, 4);
+            for k = 1:6
+                e = sol.extrema.(comps{k});
+                ext(k, :) = [e.max / 1e3, e.sMax, e.min / 1e3, e.sMin];
+            end
+            env = table(string(comps(:)), string(unit(:)), ext(:, 1), ext(:, 2), ext(:, 3), ext(:, 4), 'VariableNames', ...
+                {'Effort', 'Unité', 'Max', 's du max (m)', 'Min', 's du min (m)'});
+            L = sol.N.breaks(end);
+            s = unique([linspace(0, L, 201), sol.N.breaks(:).']).';
+            eff = table(s, 'VariableNames', {'s (m)'});
+            for k = 1:6
+                eff.(sprintf('%s (%s)', comps{k}, unit{k})) = BeamAndTrussSolver.ppEval(sol.(comps{k}), s) / 1e3;
+            end
+            sheets = {'Enveloppe', env; 'Efforts', eff};
+        end
+
+        function k = inputKey(h)
+            % Clé d'un champ de saisie dans un problème enregistré : libellé de la ligne (colonnes pour un tableau), '' sinon.
+            k = '';
+            if ischar(h.UserData)
+                k = h.UserData;
+            end
+        end
+
+        function target = matchInputs(items, vals)
+            % Pour chaque valeur enregistrée, le champ de même clé et même classe (0 si absent ou déjà attribué).
+            target = zeros(1, size(vals, 1));
+            used = false(numel(items), 1);   % colonnes comme keys et cls : sinon & produit une matrice N×N
+            keys = arrayfun(@MecaStruct_App.inputKey, items(:), 'UniformOutput', false);
+            cls = arrayfun(@class, items(:), 'UniformOutput', false);
+            for k = 1:size(vals, 1)
+                j = find(strcmp(keys, vals{k, 3}) & strcmp(cls, vals{k, 1}) & ~used, 1);
+                if ~isempty(j)
+                    target(k) = j;
+                    used(j) = true;
+                end
+            end
+        end
+
+        function items = inputWidgets(root)
+            % Champs de saisie d'un panneau, dans un ordre stable : champs à valeur, cases, listes, puis tableaux.
+            v = findobj(root, '-property', 'Value');
+            v = v(~arrayfun(@(h) isa(h, 'matlab.ui.control.TextArea'), v));
+            items = [v(:); findobj(root, 'Type', 'uitable')];
+        end
+
+        function s = unreliableNote(sol)
+            %UNRELIABLENOTE Avertissement « résultat non fiable » : poutre hyperstatique avec Iyz ≠ 0 (chaîne vide sinon).
+            s = '';
+            if ~sol.isostatic && isfield(sol.model, 'Iyz') && sol.model.Iyz ~= 0
+                s = '⚠ Résultats NON fiables (hyperstatique, Iyz ≠ 0) — ';
+            end
+        end
+
+        function s = plainVerdict(sig, adm, ok)
+            % Verdict en une phrase : la pièce tient-elle, avec quelle marge.
+            marge = (adm - sig) / adm * 100;
+            if ok
+                s = sprintf('Verdict : la poutre résiste. Contrainte %.1f MPa pour %.1f MPa admissibles, marge %.0f %%.', sig, adm, marge);
+            else
+                s = sprintf('Verdict : la poutre NE résiste PAS. Contrainte %.1f MPa pour %.1f MPa admissibles (dépassement %.0f %%). Augmentez la section ou réduisez la charge.', ...
+                    sig, adm, -marge);
+            end
+        end
+
+        function h = errorHint(id)
+            % Conseil de correction en français pour les erreurs de saisie courantes ('' si aucun).
+            map = {
+                'mechanism', 'la structure peut bouger. Ajoutez un appui ou un encastrement, ou changez le type d''un appui (voir la légende sous le tableau des appuis).'
+                'invalidSupport', 'vérifiez le tableau des appuis : type connu et position comprise entre 0 et L.'
+                'invalidModel', 'une donnée est incohérente (position hors de la poutre, case vide, valeur nulle). Relisez les tableaux et la longueur L.'
+                'invalidExpression', 'dans les cases de valeurs, utilisez seulement des nombres, x et + - * / ^ ( ).'
+                'invalidDimensions', 'vérifiez les dimensions de la section (toutes positives, épaisseurs plus petites que la largeur).'};
+            h = '';
+            tok = regexp(char(id), '[^:]+$', 'match', 'once');
+            k = find(strcmp(map(:, 1), tok), 1);
+            if ~isempty(k)
+                h = map{k, 2};
+            end
+        end
 
         function s = effortReading(N, Mfz, Mfy)
             % Lecture en français des efforts saisis (où la section est tendue ou comprimée).
@@ -3207,6 +4667,7 @@ classdef MecaStruct_App < handle
             s = regexprep(s, '[àâ]', 'a');
             s = regexprep(s, '[^a-z]', '');
             map = {
+                {'accueil', 'home'}, 'Home', 'Home'
                 {'basededonnees', 'bdd', 'db', 'materiaux', 'donnees', 'base'}, 'DB', 'DB'
                 {'sections', 'section', 'sec', 'geometrie'}, 'Sec', 'Sec'
                 {'poutres', 'poutre', 'beam'}, 'Beam', 'Beam'
@@ -3431,6 +4892,16 @@ classdef MecaStruct_App < handle
             end
             if ~isscalar(v) || ~isfinite(v)
                 error('MecaStruct:App:invalidInput', '%s : valeur numérique invalide.', what);
+            end
+        end
+
+        function v = parseNumbers(txt, what)
+            % Liste de nombres séparés par des espaces, virgules ou points-virgules (« 100 100, 50 ») ; virgule décimale non admise.
+            parts = strsplit(strtrim(regexprep(char(string(txt)), '[;,]+', ' ')));
+            parts = parts(~cellfun(@isempty, parts));
+            v = str2double(parts);
+            if any(~isfinite(v))
+                error('MecaStruct:App:invalidInput', '%s : liste de nombres invalide (« %s »).', what, char(string(txt)));
             end
         end
 

@@ -34,10 +34,209 @@ verifyTrue(testCase, isvalid(app.UIFigure));
 verifyEqual(testCase, app.UIFigure.Name, 'MecaStruct RdM Pro');
 verifyEqual(testCase, char(app.UIFigure.Visible), 'off');
 titles = {app.TabGroup.Children.Title};
-verifyEqual(testCase, titles, {'Base de données', 'Sections', 'Poutres', 'Treillis', 'Sollicitations', ...
+verifyEqual(testCase, titles, {'Accueil', 'Base de données', 'Sections', 'Poutres', 'Treillis', 'Sollicitations', ...
     'Flambage', 'Tenseurs & Critères', 'Hooke & Jauges', 'Convertisseur'});
 verifyEqual(testCase, numel(app.H.Tra.Tab.Parent.Children), 4, 'Sous-onglets de Sollicitations.');
 verifyTrue(testCase, ismember(app.FormulaKey, DataManager.formulaKeys()));
+end
+
+function testAideLot2(testCase)
+app = testCase.TestData.app;
+app.computeBeam();
+rep = strjoin(app.H.Beam.W.Report.Value, newline);
+verifyTrue(testCase, contains(rep, 'Verdict : la poutre résiste'));
+verifyTrue(testCase, contains(rep, 'Étape suivante'));
+end
+
+function testProblemeEtChargeRapide(testCase)
+app = testCase.TestData.app;
+f = fullfile(testCase.TestData.tmp, 'pb.mat');
+app.H.Beam.L.Value = 7.5;
+app.saveProblem('Beam', f);
+app.H.Beam.L.Value = 3;
+n = app.loadProblem('Beam', f);
+verifyEqual(testCase, app.H.Beam.L.Value, 7.5);
+verifyEqual(testCase, n, 0, 'Aucun champ non restauré.');
+verifyError(testCase, @() app.loadProblem('Tr', f), 'MecaStruct:App:badProblemFile');
+app.loadExample('Poutres', 'isostatique');
+n0 = size(app.H.Beam.dl.Data, 1);
+app.H.Beam.qshape.Value = 'Trapèze (p1 → p2)';
+app.H.Beam.qp2.Value = -20;
+app.addQuickLoad();
+verifyEqual(testCase, size(app.H.Beam.dl.Data, 1), n0 + 1);
+app.computeBeam();
+app.H.Beam.qb.Value = app.H.Beam.qa.Value;
+verifyError(testCase, @() app.addQuickLoad(), 'MecaStruct:App:invalidLoad');
+verifyEqual(testCase, app.guidedTour(), 5);
+app.loadExample('Poutres', 'isostatique');
+end
+
+function testProjetEtExportTableaux(testCase)
+app = testCase.TestData.app;
+tmp = testCase.TestData.tmp;
+app.loadExample('Poutres', 'isostatique');
+app.H.Beam.L.Value = 6.5;
+fp = fullfile(tmp, 'projet.mat');
+app.saveProject(fp);
+app.H.Beam.L.Value = 2;
+failed = app.loadProject(fp);
+verifyEmpty(testCase, failed);
+verifyEqual(testCase, app.H.Beam.L.Value, 6.5);
+app.loadExample('Poutres', 'isostatique');
+app.computeBeam();
+fx = fullfile(tmp, 'poutre.xlsx');
+app.exportResults('Beam', fx);
+names = sheetnames(fx);
+verifyTrue(testCase, all(ismember(["Enveloppe", "Efforts"], names)));
+env = readtable(fx, 'Sheet', 'Enveloppe', 'VariableNamingRule', 'preserve');
+verifyEqual(testCase, env.Max(string(env.Effort) == "Mfz"), app.Results.beam.sol.extrema.Mfz.max / 1e3, 'AbsTol', 1e-9);
+eff = readtable(fx, 'Sheet', 'Efforts', 'VariableNamingRule', 'preserve');
+verifyEqual(testCase, eff.("s (m)")(end), app.Results.beam.sol.N.breaks(end), 'AbsTol', 1e-12);
+files = app.exportResults('Beam', fullfile(tmp, 'poutre.csv'));
+verifyTrue(testCase, all(cellfun(@isfile, files)));
+end
+
+function testCombinaisonsEtPoidsPropre(testCase)
+app = testCase.TestData.app;
+app.loadExample('Poutres', 'isostatique');
+app.H.Beam.combo.Data = {'G seul', 1, 0, 0, 0; 'G+Q', 1, 1, 0, 0; 'ELU', 1.35, 1.5, 0, 0};
+T = app.computeCombinations();
+verifyEqual(testCase, height(T), 4);
+app.computeBeam();
+ref = app.Results.beam.sol.extrema.Mfz.max / 1e3;
+verifyEqual(testCase, T.("Mfz max (kN·m)")(2), ref, 'RelTol', 1e-9, 'G+Q = calcul avec tous les cas à 1.');
+verifyGreaterThan(testCase, T.("Mfz max (kN·m)")(1), 0);
+verifyLessThan(testCase, T.("Mfz max (kN·m)")(1), ref, 'Sans le cas Q, le moment est plus petit.');
+verifyEqual(testCase, T.("f max (mm)")(end), max(T.("f max (mm)")(1:end-1)), 'Enveloppe = maximum des combinaisons.');
+f0 = app.Results.beam.defl.integration.fmax;
+app.H.Beam.selfw.Value = true;
+app.computeBeam();
+verifyGreaterThan(testCase, app.Results.beam.defl.integration.fmax, f0, 'Le poids propre augmente la flèche.');
+app.H.Beam.selfw.Value = false;
+app.loadExample('Poutres', 'isostatique');
+end
+
+function testProfileLePlusLeger(testCase)
+app = testCase.TestData.app;
+app.loadExample('Poutres', 'isostatique');
+S0 = app.H.Beam.S.Value;
+[T, best] = app.findLightestProfile('IPE');
+verifyEqual(testCase, app.H.Beam.S.Value, S0, 'La saisie de section doit être remise.');
+verifyNotEmpty(testCase, best);
+verifyTrue(testCase, issorted(T.("S (mm²)")));
+iBest = find(T.("Profilé") == string(best));
+verifyLessThanOrEqual(testCase, T.("Kt·σ max (MPa)")(iBest), T.("σadm (MPa)")(iBest));
+if iBest > 1
+    verifyGreaterThan(testCase, T.("Kt·σ max (MPa)")(iBest - 1), T.("σadm (MPa)")(iBest - 1), 'Le profilé précédent ne vérifie pas.');
+end
+[~, bestF] = app.findLightestProfile('IPE', 1000);
+verifyNotEqual(testCase, bestF, best, 'Une flèche L/1000 impose un profilé plus gros.');
+end
+
+function testSectionsRepliables(testCase)
+% Les sections du panneau de saisie se plient et se déplient ; fermées, leurs champs sont masqués mais gardent leur valeur.
+app = testCase.TestData.app;
+B = app.H.Beam;
+allBtn = findall(B.W.In, 'Type', 'uibutton');
+btn = allBtn(contains({allBtn.Text}, 'Eurocode 3 simplifié'));
+verifyEqual(testCase, numel(btn), 1);
+verifyTrue(testCase, startsWith(btn.Text, char(9656)), 'Fermée au départ.');
+verifyFalse(testCase, logical(B.Lcr.Visible));
+rows = btn.UserData.rows;
+verifyEqual(testCase, cell2mat(btn.Parent.RowHeight(rows)), zeros(1, numel(rows)));
+app.loadExample('Poutres', 'isostatique');
+app.computeBeam();
+r = app.checkEurocode();   % section fermée : le calcul lit les mêmes champs
+verifyTrue(testCase, r.ok);
+btn.ButtonPushedFcn(btn, []);
+verifyTrue(testCase, logical(B.Lcr.Visible));
+verifyTrue(testCase, startsWith(btn.Text, char(9662)));
+verifyGreaterThan(testCase, sum(cell2mat(btn.Parent.RowHeight(rows))), 0);
+btn.ButtonPushedFcn(btn, []);
+verifyFalse(testCase, logical(B.Lcr.Visible));
+verifyTrue(testCase, logical(B.btnCalc.Visible), 'Le bouton Calculer n''appartient à aucune section fermée.');
+end
+
+function testStyleBoutons(testCase)
+% Couleur par rôle : calcul en bleu, suppression en rouge, les autres boutons gardent le style par défaut.
+app = testCase.TestData.app;
+B = app.H.Beam;
+verifyEqual(testCase, B.btnCalc.BackgroundColor, [0.12 0.42 0.72]);
+btns = findall(B.W.In, 'Type', 'uibutton');
+del = btns(strcmp({btns.Text}, 'Supprimer la sélection'));
+verifyGreaterThan(testCase, numel(del), 0);
+verifyTrue(testCase, all(arrayfun(@(b) isequal(b.BackgroundColor, [0.72 0.25 0.25]), del)));
+ex = btns(strcmp({btns.Text}, 'Charger l''exemple'));
+verifyFalse(testCase, isequal(ex(1).BackgroundColor, [0.12 0.42 0.72]), 'Charger l''exemple reste neutre.');
+end
+
+function testEurocodeEtFatigue(testCase)
+app = testCase.TestData.app;
+app.loadExample('Poutres', 'isostatique');
+app.computeBeam();
+e = app.Results.beam.sol.extrema;
+r = app.checkEurocode();
+verifyEqual(testCase, r.MEd, max(abs([e.Mfz.max, e.Mfz.min])), 'RelTol', 1e-12);
+verifyEqual(testCase, r.class.class, 1);
+verifyGreaterThan(testCase, r.ratioM, 0.3);
+verifyLessThan(testCase, r.ratioM, 0.7);
+verifyTrue(testCase, r.ok);
+verifyGreaterThan(testCase, r.ltb.Mcr, 0);
+verifyEqual(testCase, r.okAll, r.ok && r.ltb.ok);
+app.H.Beam.Lcr.Value = 1;
+rShort = app.checkEurocode();
+verifyLessThan(testCase, rShort.ltb.ratio, r.ltb.ratio, 'Un maintien latéral rapproché réduit le déversement.');
+app.H.Beam.Lcr.Value = 0;
+verifyTrue(testCase, isfield(r, 'axial') && isempty(r.buck) && ~r.partial, 'Sans effort normal : pas de flambement.');
+% avec une compression de 100 kN (pivot en A retient x)
+app.H.Beam.pl.Data = {2, 0, -20, 0, 'F', 'Q'; 6, -100, 0, 0, 'N', 'Q'};
+app.computeBeam();
+rN = app.checkEurocode();
+verifyNotEmpty(testCase, rN.buck);
+verifyNotEmpty(testCase, rN.inter, 'Compression + moment : l''interaction 6.3.3 est vérifiée.');
+verifyEqual(testCase, rN.inter.ratio, max(rN.inter.ratio61, rN.inter.ratio62));
+verifyGreaterThan(testCase, rN.inter.ratio, rN.buck.ratio, 'Le moment s''ajoute à la compression.');
+verifyEqual(testCase, rN.buck.NEd, 100e3, 'RelTol', 1e-6);
+verifyEqual(testCase, rN.axial.n, 100e3 / rN.axial.Npl, 'RelTol', 1e-12);
+app.loadExample('Poutres', 'isostatique');
+app.computeBeam();
+app.computeCombinations();
+app.H.Beam.ecsrc.Value = 'enveloppe';
+rEnv = app.checkEurocode();
+verifyGreaterThan(testCase, rEnv.ratioM, r.ratioM, 'L''ELU est plus défavorable que le cas courant.');
+app.H.Beam.ecsrc.Value = 'courant';
+app.H.Beam.fR.Value = -1;
+f1 = app.checkFatigue();
+app.H.Beam.fR.Value = 0;
+f0 = app.checkFatigue();
+verifyGreaterThan(testCase, f0.n, f1.n, 'Un chargement répété (R = 0) est moins sévère que l''alterné.');
+verifyGreaterThan(testCase, f1.n, 0);
+app.H.Beam.fR.Value = 0;
+app.H.Beam.S.ValueChangedFcn(app.H.Beam.S, []);
+verifyError(testCase, @() app.checkEurocode(), 'MecaStruct:App:invalidInput');
+app.loadExample('Poutres', 'isostatique');
+end
+
+function testDossierEtendu(testCase)
+% Le dossier de la poutre inclut combinaisons, Eurocode 3, fatigue et profilé le plus léger, recalculés à la main.
+app = testCase.TestData.app;
+app.loadExample('Poutres', 'isostatique');
+app.computeBeam();
+app.computeCombinations();
+app.checkEurocode();
+app.checkFatigue();
+app.findLightestProfile('IPE');
+% une saisie modifiée après coup doit être reprise par le dossier (pas de tableau périmé)
+app.H.Beam.dl.Data = {0, 6, 'y', 'uniforme', '-12', 'q', 'G'};
+f = ValidationReport.generate(app, 'Beam', fullfile(testCase.TestData.tmp, 'etendu'));
+h = fileread(f);
+for t = {'Combinaison dimensionnante', 'Eurocode 3 : classes', 'Fatigue (Goodman modifié', 'Profilé le plus léger, famille IPE', ...
+        'Eurocode 3 (EN 1993-1-1)', 'Déversement : poutre à fourches'}
+    verifyTrue(testCase, contains(h, t{1}), t{1});
+end
+verifyFalse(testCase, contains(h, '<span class="ko">ÉCART'), 'Tous les recalculs à la main concordent avec le solveur.');
+verifyGreaterThan(testCase, numel(strfind(h, '<span class="ok">concordent')), 40);
+app.loadExample('Poutres', 'isostatique');
 end
 
 function testDocumentsEtRapportHTML(testCase)
@@ -77,7 +276,7 @@ app.computeBending();
 txt = strjoin(app.H.Fle.W.Report.Value, ' ');
 verifyTrue(testCase, contains(txt, 'fibres du haut'));
 % saisies de la poutre modifiées sans recalcul : « Efforts en s » relit la poutre à jour
-app.H.Beam.dl.Data = {0, 6, 'y', 'uniforme', '-20', 'q'};
+app.H.Beam.dl.Data = {0, 6, 'y', 'uniforme', '-20', 'q', 'G'};
 F.s0.Value = 3;
 app.loadFromBeam('Fle', 'abscisse');
 verifyEqual(testCase, F.Mfz.Value, 110, 'AbsTol', 1e-9);              % 73,33·3 − 20·9/2 − 20·1
@@ -91,9 +290,9 @@ function testPointLePlusSollicitSurSaut(testCase)
 app = testCase.TestData.app;
 app.loadExample('Poutres', 'isostatique');
 B = app.H.Beam;
-B.pl.Data = cell(0, 5);
-B.dl.Data = cell(0, 6);
-B.pm.Data = {4, 0, 0, 20, 'C'};
+B.pl.Data = cell(0, 6);
+B.dl.Data = cell(0, 7);
+B.pm.Data = {4, 0, 0, 20, 'C', 'G'};
 app.loadFromBeam('Fle', 'max');
 verifyEqual(testCase, abs(app.H.Fle.Mfz.Value), 20 * 4 / 6, 'AbsTol', 1e-6);
 end
@@ -103,16 +302,16 @@ function testVerificationMainPlanZEtDisque(testCase)
 app = testCase.TestData.app;
 app.loadExample('Poutres', 'isostatique');
 B = app.H.Beam;
-B.pl.Data = {2, 0, -20, -8, 'F'};
+B.pl.Data = {2, 0, -20, -8, 'F', 'G'};
 [nOK, nTot] = ValidationReport.handCheck(app, 'Beam');
 verifyEqual(testCase, nOK, nTot);
-B.pl.Data = {2, 0, -20, 0, 'F'};
+B.pl.Data = {2, 0, -20, 0, 'F', 'G'};
 [~, nTot0] = ValidationReport.handCheck(app, 'Beam');
 verifyGreaterThan(testCase, nTot, nTot0, 'Les contrôles du plan (x, z) doivent s''ajouter.');
 S = app.H.Sec;
 S.type.Value = 'disque'; S.D.Value = 60;
 app.useSectionForBeam();
-B.pl.Data = {2, 0, -5, -5, 'F'};
+B.pl.Data = {2, 0, -5, -5, 'F', 'G'};
 [nOK, nTot] = ValidationReport.handCheck(app, 'Beam');
 verifyEqual(testCase, nOK, nTot, 'Disque en flexion biaxiale : contrainte à la main ≠ solveur.');
 end
@@ -464,8 +663,12 @@ D.mName.Value = 'Acier test app';
 D.mCat.Value = 'Utilisateur';
 D.mE.Value = 200; D.mNu.Value = 0.25; D.mG.Value = 0;
 D.mRe.Value = 300; D.mRm.Value = 450; D.mAlpha.Value = 12; D.mRho.Value = 7800;
+D.mAuthor.Value = 'Théo';
 app.addMaterialFromForm();
 m = app.DM.getMaterial('Acier test app');
+verifyEqual(testCase, m.Author, 'Théo');
+verifyTrue(testCase, any(strcmp(D.mAuthor.Items, 'Théo')), 'Le nom saisi est proposé ensuite dans la liste.');
+verifyEqual(testCase, string(app.H.DB.MatTable.Data.("Ajouté par")(strcmp(app.H.DB.MatTable.Data.Nom, "Acier test app"))), "Théo");
 verifyEqual(testCase, m.G, 200e9 / (2 * 1.25), 'RelTol', 1e-12);
 verifyEqual(testCase, m.Re, 300e6, 'RelTol', 1e-12);
 verifyTrue(testCase, any(strcmp(app.H.Beam.mat.Items, 'Acier test app')));
@@ -526,4 +729,200 @@ delete(fig);
 B.ky.Value = 2; B.ky.ValueChangedFcn([], []);
 verifyTrue(testCase, contains(B.secInfo.Text, 'main'));
 verifyEmpty(testCase, app.showBeamSection());
+end
+
+%% ------------------------------------------------------------------------------------------
+%  Ressorts, tassements, rotules, température, charge mobile, historique, catalogue, formats
+%% ------------------------------------------------------------------------------------------
+function testRessortsTassementsRotules(testCase)
+app = testCase.TestData.app;
+B = app.H.Beam;
+% poutre Gerber : isostatique, moment nul à la rotule, contrôle écrit dans le dossier
+app.loadExample('Poutres', 'gerber');
+app.computeBeam();
+sol = app.Results.beam.sol;
+verifyEqual(testCase, [sol.reactions.Ry], [10e3 60e3 10e3], 'RelTol', 1e-9);
+setenv('MECASTRUCT_NO_BROWSER', '1');
+cl = onCleanup(@() setenv('MECASTRUCT_NO_BROWSER', ''));
+f = ValidationReport.generate(app, 'Beam', fullfile(testCase.TestData.tmp, 'gerber'));
+h = fileread(f);
+verifyTrue(testCase, contains(h, 'à la rotule R1'), 'Le dossier contrôle le moment nul à la rotule.');
+verifyFalse(testCase, contains(h, 'ÉCART'), 'Aucun écart dans le dossier de la poutre Gerber.');
+% tassement de 10 mm de B : les deux méthodes concordent et l'appui est déchargé
+app.loadExample('Poutres', 'tassement');
+app.computeBeam();
+s1 = app.Results.beam.sol;
+verifyLessThan(testCase, s1.hyperCheck, 1e-9);
+B.supx.Data = cell(0, 5);
+app.computeBeam();
+s0 = app.Results.beam.sol;
+verifyLessThan(testCase, s1.reactions(2).Ry, s0.reactions(2).Ry, 'Le tassement de B décharge cet appui.');
+% ressort et gradient thermique via les champs de saisie
+app.loadExample('Poutres', 'hyperstatique');
+B.supx.Data = {'B', 5000, 0, 0, 0};
+app.computeBeam();
+verifyEqual(testCase, app.Results.beam.sol.model.supports(2).spring, 5e6, 'RelTol', 1e-12);
+B.supx.Data = cell(0, 5);
+B.thGy.Value = 20;
+app.computeBeam();
+verifyEqual(testCase, app.Results.beam.sol.model.thermal.kv, -12e-6 * 20 / (2 * B.vy.Value * 1e-3), 'RelTol', 1e-12);
+B.thGy.Value = 0;
+B.supx.Data = {'Z', 0, 0, 0, 0};
+verifyError(testCase, @() app.computeBeam(), 'MecaStruct:App:invalidInput');
+B.supx.Data = cell(0, 5);
+% fichier de problème d'une version sans ces champs : les champs MSv2 sont absents du fichier
+app.loadExample('Poutres', 'isostatique');
+f = fullfile(testCase.TestData.tmp, 'ancien.mat');
+app.saveProblem('Beam', f);
+S = load(f);
+vals = S.problem.values;
+v = findobj(B.W.In, '-property', 'Value');
+v = v(~arrayfun(@(x) isa(x, 'matlab.ui.control.TextArea'), v));
+widgets = [v(:); findobj(B.W.In, 'Type', 'uitable')];
+isNew = arrayfun(@(x) strcmp(x.Tag, 'MSv2'), widgets);
+verifyGreaterThan(testCase, nnz(isNew), 5);
+verifyEqual(testCase, numel(widgets), size(vals, 1));
+problem = struct('app', 'MecaStruct', 'key', 'Beam', 'values', {vals(~isNew, 1:2)}); %#ok<NASGU>
+save(f, 'problem');
+verifyEqual(testCase, app.loadProblem('Beam', f), 0, 'Un ancien fichier se recharge.');
+end
+
+function testResultatNonFiable(testCase)
+% Poutre hyperstatique avec Iyz ≠ 0 : « Calculer » demande ; « Non » n'affiche aucun résultat, « Oui » l'affiche.
+app = testCase.TestData.app;
+B = app.H.Beam;
+app.loadExample('Poutres', 'hyperstatique');
+B.Iyz.Value = -1.066e6;   % le chargement d'exemple remet Iyz à 0 : on le remet pour cet essai
+app.Results = struct();
+app.ConfirmFcn = @(varargin) 'Non';
+app.computeBeam(true);
+verifyFalse(testCase, isfield(app.Results, 'beam'), 'Non : aucun résultat affiché.');
+verifyTrue(testCase, contains(B.W.Status.Text, 'non affiché'));
+app.ConfirmFcn = @(varargin) 'Oui, afficher';
+app.computeBeam(true);
+verifyTrue(testCase, isfield(app.Results, 'beam'), 'Oui : le résultat est affiché, avec la limite signalée.');
+app.ConfirmFcn = @uiconfirm;
+end
+
+function testRestaurationParCle(testCase)
+% Un champ dont le libellé n'existe plus dans l'application est compté comme non restauré, sans toucher aux autres.
+app = testCase.TestData.app;
+B = app.H.Beam;
+f = fullfile(testCase.TestData.tmp, 'cle.mat');
+B.L.Value = 7.5;
+app.saveProblem('Beam', f);
+S = load(f);
+problem = S.problem;
+problem.values(strcmp(problem.values(:, 3), B.L.UserData), 3) = {'libellé supprimé'};
+save(f, 'problem');
+B.L.Value = 3;
+verifyEqual(testCase, app.loadProblem('Beam', f), 1, 'Le champ au libellé inconnu est compté.');
+verifyEqual(testCase, B.L.Value, 3, 'Il n''est pas restauré.');
+end
+
+function testHistoriqueEtSchema(testCase)
+app = testCase.TestData.app;
+B = app.H.Beam;
+app.loadExample('Poutres', 'isostatique');
+n0 = size(B.pl.Data, 1);
+app.onSchematicClick(2.5, 'force');
+verifyEqual(testCase, size(B.pl.Data, 1), n0 + 1, 'Un clic sur le schéma ajoute une force.');
+app.onSchematicClick(3, 'rotule');
+verifyEqual(testCase, size(B.hg.Data, 1), 1);
+app.onSchematicClick(1, 'appui');
+verifyEqual(testCase, size(B.sup.Data, 1), 3);
+app.undoBeam(-1);
+verifyEqual(testCase, size(B.sup.Data, 1), 2, 'Annuler retire l''appui ajouté.');
+app.undoBeam(-1);
+verifyEqual(testCase, size(B.hg.Data, 1), 0);
+app.undoBeam(1);
+verifyEqual(testCase, size(B.hg.Data, 1), 1, 'Rétablir remet la rotule.');
+verifyError(testCase, @() app.onSchematicClick(1, 'poutre'), 'MecaStruct:App:invalidInput');
+app.loadExample('Poutres', 'isostatique');
+app.undoBeam(-1);
+verifyTrue(testCase, contains(B.W.Status.Text, 'Rien à annuler'), 'L''historique repart à zéro après un exemple.');
+app.computeBeam();
+verifyNotEmpty(testCase, B.W.Axes{1}(1).ButtonDownFcn, 'Le schéma reste cliquable après un calcul.');
+end
+
+function testChargeMobile(testCase)
+app = testCase.TestData.app;
+B = app.H.Beam;
+app.loadExample('Poutres', 'isostatique');
+B.L.Value = 6;
+B.sup.Data = {0, 'pivot', 'A'; 6, 'appui_simple', 'B'};
+B.pl.Data = cell(0, 6);
+B.dl.Data = cell(0, 7);
+B.mvP.Value = '-100 -100';
+B.mvE.Value = '1.5';
+B.mvN.Value = 241;
+[T, env] = app.computeMovingLoad();
+% référence statique : moment maximal sous un essieu
+P = 100e3; e = 1.5; L = 6; best = 0;
+for x = linspace(0, L - e, 20001)
+    RB = P * (2 * x + e) / L;
+    RA = 2 * P - RB;
+    best = max([best, RA * x, RA * (x + e) - P * e]);
+end
+verifyEqual(testCase, env.extrema.Mmax, best, 'RelTol', 1e-6);
+verifyEqual(testCase, env.Rmax, [175e3 175e3], 'RelTol', 1e-9);
+verifyEqual(testCase, height(T), 101);
+verifyEqual(testCase, max(T.("Mfz max (kN·m)")), best / 1e3, 'RelTol', 5e-3);
+B.mvN.Value = 2;   % grille grossière : les positions critiques donnent le même maximum
+[~, env2] = app.computeMovingLoad();
+verifyEqual(testCase, env2.extrema.Mmax, best, 'RelTol', 1e-6);
+B.mvN.Value = 241;
+B.mvE.Value = '1 2';
+verifyError(testCase, @() app.computeMovingLoad(), 'MecaStruct:App:invalidInput');
+B.mvE.Value = '1.5';
+B.mvP.Value = '-100';
+[~, env1] = app.computeMovingLoad();
+verifyEqual(testCase, env1.extrema.Mmax, P * L / 4, 'RelTol', 1e-4, 'Une charge : PL/4.');
+app.loadExample('Poutres', 'isostatique');
+end
+
+function testCatalogueTubesEtMateriaux(testCase)
+app = testCase.TestData.app;
+S = app.H.Sec;
+P = DataManager.sectionPresets();
+verifyGreaterThan(testCase, numel(P), 30);
+% carré 100x100x5 : A = 100² − 90² (angles vifs)
+S.preset.Value = 'SHS 100x100x5';
+app.applySectionPreset();
+verifyEqual(testCase, S.type.Value, 'rectangle_creux');
+app.computeSection();
+verifyEqual(testCase, app.Results.section.P.S, 1900e-6, 'RelTol', 1e-9);
+for k = 1:numel(P)   % tous les gabarits donnent une section valide
+    S.preset.Value = P(k).name;
+    app.applySectionPreset();
+    app.computeSection();
+    verifyGreaterThan(testCase, app.Results.section.P.S, 0, P(k).name);
+end
+app.loadExample('Sections');
+dm = app.DM;
+for nm = ["Bois C24 (EN 338)", "Lamellé-collé GL24h (EN 14080)", "Béton C25/30 (EN 1992-1-1)", "Béton C30/37 (EN 1992-1-1)"]
+    m = dm.getMaterial(nm);
+    verifyGreaterThan(testCase, m.E, 1e9, char(nm));
+end
+verifyEqual(testCase, dm.getMaterial('Béton C25/30 (EN 1992-1-1)').E, 31e9);
+verifyEqual(testCase, dm.getMaterial('Bois C24 (EN 338)').E, 11e9);
+end
+
+function testFormatDuDossier(testCase)
+app = testCase.TestData.app;
+app.loadExample('Poutres', 'isostatique');
+setenv('MECASTRUCT_NO_BROWSER', '1');
+cl = onCleanup(@() setenv('MECASTRUCT_NO_BROWSER', ''));
+verifyError(testCase, @() ValidationReport.generate(app, 'Beam', testCase.TestData.tmp, 'docx'), 'MecaStruct:Validation:format');
+f = app.exportValidation('Beam', fullfile(testCase.TestData.tmp, 'fmt'));
+verifyTrue(testCase, endsWith(f, '.html'), 'Format par défaut : HTML.');
+if isempty(ValidationReport.findBrowser())
+    return
+end
+fp = app.exportValidation('Beam', fullfile(testCase.TestData.tmp, 'fmt'), 'pdf');
+verifyTrue(testCase, endsWith(fp, '.pdf') && isfile(fp));
+fid = fopen(fp, 'r');
+head = fread(fid, 5, '*char').';
+fclose(fid);
+verifyEqual(testCase, head, '%PDF-');
 end

@@ -77,6 +77,34 @@ classdef PlotEngine
                         'HorizontalAlignment', 'right', 'VerticalAlignment', 'middle', 'Color', fg, 'FontSize', 11);
                 end
                 yBot = min(yBot, -1.6 * h);
+                % ressort (zigzag sous l'appui) et tassement imposé (note)
+                note = '';
+                if isfield(sup, 'spring') && ~isempty(sup(i).spring) && sup(i).spring > 0
+                    zy = linspace(-1.1 * h, -3.1 * h, 9);
+                    zx = x + 0.5 * h * [0 1 -1 1 -1 1 -1 1 0];
+                    plot(ax, zx, zy, '-', 'Color', fg, 'LineWidth', 1.2);
+                    plot(ax, [x - h, x + h], [zy(end) zy(end)] - 0.1 * h, '-', 'Color', fg, 'LineWidth', 2);
+                    note = sprintf('k = %s kN/m', peNum(sup(i).spring / 1e3));
+                    yBot = min(yBot, -3.6 * h);
+                end
+                if isfield(sup, 'dy')
+                    dd = [sup(i).dx sup(i).dy sup(i).dz];
+                    if any(dd ~= 0)
+                        note = strtrim(sprintf('%s tassement (mm) : %s', note, strtrim(sprintf('%s ', peNum(dd(1) * 1e3), peNum(dd(2) * 1e3), peNum(dd(3) * 1e3)))));
+                    end
+                end
+                if ~isempty(note)
+                    text(ax, x, yBot - 0.4 * h, note, 'HorizontalAlignment', 'center', 'VerticalAlignment', 'top', ...
+                        'Color', fg, 'FontSize', 8);
+                    yBot = yBot - 1.6 * h;
+                end
+            end
+
+            % ---- rotules intermédiaires
+            hg = peArr(model, 'hinges');
+            for i = 1:numel(hg)
+                keyX(end+1) = hg(i).pos; %#ok<AGROW>
+                plot(ax, hg(i).pos, 0, 'o', 'MarkerSize', 10, 'MarkerFaceColor', ax.Color, 'MarkerEdgeColor', fg, 'LineWidth', 1.8);
             end
 
             % ---- charges réparties
@@ -345,6 +373,39 @@ classdef PlotEngine
         end
 
         %% ========================= Poutre : diagrammes =========================
+        function axList = movingEnvelope(axList, env)
+            %MOVINGENVELOPE Enveloppe des efforts d'une charge mobile : moment Mfz (axe 1) et tranchant Ty (axe 2).
+            %   axList = PlotEngine.movingEnvelope(axList, env)
+            %   env : s (m), Mmax, Mmin (N·m), Tmax, Tmin (N), mêmes longueurs ; tracé en kN et kN·m.
+            if numel(axList) < 2
+                error('MecaStruct:PlotEngine:invalidAxes', 'Il faut deux axes (moment et tranchant).');
+            end
+            names = {'Mmax', 'Mmin', 'Tmax', 'Tmin'};
+            ttl = {'Enveloppe du moment $M_{fz}(s)$', 'Enveloppe du tranchant $T_y(s)$'};
+            yl = {'$M_{fz}$ (kN$\cdot$m)', '$T_y$ (kN)'};
+            for k = 1:2
+                ax = peAxes(axList(k));
+                axList(k) = ax;
+                fg = ax.XColor;
+                hi = env.(names{2*k - 1}) / 1e3;
+                lo = env.(names{2*k}) / 1e3;
+                s = env.s;
+                fill(ax, [s fliplr(s)], [hi fliplr(lo)], [0.00 0.45 0.74], 'FaceAlpha', 0.25, 'EdgeColor', 'none');
+                h1 = plot(ax, s, hi, '-', 'Color', [0.00 0.45 0.74], 'LineWidth', 1.8);
+                h2 = plot(ax, s, lo, '-', 'Color', [0.85 0.15 0.15], 'LineWidth', 1.8);
+                plot(ax, [s(1) s(end)], [0 0], '-', 'Color', fg, 'LineWidth', 0.8);
+                span = max(max(hi) - min(lo), eps);
+                ylim(ax, [min(lo) - 0.1 * span, max(hi) + 0.1 * span]);
+                xlim(ax, [s(1) s(end)]);
+                title(ax, ttl{k}, 'Interpreter', 'latex', 'Color', fg);
+                ylabel(ax, yl{k}, 'Interpreter', 'latex');
+                if k == 2
+                    xlabel(ax, '$s$ (m)', 'Interpreter', 'latex');
+                end
+                legend(ax, [h1 h2], {'maximum', 'minimum'}, 'Interpreter', 'latex', 'Location', 'southoutside', 'Orientation', 'horizontal');
+            end
+        end
+
         function axList = internalForces(axList, sol, comps)
             %INTERNALFORCES Diagrammes des efforts intérieurs alignés sur s ∈ [0, L].
             %   axList = PlotEngine.internalForces(axList, sol, comps)

@@ -1,0 +1,86 @@
+[
+  {
+    "Liaison": "Clavette / cannelures - fixe",
+    "Conditions": "médiocres",
+    "Pmin": 3.5E+7,
+    "Pmax": 5.0E+7,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; conditions médiocres : chocs, vibrations, ajustement ou lubrification médiocres."
+  },
+  {
+    "Liaison": "Clavette / cannelures - fixe",
+    "Conditions": "moyennes",
+    "Pmin": 6.0E+7,
+    "Pmax": 1.0E+8,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; conditions moyennes : fonctionnement courant."
+  },
+  {
+    "Liaison": "Clavette / cannelures - fixe",
+    "Conditions": "très bonnes",
+    "Pmin": 8.0E+7,
+    "Pmax": 1.5E+8,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; très bonnes conditions : charge régulière, ajustement précis, bonne lubrification."
+  },
+  {
+    "Liaison": "Clavette / cannelures - glissant sans charge",
+    "Conditions": "médiocres",
+    "Pmin": 1.5E+7,
+    "Pmax": 2.0E+7,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; conditions médiocres : chocs, vibrations, ajustement ou lubrification médiocres."
+  },
+  {
+    "Liaison": "Clavette / cannelures - glissant sans charge",
+    "Conditions": "moyennes",
+    "Pmin": 2.0E+7,
+    "Pmax": 3.0E+7,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; conditions moyennes : fonctionnement courant."
+  },
+  {
+    "Liaison": "Clavette / cannelures - glissant sans charge",
+    "Conditions": "très bonnes",
+    "Pmin": 2.5E+7,
+    "Pmax": 4.0E+7,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; très bonnes conditions : charge régulière, ajustement précis, bonne lubrification."
+  },
+  {
+    "Liaison": "Clavette / cannelures - glissant sous charge",
+    "Conditions": "médiocres",
+    "Pmin": 3.0E+6,
+    "Pmax": 1.0E+7,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; conditions médiocres : chocs, vibrations, ajustement ou lubrification médiocres."
+  },
+  {
+    "Liaison": "Clavette / cannelures - glissant sous charge",
+    "Conditions": "moyennes",
+    "Pmin": 5.0E+6,
+    "Pmax": 1.5E+7,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; conditions moyennes : fonctionnement courant."
+  },
+  {
+    "Liaison": "Clavette / cannelures - glissant sous charge",
+    "Conditions": "très bonnes",
+    "Pmin": 1.0E+7,
+    "Pmax": 2.0E+7,
+    "Note": "Valeur usuelle (Guide du dessinateur industriel) ; très bonnes conditions : charge régulière, ajustement précis, bonne lubrification."
+  },
+  {
+    "Liaison": "Articulation - axe pivotant sous charge",
+    "Conditions": "médiocres",
+    "Pmin": 500000,
+    "Pmax": 2.0E+6,
+    "Note": "Valeur usuelle (axe acier traité dans bague bronze, rotation ou oscillation sous charge ; complète la plage 0,5 à 150 MPa) ; conditions médiocres : chocs, vibrations, ajustement ou lubrification médiocres."
+  },
+  {
+    "Liaison": "Articulation - axe pivotant sous charge",
+    "Conditions": "moyennes",
+    "Pmin": 2.0E+6,
+    "Pmax": 5.0E+6,
+    "Note": "Valeur usuelle (axe acier traité dans bague bronze, rotation ou oscillation sous charge ; complète la plage 0,5 à 150 MPa) ; conditions moyennes : fonctionnement courant."
+  },
+  {
+    "Liaison": "Articulation - axe pivotant sous charge",
+    "Conditions": "très bonnes",
+    "Pmin": 5.0E+6,
+    "Pmax": 1.0E+7,
+    "Note": "Valeur usuelle (axe acier traité dans bague bronze, rotation ou oscillation sous charge ; complète la plage 0,5 à 150 MPa) ; très bonnes conditions : charge régulière, ajustement précis, bonne lubrification."
+  }
+]

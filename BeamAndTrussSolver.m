@@ -916,7 +916,7 @@ end
 
 % --- appuis
 arr = btsGetArr(model, 'supports');
-sup = struct('pos', {}, 'type', {}, 'name', {});
+sup = struct('pos', {}, 'type', {}, 'name', {}, 'spring', {}, 'dx', {}, 'dy', {}, 'dz', {});
 for i = 1:numel(arr)
     si = arr(i);
     if i <= 26
@@ -930,8 +930,42 @@ for i = 1:numel(arr)
     sup(i).pos = btsReqPos(si, 'pos', 'Appui', i, L, tol);
     sup(i).type = btsNormType(si.type, i);
     sup(i).name = btsOptName(si, def);
+    % ressort (N/m, 0 = appui rigide) et tassements imposés (m, positifs dans le sens de l'axe)
+    sup(i).spring = btsOptNum(si, 'spring', 'Appui', i);
+    if sup(i).spring < 0
+        error('MecaStruct:Beam:invalidSupport', 'Appui n°%d : la raideur du ressort doit être positive ou nulle (N/m).', i);
+    end
+    sup(i).dx = btsOptNum(si, 'dx', 'Appui', i);
+    sup(i).dy = btsOptNum(si, 'dy', 'Appui', i);
+    sup(i).dz = btsOptNum(si, 'dz', 'Appui', i);
 end
 m.supports = sup;
+
+% --- rotules intermédiaires (moments de flexion nuls en s = pos)
+arr = btsGetArr(model, 'hinges');
+hg = struct('pos', {}, 'name', {});
+for i = 1:numel(arr)
+    hg(i).pos = btsReqPos(arr(i), 'pos', 'Rotule intermédiaire', i, L, tol);
+    hg(i).name = btsOptName(arr(i), sprintf('R%d', i));
+    if hg(i).pos <= tol || hg(i).pos >= L - tol
+        error('MecaStruct:Beam:invalidModel', ...
+            'Rotule intermédiaire n°%d : elle doit être à l''intérieur de la poutre (0 < s < %g m).', i, L);
+    end
+    if any(abs([sup.pos] - hg(i).pos) <= 1e-9 * L)
+        error('MecaStruct:Beam:invalidModel', ...
+            'Rotule intermédiaire n°%d (s = %g m) : pas sur un appui ; décalez-la ou changez le type de l''appui.', i, hg(i).pos);
+    end
+end
+m.hinges = hg;
+
+% --- actions thermiques : epsX = α·ΔT (allongement relatif), kv = v'' et kw = w'' d'origine thermique (1/m)
+th = struct('epsX', 0, 'kv', 0, 'kw', 0);
+if isfield(model, 'thermal') && ~isempty(model.thermal)
+    for f = fieldnames(th).'
+        th.(f{1}) = btsOptNum(model.thermal, f{1}, 'Action thermique', 1);
+    end
+end
+m.thermal = th;
 
 % --- forces ponctuelles
 arr = btsGetArr(model, 'pointLoads');
@@ -958,6 +992,12 @@ for i = 1:numel(arr)
     pm(i).name = btsOptName(si, sprintf('C%d', i));
 end
 m.pointMoments = pm;
+for i = 1:numel(m.hinges)
+    if any(abs([pm.pos] - m.hinges(i).pos) <= 1e-9 * L & [pm.My] ~= 0 | abs([pm.pos] - m.hinges(i).pos) <= 1e-9 * L & [pm.Mz] ~= 0)
+        error('MecaStruct:Beam:invalidModel', ...
+            'Rotule intermédiaire n°%d : un couple de flexion appliqué au même point est ambigu ; décalez-le.', i);
+    end
+end
 
 % --- charges réparties
 arr = btsGetArr(model, 'distLoads');
@@ -1151,7 +1191,30 @@ if ~isfield(s1, 'shearTxt')
     s1.shearTxt = ''; s1.shearTex = '';
     s4.shearTxt = ''; s4.shearTex = '';
 end
+% actions de compatibilité : ressorts, tassements imposés, dilatation thermique, rotules intermédiaires
+th = mdl.thermal;
+s1.kappa = th.epsX; s2.kappa = th.kv; s3.kappa = th.kw; s4.kappa = 0;
+hp = btsVec(mdl.hinges, 'pos');
+s1.hinges = zeros(1, 0); s2.hinges = hp; s3.hinges = hp; s4.hinges = zeros(1, 0);
+s1 = btsAddCompat(s1, sup, 'dx');
+s2 = btsAddCompat(s2, sup, 'dy');
+s3 = btsAddCompat(s3, sup, 'dz');
+s4 = btsAddCompat(s4, sup, '');
 sps = {s1, s2, s3, s4};
+end
+
+function sp = btsAddCompat(sp, sup, dfield)
+% Raideur de ressort et tassement imposé de chaque réaction de force du sous-problème.
+nu = numel(sp.unk);
+sp.spring = zeros(nu, 1);
+sp.delta = zeros(nu, 1);
+for j = 1:nu
+    if sp.unk(j).kind == 'F' && ~isempty(dfield)   % pas de ressort ni de tassement en torsion
+        i = sp.unk(j).sup;
+        sp.spring(j) = sup(i).spring;
+        sp.delta(j) = sup(i).(dfield);
+    end
+end
 end
 
 function order = btsBaseOrder(unk, isBend)
@@ -1235,7 +1298,22 @@ if isBend
     bv(2) = sum((sp.fx - xA) .* sp.fv) + sum(sp.cv) + I1 - xA * I0;
     scaleEq = [scaleEq; scaleEq * L + sum(abs(sp.cv))];
 end
-loaded = any(sp.fv ~= 0) || any(sp.cv ~= 0) || loadedDist;
+% rotules intermédiaires : un moment de flexion nul de plus par rotule (équation d'équilibre en plus)
+for hh = 1:numel(sp.hinges)
+    row = zeros(1, nu);
+    for j = 1:nu
+        row(j) = btsMatEval(MU(:, :, j), br, sp.hinges(hh));
+    end
+    A(end+1, :) = row; %#ok<AGROW>
+    bv(end+1, 1) = btsMatEval(ML, br, sp.hinges(hh)); %#ok<AGROW>
+    scaleEq(end+1, 1) = scaleEq(2); %#ok<AGROW>
+    sp.eqTxt{end+1} = sprintf('M(%s) = 0 (rotule)', btsNum(sp.hinges(hh)));
+    sp.eqTex{end+1} = sprintf('M(%s) = 0', btsTexNum(sp.hinges(hh)));
+    sp.rowSign(end+1) = sp.rowSign(2);
+end
+neq = size(A, 1);
+% une action imposée (tassement, dilatation) charge aussi un hyperstatique sans charge
+loaded = any(sp.fv ~= 0) || any(sp.cv ~= 0) || loadedDist || any(sp.delta ~= 0) || sp.kappa ~= 0;
 
 if nu == 0
     rA = 0;
@@ -1449,7 +1527,21 @@ if withShear
     delta = delta + (W.' * (Gq.w .* W)) / sp.shear;
     d0 = d0 + (W.' * (Gq.w .* q0)) / sp.shear;
 end
-rhs = -d0;
+% Actions imposées (travail virtuel des réactions R = c + S·X sur les déplacements d'appui
+% d_j = tassement_j − R_j/k_j, et des déformations thermiques κ) :
+%   Σj δij·Xj + δi0 + ∫ mi·κ ds = Σj Sji·d_j
+S = zeros(nu, h);
+S(base, :) = rb;
+S(Xi, :) = eye(h);
+c0 = zeros(nu, 1);
+c0(base) = R0;
+invk = zeros(nu, 1);
+iK = sp.spring > 0;
+invk(iK) = 1 ./ sp.spring(iK);
+thTerm = sp.kappa * (V.' * Gq.w);
+delta = delta + S.' * (invk .* S);
+rhs = S.' * sp.delta - S.' * (invk .* c0) - d0 - thTerm;
+d0 = -rhs;
 if rcond(delta) < 1e-14
     X = lsqminnorm(delta, rhs);
 else
@@ -1476,13 +1568,29 @@ if useShear
 end
 end
 
+function t = btsCondText(disp, supName, delta, spring)
+% Condition cinématique d'un appui : déplacement nul, imposé (tassement) ou lié à la réaction (ressort).
+if spring > 0
+    t = sprintf('%s(%s) = %s - R/k (k = %s N/m)', disp, supName, btsNum(delta), btsNum(spring));
+elseif delta ~= 0
+    t = sprintf('%s(%s) = %s m', disp, supName, btsNum(delta));
+else
+    t = sprintf('%s(%s) = 0', disp, supName);
+end
+end
+
 function [R, info] = btsIntegration(sp, A, bv, TL, ML, TU, MU, br, o, forceLsq)
 % Méthode d'intégration : réactions + constantes résolues simultanément
 % (équilibre + conditions cinématiques aux liaisons).
 isBend = strcmp(sp.kind, 'bend');
 [neq, nu] = size(A);
-nc = neq;
+nc = 1 + double(isBend);   % constantes d'intégration (C1, C2) ; neq = nc + nombre de rotules
+nh = numel(sp.hinges);
+hp = sp.hinges(:);
 P = btsVec(sp.unk, 'pos');
+invk = zeros(nu, 1);
+iK = sp.spring > 0;
+invk(iK) = 1 ./ sp.spring(iK);
 useShear = isBend && o.includeShearEnergy && isfinite(sp.shear);
 Vp = zeros(nu, nu);
 THp = zeros(nu, nu);
@@ -1498,8 +1606,8 @@ else
         Vp(:, j) = btsMatEval(btsMatIntegrate(TU(:, :, j), br), br, P) / sp.stiff;
     end
 end
-K = zeros(nu + nc);
-f = zeros(nu + nc, 1);
+K = zeros(nu + nc + nh);   % inconnues : réactions, constantes, sauts de rotation aux rotules
+f = zeros(nu + nc + nh, 1);
 K(1:neq, 1:nu) = A;
 f(1:neq) = -bv;
 cond = cell(1, nu);
@@ -1513,7 +1621,8 @@ for k = 1:nu
     if isBend && sp.unk(k).kind == 'C'
         K(r, 1:nu) = THp(k, :);
         K(r, nu+2) = 1;
-        f(r) = -thL(k);
+        K(r, nu+nc+(1:nh)) = double(P(k) > hp.' + 1e-12);   % sauts de rotation des rotules à gauche de l'appui
+        f(r) = -thL(k) - sp.kappa * P(k);
         if useShear   % avec le tranchant, v' = θ + T/kGS : l'encastrement impose la rotation de section θ = 0
             cond{k} = sprintf('θ(%s) = 0', supName);
         else
@@ -1521,15 +1630,18 @@ for k = 1:nu
         end
     elseif isBend
         K(r, 1:nu) = Vp(k, :);
+        K(r, k) = K(r, k) + invk(k);
         K(r, nu+1) = 1;
         K(r, nu+2) = P(k);
-        f(r) = -vL(k);
-        cond{k} = sprintf('%s(%s) = 0', sp.dispTxt, supName);
+        K(r, nu+nc+(1:nh)) = max(P(k) - hp.', 0);
+        f(r) = sp.delta(k) - vL(k) - sp.kappa * P(k)^2 / 2;
+        cond{k} = btsCondText(sp.dispTxt, supName, sp.delta(k), sp.spring(k));
     else
         K(r, 1:nu) = Vp(k, :);
+        K(r, k) = K(r, k) + invk(k);
         K(r, nu+1) = 1;
-        f(r) = -vL(k);
-        cond{k} = sprintf('%s(%s) = 0', sp.dispTxt, supName);
+        f(r) = sp.delta(k) - vL(k) - sp.kappa * P(k);
+        cond{k} = btsCondText(sp.dispTxt, supName, sp.delta(k), sp.spring(k));
     end
 end
 % équilibrage des lignes et colonnes (unités hétérogènes)
@@ -1551,6 +1663,9 @@ names = btsCellField(sp.unk, 'name');
 constNames = sp.constNames;
 if useShear
     constNames{2} = sprintf('C2 = θ(0) (rotation de section ; %s''(0) = C2 + T(0)/(k·G·S))', sp.dispTxt);
+end
+for hh = 1:nh
+    constNames{end+1} = sprintf('Δθ_R%d = saut de rotation à la rotule s = %s m', hh, btsNum(hp(hh))); %#ok<AGROW>
 end
 info = struct('subproblem', sp.name, 'label', sp.label, 'unknowns', {[names, constNames]}, ...
     'K', K, 'f', f, 'solution', z, 'constants', z(nu+1:end), 'conditions', {cond}, ...
@@ -1693,7 +1808,7 @@ if ~isempty(dl)
     D = max(btsVec(dl, 'deg')) + 2;
 end
 br = btsMergeBreaks([0, L, btsVec(sup, 'pos'), btsVec(mdl.pointLoads, 'pos'), ...
-    btsVec(mdl.pointMoments, 'pos'), btsVec(dl, 'a'), btsVec(dl, 'b')]);
+    btsVec(mdl.pointMoments, 'pos'), btsVec(dl, 'a'), btsVec(dl, 'b'), btsVec(mdl.hinges, 'pos')]);
 br(1) = 0;
 br(end) = L;
 tol = btsTol(br);
@@ -2037,7 +2152,24 @@ else
     for i = 1:numel(sup)
         rep{end+1, 1} = sprintf('  %s : %s en s = %s m (ddl bloqués : %s)', sup(i).name, ...
             strrep(sup(i).type, '_', ' '), btsNum(sup(i).pos), btsDofText(sup(i).type)); %#ok<AGROW>
+        if sup(i).spring > 0
+            rep{end+1, 1} = sprintf('    appui élastique : ressort de raideur k = %s N/m (déplacement = −R/k)', btsNum(sup(i).spring)); %#ok<AGROW>
+        end
+        if any([sup(i).dx sup(i).dy sup(i).dz] ~= 0)
+            rep{end+1, 1} = sprintf('    tassement imposé : dx = %s m ; dy = %s m ; dz = %s m', ...
+                btsNum(sup(i).dx), btsNum(sup(i).dy), btsNum(sup(i).dz)); %#ok<AGROW>
+        end
     end
+end
+for i = 1:numel(mdl.hinges)
+    rep{end+1, 1} = sprintf('Rotule intermédiaire %s en s = %s m : Mfy = Mfz = 0 (la rotation y est discontinue).', ...
+        mdl.hinges(i).name, btsNum(mdl.hinges(i).pos)); %#ok<AGROW>
+end
+th = mdl.thermal;
+if any([th.epsX th.kv th.kw] ~= 0)
+    rep{end+1, 1} = sprintf(['Action thermique : α·ΔT = %s (allongement relatif), courbure thermique v'''' = %s 1/m (plan xy), ' ...
+        'w'''' = %s 1/m (plan xz). Une dilatation ou une courbure empêchée par les appuis crée des efforts.'], ...
+        btsNum(th.epsX), btsNum(th.kv), btsNum(th.kw)); %#ok<AGROW>
 end
 PL = mdl.pointLoads;
 if ~isempty(PL)

@@ -510,13 +510,18 @@ classdef SolicitationsEngine
                     M = BeamAndTrussSolver.ppScale(My, -1); T = sol.Tz; EI = m.E*m.Iy; kGS = m.kz*m.G*m.S;
                     vn = 'w'; It = 'I_y';
             end
-            conds = seConditions(m.supports);
+            % Actions imposées : tassements et ressorts (déplacement d'appui = tassement − R/k), courbure thermique
+            % (v'' = M/EI + κ, soit un moment équivalent M + EI·κ) et rotules intermédiaires (pente discontinue)
+            [conds, dSup, kap, hingePos] = seImposed(sol, m, o.plane);
+            if kap ~= 0
+                M = BeamAndTrussSolver.ppAdd(M, BeamAndTrussSolver.ppConst(M.breaks, EI*kap));
+            end
             d = struct();
             d.s = unique([linspace(0, L, o.nPoints), M.breaks]);
             d.plane = o.plane;
 
             % --- 1. Intégration tronçon par tronçon (toujours calculée : sert aux points s0)
-            I = seIntegration(M, EI, conds);
+            I = seIntegration(M, EI, conds, hingePos);
             sAll = d.s;
             I.v = BeamAndTrussSolver.ppEval(I.vPP, sAll);
             I.alpha = BeamAndTrussSolver.ppEval(I.alphaPP, sAll);
@@ -537,26 +542,26 @@ classdef SolicitationsEngine
 
             % --- 2. Aires et moments des aires
             if ismember('aires', o.methods)
-                A = seAires(M, EI, conds, sAll);
+                A = seAires(M, EI, conds, sAll, hingePos);
                 d.aires = A;
                 rows(end+1, :) = {"Aires", A.fmax, A.sAtFmax};
             end
 
             % --- 3. Castigliano / forces unités (solveBeam sous charge unité)
-            cache = struct('s', {}, 'mb', {}, 'tb', {});
+            cache = struct('s', {}, 'mb', {}, 'tb', {}, 'rb', {});
             if ismember('castigliano', o.methods)
                 sC = unique([linspace(0, L, o.nCastigliano), s0]);
                 nC = numel(sC);
                 vB = zeros(1, nC); vS = zeros(1, nC); al = zeros(1, nC);
                 for i = 1:nC
-                    [mb, tb] = seUnitSolve(m, sC(i), 'force', o.plane);
-                    [mc, ~] = seUnitSolve(m, sC(i), 'couple', o.plane);
-                    cache(end+1) = struct('s', sC(i), 'mb', mb, 'tb', tb); %#ok<AGROW>
-                    vB(i) = seIntProd(M, mb)/EI;
+                    [mb, tb, rb] = seUnitSolve(m, sC(i), 'force', o.plane);
+                    [mc, ~, rc] = seUnitSolve(m, sC(i), 'couple', o.plane);
+                    cache(end+1) = struct('s', sC(i), 'mb', mb, 'tb', tb, 'rb', rb); %#ok<AGROW>
+                    vB(i) = seIntProd(M, mb)/EI - rb(:).'*dSup(:);   % travail virtuel des réactions sur les déplacements d'appui
                     if o.includeShear
                         vS(i) = seIntProd(T, tb)/kGS;
                     end
-                    al(i) = seIntProd(M, mc)/EI;
+                    al(i) = seIntProd(M, mc)/EI - rc(:).'*dSup(:);
                 end
                 Cg = struct('s0', sC, 'vBending', vB, 'vShear', vS, 'vTotal', vB + vS, 'alpha', al);
                 [Cg.fmax, iT] = max(abs(Cg.vTotal));
@@ -578,12 +583,13 @@ classdef SolicitationsEngine
                 for i = 1:nM
                     j = find([cache.s] == s0(i), 1);
                     if isempty(j)
-                        mb = seUnitSolve(m, s0(i), 'force', o.plane);
+                        [mb, ~, rb] = seUnitSolve(m, s0(i), 'force', o.plane);
                     else
                         mb = cache(j).mb;
+                        rb = cache(j).rb;
                     end
                     mi = SolicitationsEngine.mohrIntegral(M, mb, 0, L);
-                    vM(i) = mi.valueTable/EI;
+                    vM(i) = mi.valueTable/EI - rb(:).'*dSup(:);
                     det{i} = mi.segments;
                 end
                 Mo = struct('s0', s0, 'v', vM, 'details', {det});
@@ -913,15 +919,30 @@ o.nCastigliano = max(2, round(o.nCastigliano));
 o.includeShear = logical(o.includeShear);
 end
 
-function c = seConditions(sup)
-% Conditions cinématiques [pos, type] : type 0 = déplacement nul, 1 = rotation nulle.
-c = zeros(0, 2);
+function [c, dSup, kap, hingePos] = seImposed(sol, m, plane)
+% Conditions cinématiques [pos, type, valeur] : type 0 = déplacement imposé (tassement, ou tassement − R/k
+% d'un ressort), type 1 = rotation nulle. dSup : déplacement de chaque appui (m) ; kap : courbure thermique
+% du plan (1/m) ; hingePos : abscisses des rotules intermédiaires.
+sup = m.supports;
+if strcmp(plane, 'xy')
+    rf = 'Ry'; df = 'dy'; kap = m.thermal.kv;
+else
+    rf = 'Rz'; df = 'dz'; kap = m.thermal.kw;
+end
+c = zeros(0, 3);
+dSup = zeros(numel(sup), 1);
 for i = 1:numel(sup)
-    c(end+1, :) = [sup(i).pos 0]; %#ok<AGROW>
+    d = sup(i).(df);
+    if sup(i).spring > 0
+        d = d - sol.reactions(i).(rf)/sup(i).spring;
+    end
+    dSup(i) = d;
+    c(end+1, :) = [sup(i).pos 0 d]; %#ok<AGROW>
     if strcmp(sup(i).type, 'encastrement')
-        c(end+1, :) = [sup(i).pos 1]; %#ok<AGROW>
+        c(end+1, :) = [sup(i).pos 1 0]; %#ok<AGROW>
     end
 end
+hingePos = [m.hinges.pos];
 end
 
 function k = seSeg(br, s)
@@ -939,7 +960,7 @@ n = max(numel(a), numel(b));
 c = [zeros(1, n - numel(a)) a] + [zeros(1, n - numel(b)) b];
 end
 
-function I = seIntegration(M, EI, conds)
+function I = seIntegration(M, EI, conds, hingePos)
 % Double intégration tronçon par tronçon : E I v_k = P_k(s) + C1k s + C2k (2n constantes).
 br = M.breaks;
 n = numel(br) - 1;
@@ -953,6 +974,9 @@ for j = 1:n-1
     sb = br(j+1);
     row = zeros(1, 2*n); row(2*j-1:2*j) = [sb 1]; row(2*j+1:2*j+2) = -[sb 1];
     A(end+1, :) = row; b(end+1, 1) = polyval(P2{j+1}, sb) - polyval(P2{j}, sb); %#ok<AGROW>
+    if any(abs(hingePos - sb) <= 1e-9*(br(end) - br(1)))
+        continue   % rotule : la pente est discontinue
+    end
     row = zeros(1, 2*n); row(2*j-1) = 1; row(2*j+1) = -1;
     A(end+1, :) = row; b(end+1, 1) = polyval(P1{j+1}, sb) - polyval(P1{j}, sb); %#ok<AGROW>
 end
@@ -962,7 +986,7 @@ for i = 1:size(conds, 1)
     row = zeros(1, 2*n);
     if conds(i, 2) == 0
         row(2*k-1:2*k) = [sp 1];
-        rhs = -polyval(P2{k}, sp);
+        rhs = EI*conds(i, 3) - polyval(P2{k}, sp);
     else
         row(2*k-1) = 1;
         rhs = -polyval(P1{k}, sp);
@@ -1003,7 +1027,7 @@ v = max(abs(BeamAndTrussSolver.ppEval(vPP, cand, 'left')), abs(BeamAndTrussSolve
 sf = cand(i);
 end
 
-function A = seAires(M, EI, conds, sEval)
+function A = seAires(M, EI, conds, sEval, hingePos)
 % Méthode des aires et des moments des aires :
 % α(s) = α0 + (1/EI)∫_0^s M ; v(s) = v0 + α0 s + (1/EI) Σ A_k (s − s̄_k).
 br = M.breaks;
@@ -1020,36 +1044,47 @@ cumA = [0; cumsum(Ak)];
 cumS = [0; cumsum(Sk)];
 known = @(s) seAiresKnown(s, br, IA, IS, cumA, cumS);
 nc = size(conds, 1);
-Q = zeros(nc, 2); r = zeros(nc, 1);
+nh = numel(hingePos);   % sauts de rotation aux rotules : v += Δθ·(s − sh)+, α += Δθ·[s ≥ sh]
+Q = zeros(nc, 2 + nh); r = zeros(nc, 1);
 for i = 1:nc
     [fv, fa] = known(conds(i, 1));
     if conds(i, 2) == 0
-        Q(i, :) = [1 conds(i, 1)]; r(i) = -fv/EI;
+        Q(i, :) = [1 conds(i, 1) max(conds(i, 1) - hingePos, 0)]; r(i) = conds(i, 3) - fv/EI;
     else
-        Q(i, :) = [0 1]; r(i) = -fa/EI;
+        Q(i, :) = [0 1 double(conds(i, 1) > hingePos + 1e-12)]; r(i) = -fa/EI;
     end
 end
 x = lsqminnorm(Q, r);
 A = struct();
 A.v0 = x(1);
 A.alpha0 = x(2);
+A.hingeJumps = x(3:end).';
 A.residual = norm(Q*x - r);
 [fv, fa] = known(sEval);
 A.v = A.v0 + A.alpha0*sEval + fv/EI;
 A.alpha = A.alpha0 + fa/EI;
+for h = 1:nh
+    A.v = A.v + x(2+h)*max(sEval - hingePos(h), 0);
+    A.alpha = A.alpha + x(2+h)*(sEval >= hingePos(h));
+end
 sb = (Sk./Ak).';
 sb(abs(Ak.') <= 1e-14*max(abs(Ak))) = NaN;
 A.areas = table((1:n).', br(1:n).', br(2:n+1).', Ak, sb.', 'VariableNames', {'Troncon', 's1', 's2', 'Aire', 'sBar'});
 % Flèche maximale : extrémités et zéros de α(s) dans chaque tronçon
 cand = br;
 for k = 1:n
-    pa = sePolyAdd(IA{k}, EI*A.alpha0 + cumA(k) - polyval(IA{k}, br(k)));
+    jump = sum(A.hingeJumps(hingePos <= br(k) + 1e-12));
+    pa = sePolyAdd(IA{k}, EI*(A.alpha0 + jump) + cumA(k) - polyval(IA{k}, br(k)));
     rt = roots(pa);
     rt = real(rt(abs(imag(rt)) < 1e-9*max(1, abs(rt))));
     cand = [cand, rt(rt > br(k) & rt < br(k+1)).']; %#ok<AGROW>
 end
 fv = known(cand);
-vc = abs(A.v0 + A.alpha0*cand + fv/EI);
+vc = A.v0 + A.alpha0*cand + fv/EI;
+for h = 1:nh
+    vc = vc + A.hingeJumps(h)*max(cand - hingePos(h), 0);
+end
+vc = abs(vc);
 [A.fmax, i] = max(vc);
 A.sAtFmax = cand(i);
 end
@@ -1066,9 +1101,14 @@ for ii = 1:numel(s)
 end
 end
 
-function [mb, tb] = seUnitSolve(m, s0, kind, plane)
-% Diagrammes m̄, t̄ de la poutre sous charge unité (force ou couple) en s0 (solveBeam rapide).
+function [mb, tb, rb] = seUnitSolve(m, s0, kind, plane)
+% Diagrammes m̄, t̄ de la poutre sous charge unité (force ou couple) en s0 (solveBeam rapide), et réactions
+% r̄ de chaque appui dans le plan (Ry ou Rz) : l'état virtuel n'a ni tassement ni dilatation.
 mu = m;
+mu.thermal = struct('epsX', 0, 'kv', 0, 'kw', 0);
+for i = 1:numel(mu.supports)
+    mu.supports(i).dx = 0; mu.supports(i).dy = 0; mu.supports(i).dz = 0;
+end
 mu.distLoads = struct('a', {}, 'b', {}, 'dir', {}, 'coeffs', {}, 'name', {});
 mu.pointLoads = struct('pos', {}, 'Fx', {}, 'Fy', {}, 'Fz', {}, 'name', {});
 mu.pointMoments = struct('pos', {}, 'Mx', {}, 'My', {}, 'Mz', {}, 'name', {});
@@ -1077,13 +1117,16 @@ if strcmp(kind, 'force')
     mu.pointLoads = struct('pos', s0, 'Fx', 0, 'Fy', double(xy), 'Fz', double(~xy), 'name', 'F1');
 else
     % Couple conjugué de dv/ds (xy : Mz = +1) ou de dw/ds (xz : My = −1)
+    if any(abs([mu.hinges.pos] - s0) <= 1e-9*mu.L)
+        s0 = s0 + 2e-9*mu.L;   % rotation à une rotule : on prend celle de la section juste à droite
+    end
     mu.pointMoments = struct('pos', s0, 'Mx', 0, 'My', -double(~xy), 'Mz', double(xy), 'name', 'C1');
 end
 su = BeamAndTrussSolver.solveBeam(mu, seFastOpts());
 if xy
-    mb = su.Mfz; tb = su.Ty;
+    mb = su.Mfz; tb = su.Ty; rb = [su.reactions.Ry];
 else
-    mb = BeamAndTrussSolver.ppScale(su.Mfy, -1); tb = su.Tz;
+    mb = BeamAndTrussSolver.ppScale(su.Mfy, -1); tb = su.Tz; rb = [su.reactions.Rz];
 end
 end
 

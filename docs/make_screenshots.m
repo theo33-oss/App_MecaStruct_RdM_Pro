@@ -9,7 +9,7 @@ app = MecaStruct_App();
 app.UIFigure.Position = [30 50 1500 860];
 st = app.runAllExamples();
 disp(st.messages);
-% l'exemple poutre affiché = isostatique (runAllExamples finit sur « deux travées »)
+% l'exemple poutre affiché = isostatique (runAllExamples finit sur « tassement »)
 app.loadExample('Poutres', 'isostatique'); app.computeBeam();
 app.computeSection(); app.computeTruss(); app.computeTraction(); app.computeBending();
 shots = {

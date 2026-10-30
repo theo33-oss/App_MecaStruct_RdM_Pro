@@ -16,10 +16,72 @@ classdef ValidationReport
 
     methods (Static)
 
-        function file = generate(app, key, folder)
+        function exe = findBrowser()
+            %FINDBROWSER Chemin d'Edge ou de Chrome (impression PDF sans fenêtre), '' s'il n'y en a pas.
+            cand = {'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+                'C:\Program Files\Microsoft\Edge\Application\msedge.exe'
+                'C:\Program Files\Google\Chrome\Application\chrome.exe'
+                'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
+                '/usr/bin/google-chrome'
+                '/usr/bin/chromium'
+                '/usr/bin/chromium-browser'
+                '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+                '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'};
+            exe = '';
+            for k = 1:numel(cand)
+                if isfile(cand{k})
+                    exe = cand{k};
+                    return
+                end
+            end
+        end
+
+        function pdf = toPDF(htmlFile)
+            %TOPDF Convertit un dossier HTML en PDF avec Edge ou Chrome sans fenêtre (les formules MathJax demandent Internet).
+            %   pdf = ValidationReport.toPDF(htmlFile) écrit le PDF à côté du fichier HTML.
+            exe = ValidationReport.findBrowser();
+            if isempty(exe)
+                error('MecaStruct:Validation:noBrowser', ['Export PDF : aucun navigateur Edge ou Chrome trouvé. Générez le dossier en HTML, ' ...
+                    'ouvrez-le dans un navigateur puis imprimez-le en PDF.']);
+            end
+            pdf = regexprep(htmlFile, '\.html$', '.pdf');
+            prof = tempname;
+            cl = onCleanup(@() ValidationReport.rmTemp(prof));
+            args = {exe, '--headless', '--disable-gpu', '--no-pdf-header-footer', '--virtual-time-budget=25000', ...
+                ['--user-data-dir=' prof], ['--print-to-pdf=' pdf], ['file:///' strrep(htmlFile, '\', '/')]};
+            jargs = javaArray('java.lang.String', numel(args));
+            for k = 1:numel(args)
+                jargs(k) = java.lang.String(args{k});
+            end
+            if ispc
+                sink = 'NUL';
+            else
+                sink = '/dev/null';
+            end
+            pb = java.lang.ProcessBuilder(jargs);
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(java.io.File(sink));   % sortie jetée : un tampon plein bloquerait le navigateur
+            proc = pb.start();
+            if ~proc.waitFor(int64(90), java.util.concurrent.TimeUnit.SECONDS)   % délai : un navigateur bloqué n'immobilise pas MATLAB
+                proc.destroyForcibly();
+            end
+            if ~isfile(pdf)
+                error('MecaStruct:Validation:pdf', 'Export PDF : le navigateur n''a pas écrit le fichier (délai de 90 s dépassé ou erreur).');
+            end
+        end
+
+        function file = generate(app, key, folder, format)
             %GENERATE Écrit le dossier de validation de l'onglet `key` et renvoie le chemin du fichier.
+            %   format : 'html' (défaut) ou 'pdf' (le HTML est conservé à côté ; PDF par Edge ou Chrome sans fenêtre).
             if nargin < 3 || isempty(folder)
                 folder = DataManager.dataFolder('validation');
+            end
+            if nargin < 4 || isempty(format)
+                format = 'html';
+            end
+            format = lower(char(format));
+            if ~any(strcmp(format, {'html', 'pdf'}))
+                error('MecaStruct:Validation:format', 'Format du dossier : ''html'' ou ''pdf''.');
             end
             if ~isfolder(folder)
                 mkdir(folder);
@@ -40,9 +102,10 @@ classdef ValidationReport
                     errs{end + 1} = sprintf('%s : %s', m.calls{k}, err.message); %#ok<AGROW>
                 end
             end
+            errs = [errs, ValidationReport.refreshExtras(app, key)];   % combinaisons, Eurocode 3, fatigue, profilé déjà calculés
             W = app.H.(key).W;
             [chkHTML, nWarn, nKo] = ValidationReport.safeTwo(@() ValidationReport.hypothesesHTML(app, key));
-            [hcHTML, nOK, nTot] = ValidationReport.safeHand(@() ValidationReport.handHTML(app, key));
+            [hcHTML, nOK, nTot] = ValidationReport.safeHand(@() ValidationReport.handHTML(app, key, true));
             S = {'donnees',    '1. Données du problème',                            ValidationReport.safe(@() ValidationReport.inputsHTML(app, key))
                  'hypotheses', '2. Hypothèses du modèle et applicabilité',          chkHTML
                  'verif',      '3. Équations et vérification indépendante',         hcHTML
@@ -85,6 +148,9 @@ classdef ValidationReport
             cl = onCleanup(@() fclose(fid));
             fprintf(fid, '%s', html);
             clear cl
+            if strcmp(format, 'pdf')
+                file = ValidationReport.toPDF(file);
+            end
         end
 
         function [nOK, nTot] = handCheck(app, key)
@@ -297,7 +363,7 @@ classdef ValidationReport
 
         function [html, nWarn, nKo] = hypothesesHTML(app, key)
             e = ValidationReport.esc;
-            stat = ValidationReport.hypStatements(key);
+            stat = [ValidationReport.hypStatements(key), ValidationReport.extraStatements(app, key)];
             html = '<h3>Hypothèses du modèle (à valider)</h3><table><tr><th>Hypothèse</th><th>Avis du relecteur</th></tr>';
             for k = 1:numel(stat)
                 html = [html '<tr><td>' e(stat{k}) '</td><td class="rv">' ValidationReport.choices() '</td></tr>']; %#ok<AGROW>
@@ -328,9 +394,12 @@ classdef ValidationReport
             s = '&#9744; valide &nbsp; &#9744; à revoir &nbsp; &#9744; non applicable';
         end
 
-        function [html, nOK, nTot] = handHTML(app, key)
+        function [html, nOK, nTot] = handHTML(app, key, withExtras)
             e = ValidationReport.esc;
             rows = ValidationReport.handRows(app, key);
+            if nargin >= 3 && withExtras && strcmp(key, 'Beam')
+                rows = [rows; ValidationReport.handExtras(app)];
+            end
             nOK = 0;
             nTot = 0;
             html = ['<p>Pour chaque grandeur, la formule est écrite avec les valeurs de ce problème, calculée à la main ' ...
@@ -553,6 +622,34 @@ classdef ValidationReport
     %  =============================================================================================
     methods (Static, Access = private)
 
+        function s = extraStatements(app, key)
+            % Hypothèses des résultats ajoutés à l'onglet Poutres, seulement s'ils ont été calculés.
+            s = {};
+            if ~strcmp(key, 'Beam')
+                return
+            end
+            R = app.Results;
+            if isfield(R, 'combos') && ~isempty(R.combos)
+                s{end + 1} = ['Combinaisons : superposition linéaire des cas G, Q, W, S avec les coefficients saisis (non imposés par une norme) ; ' ...
+                    'l''enveloppe associe des maxima non simultanés.'];
+            end
+            if isfield(R, 'ec3') && ~isempty(R.ec3)
+                s{end + 1} = ['Eurocode 3 (EN 1993-1-1) : valeurs recommandées, annexe nationale non appliquée ; fy = Re sans réduction avec l''épaisseur ; ' ...
+                    'profilés IPE, HEA, HEB, IPN ou sections en I, classes 1 à 3 ; flexion autour de l''axe fort.'];
+                s{end + 1} = ['Déversement : poutre à fourches, charge au centre de torsion, Iw estimé par Iz(h − tf)²/4, C1 et Lcr saisis, ' ...
+                    'pas de coefficient f de répartition du moment.'];
+                s{end + 1} = ['Efforts de calcul : N et M maximaux associés sans être simultanés (prudent) ; interaction N + M (§6.3.3) par l''annexe B, ' ...
+                    'tableau B.2, avec Cmy et CmLT saisis ; voilement de l''âme par cisaillement (EN 1993-1-5 §5) sans la contribution des semelles.'];
+            end
+            if isfield(R, 'fatigue') && ~isempty(R.fatigue)
+                s{end + 1} = 'Fatigue : droite de Goodman modifiée, acier, vie infinie, Se = ka·kb·0,5·Rm, Kf = Kt, amplitude constante (Shigley, chap. 6).';
+            end
+            if isfield(R, 'profiles') && ~isempty(R.profiles)
+                s{end + 1} = ['Profilé le plus léger : critère Kt·σ ≤ Re/s (et flèche si demandée), sans Eurocode 3, avec le chargement saisi ; ' ...
+                    'section supposée sans produit d''inertie.'];
+            end
+        end
+
         function s = hypStatements(key)
             common = {'Matériau homogène, isotrope, élastique linéaire (σ = E ε jusqu''à Re).', ...
                 'Petits déplacements et petites déformations : équilibre écrit sur la géométrie non déformée.'};
@@ -650,8 +747,16 @@ classdef ValidationReport
                             'réactions, moments et contraintes NON fiables ; saisir la section dans ses axes principaux (Iyz = 0)'], ...
                             ValidationReport.lvl(false, 'ko'))];
                     end
-                    chk = [chk; add('Effet de l''effort tranchant sur la flèche', sprintf('inclus dans Castigliano : %s', ValidationReport.yesNo(app.H.Beam.shear.Value)), ...
+                    mo = B.sol.model;
+                    if any([mo.supports.spring] > 0) || any(abs([mo.supports.dx mo.supports.dy mo.supports.dz]) > 0) ...
+                            || ~isempty(mo.hinges) || any(abs([mo.thermal.epsX mo.thermal.kv mo.thermal.kw]) > 0)
+                        chk = [chk; add('Ressorts, tassements, rotules ou température présents', ...
+                            ['les réactions ne sont pas recalculées à la main (le dossier contrôle l''équilibre, les conditions aux appuis et le moment nul aux rotules) ; ' ...
+                            'elles sont obtenues par deux méthodes indépendantes (Ménabréa et intégration) et la flèche par quatre'], 'warn')];
+                    end
+                    chk = [chk; add('Effet de l''effort tranchant sur la flèche', sprintf('inclus dans Castigliano : %s', ValidationReport.yesNo(app.H.Beam.shear.Value)),...
                         ValidationReport.lvl(app.H.Beam.shear.Value || L / (2 * vy) >= 10, 'warn'))];
+                    chk = [chk; ValidationReport.extraChecks(app)];
                 case 'Tr'
                     R = app.Results.truss;
                     ts = R.tsol;
@@ -744,6 +849,46 @@ classdef ValidationReport
                         ValidationReport.lvl(app.H.Jau.K.Value >= 1.8 && app.H.Jau.K.Value <= 2.2, 'warn'))];
                     chk = [chk; add('Linéarisation du pont : erreur ≤ 1 %', sprintf('%.3g %%', J.bridge.linearityError * 100), ...
                         ValidationReport.lvl(abs(J.bridge.linearityError) <= 0.01, 'warn'))];
+            end
+        end
+
+        function chk = extraChecks(app)
+            % Contrôles d'applicabilité des résultats ajoutés à l'onglet Poutres (si calculés).
+            chk = cell(0, 3);
+            add = @(t, d, st) ValidationReport.addChk(t, d, st);
+            R = app.Results;
+            B = app.H.Beam;
+            if isfield(R, 'combos') && ~isempty(R.combos)
+                T = R.combos;
+                nErr = sum(contains(string(T.("Résistance")), "erreur"));
+                chk = [chk; add('Combinaisons : toutes résolues sans erreur', sprintf('%d combinaison(s), %d en erreur', height(T) - 1, nErr), ValidationReport.lvl(nErr == 0, 'ko'))];
+                env = T(end, :);
+                chk = [chk; add('Combinaisons : résistance sur l''enveloppe (Kt·σ ≤ Re/s)', sprintf('%.4g MPa ≤ %.4g MPa', env.("Kt·σ max (MPa)"), env.("σadm (MPa)")), ...
+                    ValidationReport.lvl(env.("Kt·σ max (MPa)") <= env.("σadm (MPa)"), 'ko'))];
+            end
+            if isfield(R, 'ec3') && ~isempty(R.ec3)
+                r = R.ec3;
+                chk = [chk; add('Eurocode 3 : classe de section 1 à 3', sprintf('classe %d', r.class.class), ValidationReport.lvl(r.class.class <= 3, 'ko'))];
+                chk = [chk; add('Eurocode 3 : résistance des sections (flexion, tranchant)', sprintf('MEd/MRd = %.3f ; VEd/Vpl,Rd = %.3f', r.ratioM, r.ratioV), ValidationReport.lvl(r.ok, 'ko'))];
+                chk = [chk; add('Eurocode 3 : déversement', sprintf('MEd/Mb,Rd = %.3f (Lcr = %.4g m, C1 = %.3g)', r.ltb.ratio, max(B.Lcr.Value, 0) + (B.Lcr.Value <= 0) * B.L.Value, B.C1.Value), ValidationReport.lvl(r.ltb.ok, 'ko'))];
+                chk = [chk; add('Eurocode 3 : flexion + effort normal', sprintf('rapport = %.3f', r.axial.ratio), ValidationReport.lvl(r.axial.ok, 'ko'))];
+                if ~isempty(r.buck)
+                    chk = [chk; add('Eurocode 3 : flambement', sprintf('NEd/Nb,Rd = %.3f', r.buck.ratio), ValidationReport.lvl(r.buck.ok, 'ko'))];
+                end
+                if ~isempty(r.inter)
+                    chk = [chk; add('Eurocode 3 : interaction N + M (6.61 et 6.62, annexe B)', sprintf('rapport = %.3f (Cmy = %.2f, CmLT = %.2f)', r.inter.ratio, r.inter.Cmy, r.inter.CmLT), ValidationReport.lvl(r.inter.ok, 'ko'))];
+                end
+                chk = [chk; add('Eurocode 3 : voilement de l''âme par cisaillement', ValidationReport.yesNoWeb(r.web), ValidationReport.lvl(r.web.ok, 'ko'))];
+                chk = [chk; add('Eurocode 3 : annexe nationale', 'seules γM0 et γM1 sont paramétrables (France : mêmes valeurs que l''EN) ; vérifier les autres paramètres dans l''annexe du pays', 'warn')];
+                chk = [chk; add('Eurocode 3 : fy = Re', sprintf('fy = %.4g MPa, sans réduction avec l''épaisseur (EN 1993-1-1 tableau 3.1)', B.Re.Value), 'warn')];
+            end
+            if isfield(R, 'fatigue') && ~isempty(R.fatigue)
+                chk = [chk; add('Fatigue (Goodman) : n ≥ s', sprintf('n = %.3g ; s = %.3g', R.fatigue.n, B.s.Value), ValidationReport.lvl(R.fatigue.n >= B.s.Value, 'ko'))];
+                chk = [chk; add('Fatigue : limite d''endurance estimée (ka, kb saisis)', sprintf('Se = %.4g MPa', R.fatigue.Se / 1e6), 'warn')];
+            end
+            if isfield(R, 'profiles') && ~isempty(R.profiles)
+                ok = ~contains(string(R.profiles.("Résistance")), "NON") & ~contains(string(R.profiles.("Résistance")), "erreur");
+                chk = [chk; add('Profilé le plus léger : au moins un profilé de la famille vérifie', sprintf('%d profilé(s) sur %d', sum(ok), height(R.profiles)), ValidationReport.lvl(any(ok), 'warn'))];
             end
         end
 
@@ -1282,6 +1427,7 @@ classdef ValidationReport
             if hasZ
                 rows = [rows; ValidationReport.beamPlaneRows(sol, 'z')];
             end
+            rows = [rows; ValidationReport.handImposed(B)];
             % --- contrainte au point le plus sollicité
             chk = B.check;
             bd = chk.bend;
@@ -1319,6 +1465,434 @@ classdef ValidationReport
             cmp = B.defl.comparison;
             bendOnly = ~contains(cmp.Methode, 'tranchant');   % la ligne « flexion + tranchant » s'écarte de l'effet de l'effort tranchant
             rows{end + 1, 1} = ValidationReport.grp(sprintf('Flèche (flexion seule) : écart maximal entre les méthodes = %.3g %% (la ligne « flexion + tranchant » de Castigliano est à part ; voir §4)', max(abs(cmp.Ecart_pct(bendOnly)))));
+        end
+
+        function t = yesNoWeb(w)
+            % Texte du contrôle du voilement de l'âme.
+            if w.needed
+                t = sprintf('hw/tw = %.1f > %.1f : VEd/Vb,Rd = %.3f', w.hwTw, w.limit, w.ratio);
+            else
+                t = sprintf('sans objet : hw/tw = %.1f ≤ %.1f', w.hwTw, w.limit);
+            end
+        end
+
+        function rows = handImposed(B)
+            %HANDIMPOSED Contrôles des appuis élastiques, tassements et rotules : conditions que le résultat doit vérifier,
+            %   lues sur la solution (flèche aux appuis, moment aux rotules), sans refaire le calcul des réactions.
+            hc = @ValidationReport.hc;
+            n = @ValidationReport.num;
+            mo = B.sol.model;
+            sup = mo.supports;
+            rows = cell(0, 1);
+            hasSup = ~isempty(sup) && (any([sup.spring] > 0) || any(abs([sup.dx sup.dy sup.dz]) > 0));
+            if hasSup
+                rows{end + 1, 1} = ValidationReport.grp('Appuis élastiques et tassements : déplacement de chaque appui = tassement − R/k (flèche de la déformée, plan affiché)');
+                if strcmp(B.defl.plane, 'xy')
+                    rf = 'Ry'; df = 'dy';
+                else
+                    rf = 'Rz'; df = 'dz';
+                end
+                for i = 1:numel(sup)
+                    d = sup(i).(df);
+                    if sup(i).spring > 0
+                        d = d - B.sol.reactions(i).(rf) / sup(i).spring;
+                    end
+                    v = BeamAndTrussSolver.ppEval(B.defl.integration.vPP, sup(i).pos, 'left');
+                    rows{end + 1, 1} = hc(sprintf('Déplacement de l''appui %s (mm)', sup(i).name), ...
+                        sprintf('v(s_%d)=d-\\frac{R}{k}=%s-\\frac{%s}{%s}', i, n(sup(i).(df) * 1e3), n(B.sol.reactions(i).(rf)), n(max(sup(i).spring, eps))), ...
+                        d * 1e3, v * 1e3, 'mm', 1e-6 * max(1, abs(d * 1e3))); %#ok<AGROW>
+                end
+            end
+            hg = mo.hinges;
+            if ~isempty(hg)
+                rows{end + 1, 1} = ValidationReport.grp('Rotules intermédiaires : moment de flexion nul');
+                mscale = max(abs(BeamAndTrussSolver.ppEval(B.sol.Mfz, linspace(0, mo.L, 41))));
+                for i = 1:numel(hg)
+                    m = BeamAndTrussSolver.ppEval(B.sol.Mfz, hg(i).pos, 'left');
+                    rows{end + 1, 1} = hc(sprintf('M_fz à la rotule %s (N·m)', hg(i).name), ...
+                        sprintf('M_{fz}(%s)=%s\\ \\text{(attendu 0)}', n(hg(i).pos), n(m)), 0, m, 'N·m', 1e-6 * max(1, mscale)); %#ok<AGROW>
+                end
+            end
+        end
+
+        function rows = handExtras(app)
+            %HANDEXTRAS Contrôles des résultats ajoutés à l'onglet Poutres (présents seulement s'ils ont été calculés) :
+            %   combinaisons, Eurocode 3, fatigue, profilé le plus léger.
+            rows = {};
+            if isfield(app.Results, 'combos') && ~isempty(app.Results.combos)
+                rows = [rows; ValidationReport.safeRows(@() ValidationReport.handCombos(app), 'Combinaisons')];
+            end
+            if isfield(app.Results, 'ec3') && ~isempty(app.Results.ec3)
+                rows = [rows; ValidationReport.safeRows(@() ValidationReport.handEC3(app), 'Eurocode 3')];
+            end
+            if isfield(app.Results, 'fatigue') && ~isempty(app.Results.fatigue)
+                rows = [rows; ValidationReport.safeRows(@() ValidationReport.handFatigue(app), 'Fatigue')];
+            end
+            if isfield(app.Results, 'profiles') && ~isempty(app.Results.profiles)
+                rows = [rows; ValidationReport.safeRows(@() ValidationReport.handProfiles(app), 'Profilé le plus léger')];
+            end
+        end
+
+        function rows = safeRows(fn, name)
+            try
+                rows = fn();
+            catch err
+                rows = {ValidationReport.grp(sprintf('%s : contrôle impossible (%s)', name, err.message))};
+            end
+        end
+
+        function errs = refreshExtras(app, key)
+            %REFRESHEXTRAS Recalcule, avant d'écrire le dossier, les résultats « extras » déjà calculés dans la session
+            %   (sinon le dossier afficherait des tableaux périmés par rapport à la saisie actuelle).
+            errs = {};
+            if ~strcmp(key, 'Beam')
+                return
+            end
+            B = app.H.Beam;
+            steps = {'combos', @() app.computeCombinations(), 'computeCombinations'
+                'ec3', @() app.checkEurocode(), 'checkEurocode'
+                'fatigue', @() app.checkFatigue(), 'checkFatigue'
+                'profiles', @() app.findLightestProfile(B.pfam.Value, B.pdef.Value), 'findLightestProfile'};
+            for k = 1:size(steps, 1)
+                % le balayage des profilés (le plus long) n'est refait que si la saisie a changé depuis le dernier balayage
+                fresh = strcmp(steps{k, 1}, 'profiles') && isfield(app.Results, 'profilesInputs') ...
+                    && isequaln(app.Results.profilesInputs, {app.captureInputs('Beam'), app.BeamSection, app.BeamUsesSection});
+                if isfield(app.Results, steps{k, 1}) && ~isempty(app.Results.(steps{k, 1})) && ~fresh
+                    try
+                        steps{k, 2}();
+                    catch err
+                        errs{end + 1} = sprintf('%s : %s', steps{k, 3}, err.message); %#ok<AGROW>
+                    end
+                end
+            end
+        end
+
+        function rows = handCombos(app)
+            %HANDCOMBOS Combinaisons : équilibre et torseur de chaque combinaison, superposition des cas, tableau = recalcul.
+            %   Ces contrôles font appel au solveur de poutre (ils vérifient la cohérence des combinaisons, pas le solveur).
+            hc = @ValidationReport.hc;
+            B = app.H.Beam;
+            c = B.combo.Data;
+            T = app.Results.combos;
+            caseNames = {'G', 'Q', 'W', 'S'};
+            used = false(1, 4);
+            for tb = {B.pl.Data, B.pm.Data, B.dl.Data}
+                d = tb{1};
+                col = size(d, 2);
+                for i = 1:size(d, 1)
+                    k = find(strcmp(caseNames, char(string(d{i, col}))), 1);
+                    if ~isempty(k), used(k) = true; end
+                end
+            end
+            if B.selfw.Value, used(1) = true; end
+            s = linspace(0, B.L.Value, 21);
+            sols = struct();
+            for k = find(used)
+                fac = struct('G', 0, 'Q', 0, 'W', 0, 'S', 0);
+                fac.(caseNames{k}) = 1;
+                sols.(caseNames{k}) = BeamAndTrussSolver.solveBeam(app.readBeamModel(fac));
+            end
+            rows = {ValidationReport.grp(['Combinaisons : chaque ligne est résolue séparément, puis comparée (équilibre, superposition des cas, tableau). ' ...
+                'Ces contrôles utilisent le solveur : ils vérifient la cohérence des combinaisons.'])};
+            gov = struct('Mfz', {{'', -Inf}}, 'Ty', {{'', -Inf}});
+            for i = 1:size(c, 1)
+                g = cellfun(@(j) ValidationReport.cellNumber(c{i, j}), {2, 3, 4, 5});
+                fac = struct('G', g(1), 'Q', g(2), 'W', g(3), 'S', g(4));
+                sol = BeamAndTrussSolver.solveBeam(app.readBeamModel(fac));
+                nm = char(string(c{i, 1}));
+                rows{end + 1, 1} = ValidationReport.grp(sprintf('Combinaison « %s » : γG = %g, γQ = %g, γW = %g, γS = %g', nm, g)); %#ok<AGROW>
+                rows = [rows; ValidationReport.beamPlaneRows(sol, 'y')]; %#ok<AGROW>
+                % superposition : Mfz(combinaison) = somme des γ·Mfz(cas), en 21 abscisses
+                sup = zeros(size(s));
+                for k = find(used)
+                    sup = sup + g(k) * BeamAndTrussSolver.ppEval(sols.(caseNames{k}).Mfz, s);
+                end
+                direct = BeamAndTrussSolver.ppEval(sol.Mfz, s);
+                rows{end + 1, 1} = hc('Moment fléchissant : superposition des cas (somme sur 21 abscisses de |Mfz|)', ...
+                    '\sum_s \left|\sum_c \gamma_c\,M_{fz,c}(s)\right|', sum(abs(sup)) / 1e3, sum(abs(direct)) / 1e3, 'kN·m'); %#ok<AGROW>
+                e = sol.extrema;
+                rows{end + 1, 1} = hc('Tableau Combinaisons : Mfz max = recalcul de la combinaison', 'M_{fz,max}', ...
+                    e.Mfz.max / 1e3, T.("Mfz max (kN·m)")(i), 'kN·m'); %#ok<AGROW>
+                rows{end + 1, 1} = hc('Tableau Combinaisons : Mfz min = recalcul de la combinaison', 'M_{fz,min}', ...
+                    e.Mfz.min / 1e3, T.("Mfz min (kN·m)")(i), 'kN·m'); %#ok<AGROW>
+                rows{end + 1, 1} = hc('Tableau Combinaisons : Ty max = recalcul de la combinaison', 'T_{y,max}', ...
+                    e.Ty.max / 1e3, T.("Ty max (kN)")(i), 'kN'); %#ok<AGROW>
+                if e.Mfz.max > gov.Mfz{2}, gov.Mfz = {nm, e.Mfz.max}; end
+                if e.Ty.max > gov.Ty{2}, gov.Ty = {nm, e.Ty.max}; end
+            end
+            n = height(T);
+            rows{end + 1, 1} = hc('Enveloppe : Mfz max = plus grand Mfz max des combinaisons', 'M_{fz,max}^{env}=\max_i M_{fz,max,i}', ...
+                max(T.("Mfz max (kN·m)")(1:n - 1)), T.("Mfz max (kN·m)")(n), 'kN·m'); %#ok<AGROW>
+            rows{end + 1, 1} = ValidationReport.grp(sprintf(['Combinaison dimensionnante : « %s » pour Mfz max, « %s » pour Ty max. ' ...
+                'L''enveloppe associe des maxima qui ne sont pas simultanés : elle est prudente.'], gov.Mfz{1}, gov.Ty{1})); %#ok<AGROW>
+        end
+
+        function rows = handEC3(app)
+            %HANDEC3 Eurocode 3 : recalcul avec d'autres écritures (Wpl = 2·Sy, formules explicites) sans appeler DesignChecks.
+            hc = @ValidationReport.hc;
+            n = @ValidationReport.num;
+            B = app.H.Beam;
+            r = app.Results.ec3;
+            sec = app.BeamSection.sec;
+            rolled = strcmp(sec.type, 'profile');
+            if rolled
+                h = sec.h; b = sec.b; tw = sec.a; tf = sec.e; rr = 0;
+                if isfield(sec, 'r') && isfinite(sec.r), rr = sec.r; end
+            else
+                h = sec.h; b = sec.b; tw = sec.tw; tf = sec.tf; rr = 0;
+            end
+            fy = B.Re.Value * 1e6; g0 = B.gM0.Value; g1 = B.gM1.Value;
+            E = B.E.Value * 1e9; G = B.G.Value * 1e9;
+            A = B.S.Value * 1e-6; Iy = B.Iz.Value * 1e-12; Iw_ = B.Iy.Value * 1e-12; It = B.Ix.Value * 1e-12;
+            Lcr = B.Lcr.Value;
+            if Lcr <= 0, Lcr = B.L.Value; end
+            LcrF = B.LcrF.Value;
+            if LcrF <= 0, LcrF = B.L.Value; end
+            C1 = B.C1.Value;
+            MEd = r.MEd; VEd = r.VEd;
+            Npl = A * fy / g0;
+            NEd = r.axial.n * Npl;
+            rows = {ValidationReport.grp('Eurocode 3 : classes, résistances, déversement, N + M (EN 1993-1-1) ; efforts de calcul pris dans les résultats de la poutre')};
+            % --- classes (tableau 5.2)
+            eps = sqrt(235e6 / fy);
+            hw = h - 2 * tf;
+            cf = (b - tw - 2 * rr) / 2;
+            cw = hw - 2 * rr;
+            % âme (tableau 5.2, feuille 2) : ψ et α aux bords de l'âme, compression seule (r.Ncomp) avec la flexion MEd
+            sCw = r.Ncomp / A;
+            sMw = abs(MEd) * (hw / 2) / Iy;
+            psiW = -1;
+            if sCw + sMw > 0, psiW = (sCw - sMw) / (sCw + sMw); end
+            alW = min(1, 1 / (1 - psiW));
+            if alW > 0.5, limW = [396 / (13 * alW - 1), 456 / (13 * alW - 1)]; else, limW = [36 / alW, 41.5 / alW]; end
+            if psiW > -1, limW(3) = 42 / (0.67 + 0.33 * psiW); else, limW(3) = 62 * (1 - psiW) * sqrt(-psiW); end
+            kf = find(cf / tf <= [9 10 14] * eps, 1); if isempty(kf), kf = 4; end
+            kw = find(cw / tw <= limW * eps, 1); if isempty(kw), kw = 4; end
+            cls = max(kf, kw);
+            rows = [rows; {
+                hc('ε = √(235/fy)', sprintf('\\varepsilon=\\sqrt{235/%s}', n(fy / 1e6)), eps, r.class.eps, '')
+                hc('Aile : c/tf', sprintf('c/t_f=\\frac{(b-t_w-2r)/2}{t_f}=\\frac{%s}{%s}', n(cf * 1e3), n(tf * 1e3)), cf / tf, r.class.ratioFlange, '')
+                hc('Âme : c/tw', sprintf('c/t_w=\\frac{h-2t_f-2r}{t_w}=\\frac{%s}{%s}', n(cw * 1e3), n(tw * 1e3)), cw / tw, r.class.ratioWeb, '')
+                hc('Classe de la section (tableau 5.2 : aile 9ε, 10ε, 14ε ; âme selon ψ et α)', sprintf('\\text{classe}=\\max(%d,%d)', kf, kw), cls, r.class.class, '', 0)}];
+            if cls > 3
+                return
+            end
+            % --- flexion et tranchant (6.2.5, 6.2.6, 6.2.8)
+            hfil = (1 - pi / 4) * rr^2;
+            Sy = b * tf * (h - tf) / 2 + tw * (hw / 2) * (hw / 4) + 2 * hfil * (hw / 2 - 0.2234 * rr);
+            Wpl = 2 * Sy;
+            Wel = Iy / (h / 2);
+            W = Wpl;
+            if cls == 3, W = Wel; end
+            Mc = W * fy / g0;
+            eta = 1.2; if fy > 460e6, eta = 1.0; end
+            Av = max(A - 2 * b * tf + (tw + 2 * rr) * tf, eta * hw * tw);
+            Vpl = Av * (fy / sqrt(3)) / g0;
+            red = abs(VEd) > 0.5 * Vpl;
+            MRd = Mc;
+            if red
+                rho = (2 * abs(VEd) / Vpl - 1)^2;
+                MRd = max(0, min(Mc, (W - rho * (hw * tw)^2 / (4 * tw)) * fy / g0));
+            end
+            rows = [rows; {
+                hc('Wpl = 2·Sy (moment statique d''une demi-section)', sprintf('W_{pl}=2\\left[b t_f\\frac{h-t_f}{2}+t_w\\frac{h_w}{2}\\frac{h_w}{4}+2A_f(\\tfrac{h_w}{2}-0{,}2234r)\\right]=%s', n(Wpl * 1e6)), Wpl * 1e6, r.Wpl * 1e6, 'cm³')
+                hc('Wel = Iy/(h/2)', sprintf('W_{el}=\\frac{I_y}{h/2}=\\frac{%s}{%s}', n(Iy * 1e8), n(h * 50)), Wel * 1e6, r.Wel * 1e6, 'cm³')
+                hc('Mc,Rd = W·fy/γM0 (§6.2.5, éq. 6.13/6.14)', sprintf('M_{c,Rd}=\\frac{%s\\times%s}{%s}', n(W * 1e6), n(fy / 1e6), n(g0)), Mc / 1e3, r.Mc / 1e3, 'kN·m')
+                hc('Av (§6.2.6(3))', sprintf('A_v=\\max(A-2bt_f+(t_w+2r)t_f,\\ \\eta h_w t_w)=%s', n(Av * 1e6)), Av * 1e6, r.Av * 1e6, 'mm²')
+                hc('Vpl,Rd = Av·(fy/√3)/γM0 (§6.2.6(2))', sprintf('V_{pl,Rd}=\\frac{%s\\,(%s/\\sqrt3)}{%s}', n(Av * 1e6), n(fy / 1e6), n(g0)), Vpl / 1e3, r.Vpl / 1e3, 'kN')
+                hc('MRd après réduction par le tranchant (§6.2.8)', sprintf('V_{Ed}=%s\\ \\text{kN}\\ \\ \\text{; réduction : }%d', n(VEd / 1e3), red), MRd / 1e3, r.MRd / 1e3, 'kN·m')
+                hc('MEd / MRd (éq. 6.12)', sprintf('\\frac{%s}{%s}', n(MEd / 1e3), n(MRd / 1e3)), MEd / MRd, r.ratioM, '')
+                hc('VEd / Vpl,Rd (éq. 6.17)', sprintf('\\frac{%s}{%s}', n(VEd / 1e3), n(Vpl / 1e3)), VEd / Vpl, r.ratioV, '')}];
+            % --- déversement (6.3.2.3 ; Mcr : NCCI SN003)
+            Iw = Iw_ * (h - tf)^2 / 4;
+            Mcr = C1 * pi^2 * E * Iw_ / Lcr^2 * sqrt(Iw / Iw_ + Lcr^2 * G * It / (pi^2 * E * Iw_));
+            lam = sqrt(W * fy / Mcr);
+            tall = h / b > 2 + 1e-9;
+            if rolled, cv = 'bc'; else, cv = 'cd'; end
+            alt = [0.21 0.34 0.49 0.76];
+            al = alt(cv(1 + tall) - 'a' + 1);
+            Phi = 0.5 * (1 + al * (lam - 0.4) + 0.75 * lam^2);
+            chi = min([1, 1 / lam^2, 1 / (Phi + sqrt(max(Phi^2 - 0.75 * lam^2, 0)))]);
+            if lam <= 0.4, chi = 1; end
+            Mb = chi * W * fy / g1;
+            rows = [rows; {
+                hc('Mcr (poutre à fourches, charge au centre de torsion)', sprintf('M_{cr}=C_1\\frac{\\pi^2EI_z}{L_{cr}^2}\\sqrt{\\frac{I_w}{I_z}+\\frac{L_{cr}^2GI_t}{\\pi^2EI_z}}\\ ;\\ C_1=%s,\\ L_{cr}=%s\\ \\text{m}', n(C1), n(Lcr)), Mcr / 1e3, r.ltb.Mcr / 1e3, 'kN·m')
+                hc('λ̄LT = √(W·fy/Mcr)', sprintf('\\bar\\lambda_{LT}=\\sqrt{\\frac{%s\\times%s}{%s}}', n(W * 1e6), n(fy / 1e6), n(Mcr / 1e3)), lam, r.ltb.lambda, '')
+                hc(sprintf('αLT (courbe %s, tableaux 6.5 puis 6.3)', cv(1 + tall)), sprintf('\\alpha_{LT}=%s', n(al)), al, r.ltb.alpha, '')
+                hc('χLT (éq. 6.57, λ̄LT,0 = 0,4, β = 0,75)', sprintf('\\chi_{LT}=\\frac{1}{\\Phi_{LT}+\\sqrt{\\Phi_{LT}^2-0{,}75\\bar\\lambda_{LT}^2}},\\ \\Phi_{LT}=%s', n(Phi)), chi, r.ltb.chi, '')
+                hc('Mb,Rd = χLT·W·fy/γM1 (éq. 6.55)', sprintf('M_{b,Rd}=%s\\times%s\\times%s/%s', n(chi), n(W * 1e6), n(fy / 1e6), n(g1)), Mb / 1e3, r.ltb.MbRd / 1e3, 'kN·m')
+                hc('MEd / Mb,Rd (éq. 6.54)', sprintf('\\frac{%s}{%s}', n(MEd / 1e3), n(Mb / 1e3)), MEd / Mb, r.ltb.ratio, '')}];
+            % --- flexion + effort normal (6.2.9)
+            n_ = NEd / Npl;
+            if cls <= 2
+                a_ = min((A - 2 * b * tf) / A, 0.5);
+                free = n_ <= 0.25 && NEd <= 0.5 * hw * tw * fy / g0;
+                if free
+                    MN = Mc;
+                elseif n_ >= 1
+                    MN = 0;
+                else
+                    MN = min(Mc, Mc * (1 - n_) / (1 - 0.5 * a_));
+                end
+                MN = min(MN, MRd);
+                rows = [rows; {
+                    hc('n = NEd/Npl,Rd', sprintf('n=\\frac{%s}{%s}', n(NEd / 1e3), n(Npl / 1e3)), n_, r.axial.n, '')
+                    hc('MN,y,Rd (§6.2.9.1, éq. 6.36 ; sans réduction si 6.33 et 6.34)', sprintf('M_{N,y,Rd}=M_{pl,y,Rd}\\frac{1-n}{1-0{,}5a},\\ a=%s', n(a_)), MN / 1e3, r.axial.MNRd / 1e3, 'kN·m')}];
+            else
+                sig = NEd / A + MEd / Wel;
+                rows = [rows; {
+                    hc('σx,Ed = NEd/A + MEd/Wel (§6.2.9.2, éq. 6.42)', sprintf('\\sigma_{x,Ed}=\\frac{%s}{%s}+\\frac{%s}{%s}', n(NEd / 1e3), n(A * 1e6), n(MEd / 1e3), n(Wel * 1e6)), sig / 1e6, r.axial.sigma / 1e6, 'MPa')}];
+            end
+            % --- flambement par flexion (6.3.1), axe faible z-z
+            if ~isempty(r.buck)
+                Nc = r.buck.NEd;
+                hb = h / b;
+                if rolled
+                    if hb > 1.2
+                        if tf * 1e3 > 100, cz = 'd'; elseif tf * 1e3 > 40, cz = 'c'; else, cz = 'b'; end
+                    else
+                        if tf * 1e3 > 100, cz = 'd'; else, cz = 'c'; end
+                    end
+                else
+                    if tf * 1e3 > 40, cz = 'd'; else, cz = 'c'; end
+                end
+                alt = [0.21 0.34 0.49 0.76];
+                alz = alt(cz - 'a' + 1);
+                Ncr = pi^2 * E * Iw_ / Lcr^2;
+                lz = sqrt(A * fy / Ncr);
+                Pz = 0.5 * (1 + alz * (lz - 0.2) + lz^2);
+                chz = min(1, 1 / (Pz + sqrt(max(Pz^2 - lz^2, 0))));
+                if lz <= 0.2 || Nc / Ncr <= 0.04, chz = 1; end
+                rows = [rows; {
+                    hc('Flambement z-z : Ncr = π²·E·Iz/Lcr²', sprintf('N_{cr}=\\frac{\\pi^2EI_z}{L_{cr}^2}=%s\\ \\text{kN}', n(Ncr / 1e3)), Ncr / 1e3, r.buck.axes(2).Ncr / 1e3, 'kN')
+                    hc(sprintf('Flambement z-z : λ̄ (courbe %s, tableaux 6.2 et 6.1)', cz), sprintf('\\bar\\lambda=\\sqrt{\\frac{Af_y}{N_{cr}}}=%s', n(lz)), lz, r.buck.axes(2).lambda, '')
+                    hc('Flambement z-z : χ (éq. 6.49)', sprintf('\\chi=\\frac{1}{\\Phi+\\sqrt{\\Phi^2-\\bar\\lambda^2}},\\ \\Phi=%s', n(Pz)), chz, r.buck.axes(2).chi, '')
+                    hc('Flambement z-z : Nb,Rd = χ·A·fy/γM1 (éq. 6.47)', sprintf('N_{b,Rd}=%s\\times%s\\times%s/%s', n(chz), n(A * 1e6), n(fy / 1e6), n(g1)), chz * A * fy / g1 / 1e3, r.buck.axes(2).NbRd / 1e3, 'kN')}];
+            end
+            % --- interaction N + M (6.3.3, annexe B, tableau B.2) : refait avec le χ de l'axe fort recalculé ici
+            if ~isempty(r.inter)
+                hb = h / b;
+                if rolled
+                    if hb > 1.2
+                        if tf * 1e3 > 100, cy = 'd'; elseif tf * 1e3 > 40, cy = 'b'; else, cy = 'a'; end
+                    else
+                        if tf * 1e3 > 100, cy = 'd'; else, cy = 'b'; end
+                    end
+                else
+                    if tf * 1e3 > 40, cy = 'c'; else, cy = 'b'; end
+                end
+                aly = [0.21 0.34 0.49 0.76];
+                aly = aly(cy - 'a' + 1);
+                Ncry = pi^2 * E * Iy / LcrF^2;   % axe fort : longueur du plan fort, pas la longueur entre entretoises
+                ly = sqrt(A * fy / Ncry);
+                Py = 0.5 * (1 + aly * (ly - 0.2) + ly^2);
+                chy = min(1, 1 / (Py + sqrt(max(Py^2 - ly^2, 0))));
+                if ly <= 0.2 || Nc / Ncry <= 0.04, chy = 1; end
+                nY_ = Nc / (chy * A * fy / g1);
+                nZ_ = Nc / (chz * A * fy / g1);
+                Cmy = B.Cmy.Value; CmL = B.CmLT.Value;
+                if cls <= 2
+                    kyy = min(Cmy * (1 + (ly - 0.2) * nY_), Cmy * (1 + 0.8 * nY_));
+                    if lz >= 0.4
+                        kzy = max(1 - 0.1 * lz * nZ_ / (CmL - 0.25), 1 - 0.1 * nZ_ / (CmL - 0.25));
+                    else
+                        kzy = min(0.6 + lz, 1 - 0.1 * lz * nZ_ / (CmL - 0.25));
+                    end
+                else
+                    kyy = min(Cmy * (1 + 0.6 * ly * nY_), Cmy * (1 + 0.6 * nY_));
+                    kzy = max(1 - 0.05 * lz * nZ_ / (CmL - 0.25), 1 - 0.05 * nZ_ / (CmL - 0.25));
+                end
+                dn = chi * W * fy / g1;
+                rows = [rows; {
+                    hc(sprintf('Flambement y-y : χy (courbe %s)', cy), sprintf('\\chi_y=\\frac{1}{\\Phi+\\sqrt{\\Phi^2-\\bar\\lambda_y^2}},\\ \\bar\\lambda_y=%s', n(ly)), chy, r.buck.axes(1).chi, '')
+                    hc('kyy (annexe B, tableau B.2)', sprintf('k_{yy}=C_{my}\\left[1+(\\bar\\lambda_y-0{,}2)n_Y\\right]\\le C_{my}(1+0{,}8\\,n_Y)\\ ;\\ n_Y=%s', n(nY_)), kyy, r.inter.kyy, '')
+                    hc('kzy (annexe B, tableau B.2)', sprintf('k_{zy}=1-\\frac{0{,}1\\bar\\lambda_z n_Z}{C_{mLT}-0{,}25}\\ ;\\ n_Z=%s', n(nZ_)), kzy, r.inter.kzy, '')
+                    hc('Éq. 6.61 : N/(χy·NRk/γM1) + kyy·M/(χLT·My,Rk/γM1)', sprintf('%s+%s\\frac{%s}{%s}', n(nY_), n(kyy), n(MEd / 1e3), n(dn / 1e3)), nY_ + kyy * MEd / dn, r.inter.ratio61, '')
+                    hc('Éq. 6.62 : N/(χz·NRk/γM1) + kzy·M/(χLT·My,Rk/γM1)', sprintf('%s+%s\\frac{%s}{%s}', n(nZ_), n(kzy), n(MEd / 1e3), n(dn / 1e3)), nZ_ + kzy * MEd / dn, r.inter.ratio62, '')}];
+            end
+            % --- voilement de l'âme par cisaillement (EN 1993-1-5 §5, âme non raidie)
+            et = 1.2 - 0.2 * (fy > 460e6);
+            if hw / tw > 72 * eps / et
+                lw = hw / (86.4 * tw * eps);
+                if lw < 0.83 / et, chw = et; elseif lw < 1.08, chw = 0.83 / lw; else, chw = 1.37 / (0.7 + lw); end
+                Vb = chw * fy * hw * tw / (sqrt(3) * g1);
+                rows = [rows; {
+                    hc('Voilement de l''âme : χw (tableau 5.1, poteau d''extrémité rigide)', sprintf('\\bar\\lambda_w=\\frac{h_w}{86{,}4\\,t_w\\varepsilon}=%s', n(lw)), chw, r.web.chi, '')
+                    hc('Vb,Rd = χw·fy·hw·tw/(√3·γM1)', sprintf('V_{b,Rd}=\\frac{%s\\times%s\\times%s}{\\sqrt3\\times%s}', n(chw), n(fy / 1e6), n(hw * tw * 1e6), n(g1)), Vb / 1e3, r.web.VbRd / 1e3, 'kN')}];
+            else
+                rows{end + 1, 1} = ValidationReport.grp(sprintf('Voilement de l''âme par cisaillement : hw/tw = %.1f ≤ 72ε/η = %.1f, sans objet.', hw / tw, 72 * eps / et));
+            end
+            rows{end + 1, 1} = ValidationReport.grp(['Non recalculé : voilement local sous charges concentrées, flexion déviée, ELS, classe 4 ; annexe nationale : seules γM0 et γM1 sont paramétrables. ' ...
+                'Le recalcul reprend les mêmes formules écrites autrement (Wpl par le moment statique d''une demi-section) : il détecte les erreurs de programmation, pas un choix de formule discutable.']);
+        end
+
+        function rows = handFatigue(app)
+            %HANDFATIGUE Fatigue : Goodman recalculé à partir des champs de saisie et de la contrainte de la poutre.
+            hc = @ValidationReport.hc;
+            n = @ValidationReport.num;
+            B = app.H.Beam;
+            f = app.Results.fatigue;
+            bd = app.Results.beam.check.bend;
+            Kt = B.Kt.Value; R = B.fR.Value;
+            Rm = app.DM.getMaterial(B.mat.Value).Rm;
+            smax = bd.sigmaMaxAbs;
+            Se = B.fka.Value * B.fkb.Value * min(0.5 * Rm, 700e6);
+            sa = Kt * smax * (1 - R) / 2;
+            sm = smax * (1 + R) / 2;
+            nn = 1 / (sa / Se + max(sm, 0) / Rm);
+            rows = {ValidationReport.grp('Fatigue (Goodman modifié, Shigley chap. 6) : recalcul à partir des champs de saisie')
+                hc('σmax nominale = Kt·σmax / Kt (la contrainte nominale n''est pas reconstruite à tort)', sprintf('\\sigma_{max}=\\frac{K_t\\sigma_{max}}{K_t}=\\frac{%s}{%s}', n(bd.sigmaMaxKt / 1e6), n(Kt)), bd.sigmaMaxKt / Kt / 1e6, smax / 1e6, 'MPa')
+                hc('Se = ka·kb·min(0,5·Rm ; 700 MPa)', sprintf('S_e=%s\\times%s\\times\\min(0{,}5\\times%s,\\,700)', n(B.fka.Value), n(B.fkb.Value), n(Rm / 1e6)), Se / 1e6, f.Se / 1e6, 'MPa')
+                hc('σa = Kf·σmax·(1−R)/2', sprintf('\\sigma_a=%s\\times%s\\times\\frac{1-(%s)}{2}', n(Kt), n(smax / 1e6), n(R)), sa / 1e6, f.sigmaA / 1e6, 'MPa')
+                hc('σm = σmax·(1+R)/2', sprintf('\\sigma_m=%s\\times\\frac{1+(%s)}{2}', n(smax / 1e6), n(R)), sm / 1e6, f.sigmaM / 1e6, 'MPa')
+                hc('n = 1/(σa/Se + σm/Rm)', sprintf('n=\\frac{1}{%s/%s+%s/%s}', n(sa / 1e6), n(Se / 1e6), n(max(sm, 0) / 1e6), n(Rm / 1e6)), nn, f.n, '')
+                ValidationReport.grp('Hypothèses non recalculables : acier, vie infinie, Kf = Kt (sensibilité à l''entaille q = 1), chargement uniaxial d''amplitude constante. Autre vérification de fatigue des constructions métalliques : EN 1993-1-9, non traitée.')};
+        end
+
+        function rows = handProfiles(app)
+            %HANDPROFILES Profilé le plus léger : cohérence du tableau (tri, σadm, masse, L/f, choix du premier qui vérifie).
+            hc = @ValidationReport.hc;
+            n = @ValidationReport.num;
+            B = app.H.Beam;
+            T = app.Results.profiles;
+            L = B.L.Value;
+            rho = app.DM.getMaterial(B.mat.Value).rho;
+            S = T.("S (mm²)");
+            inv = sum(diff(S(~isnan(S))) < 0);
+            sadm = T.("σadm (MPa)");
+            sadm = sadm(~isnan(sadm));
+            ok = ~contains(string(T.("Résistance")), "NON") & ~contains(string(T.("Résistance")), "erreur");
+            rows = {ValidationReport.grp(sprintf('Profilé le plus léger, famille %s : %d profilés essayés avec le chargement de l''onglet', char(B.pfam.Value), height(T)))
+                hc('Tri par aire croissante : nombre d''inversions', '\#\{i:\ S_{i+1}<S_i\}', inv, 0, '', 0)
+                hc('σadm = Re/s (tous les profilés)', sprintf('\\sigma_{adm}=\\frac{%s}{%s}', n(B.Re.Value), n(B.s.Value)), B.Re.Value / B.s.Value, sadm(1), 'MPa')};
+            i1 = find(ok, 1);
+            if isempty(i1)
+                rows{end + 1, 1} = ValidationReport.grp('Aucun profilé de cette famille ne vérifie le chargement : pas de profilé retenu.');
+                return
+            end
+            m_ = T.("Masse (kg/m)")(i1);
+            Sb = T.("S (mm²)")(i1);
+            rows = [rows; {
+                hc(sprintf('Masse linéique du profilé retenu (%s) = ρ·S', char(T.("Profilé")(i1))), sprintf('m=\\rho S=%s\\times%s\\times10^{-6}', n(rho), n(Sb)), rho * Sb * 1e-6, m_, 'kg/m')
+                hc('Le profilé retenu est le plus léger qui vérifie', '\min\{S_i:\ \text{vérifié}\}', min(S(ok)), Sb, 'mm²')
+                hc('L/f du profilé retenu = L / f max', sprintf('\\frac{L}{f}=\\frac{%s}{%s}', n(L * 1e3), n(T.("f max (mm)")(i1))), L * 1e3 / T.("f max (mm)")(i1), T.("L/f (-)")(i1), '')}];
+            if B.pdef.Value > 0
+                rows{end + 1, 1} = hc(sprintf('Critère de flèche L/%g respecté par le profilé retenu (0 = oui)', B.pdef.Value), ...
+                    sprintf('\\frac{L}{f}\\ge %s', n(B.pdef.Value)), double(T.("L/f (-)")(i1) < B.pdef.Value), 0, '', 0);
+            end
+            rows{end + 1, 1} = ValidationReport.grp(['Non recalculé ici : la contrainte de chaque profilé (poids propre et moments dépendent du profilé). ' ...
+                'Pour la contrôler, importer le profilé retenu dans l''onglet Poutres et consulter son dossier de validation.']);
+        end
+
+        function v = cellNumber(x)
+            if isnumeric(x)
+                v = x;
+            else
+                v = str2double(strrep(char(string(x)), ',', '.'));
+            end
+            if ~isfinite(v)
+                error('MecaStruct:Validation:invalidInput', 'Valeur non numérique dans le tableau des combinaisons.');
+            end
         end
 
         function rows = beamPlaneRows(sol, plane)
