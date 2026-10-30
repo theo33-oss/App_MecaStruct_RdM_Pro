@@ -75,7 +75,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E19 — beam_design.py
   Port de useSectionForBeam, checkEurocode (poutre ou enveloppe), checkFatigue, findLightestProfile, computeMovingLoad, loadFromBeam, sendToTensor ; champs E19 ajoutés à defaultBeamInput (noms MATLAB). Écarts : clé secTabulated ajoutée à la saisie (la section d'un profilé reste dans section pour l'Eurocode, sans que beamCheck utilise le contour) ; findLightestProfile renvoie le dict du profilé (getProfile) ; loadFromBeam renvoie une copie de la saisie cible, sans message d'état ni avertissement de section ; applyNationalAnnex (UI) non porté, à faire en E23/E26.
   pytest 767 passed (8 nouveaux dans test_beam_design.py : EC3 cohérent, Goodman, profilé le plus léger, flèche L/1000, charge mobile, Eurocode et fatigue portés de MATLAB) ; ruff check et ruff format --check verts.
-- [ ] E20 — compute.py + examples.py
+- [x] E20 — compute.py + examples.py
+  Port des computeXxx (sections, treillis, traction, cisaillement, clavette, goupille, torsion, flexion, flambage, tenseurs, Hooke, jauges, Kt), de loadExample et de runAllExamples (30 étapes, toutes OK). Écarts : Cisaillement et Flexion lisent la section de l'onglet Sections dans saisie["section"] ; défauts = exemples chargés au démarrage par MATLAB ; l'exemple Poutres garde la section IPE 300 (secTabulated) pour l'Eurocode ; tableaux titrés comme les onglets ; texte du rapport dans result["rapport"].
+  pytest 805 passed (38 nouveaux dans test_compute.py) ; ruff check et ruff format --check verts. Tests portés de testSectionRectangle, testTruss, testTractionValues, testTorsionAndBuckling, testHookeAndGauges, testParseFunction. Golden et tolérances inchangés.
 
 ## Phase 4 — Graphiques
 - [ ] E21 — beam_plots.py
