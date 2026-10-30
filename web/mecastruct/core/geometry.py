@@ -1,4 +1,4 @@
-"""Propriétés des sections droites : port de GeometryEngine.m, première moitié (étape E06).
+"""Propriétés des sections droites : port de GeometryEngine.m (étapes E06 et E07).
 
 Repère O1 : z horizontal vers la droite, y vertical vers le haut, origine au coin bas-gauche de la section.
 Les fonctions qui reçoivent une cote y la mesurent depuis le centre de gravité G (ARCHITECTURE §2).
@@ -11,6 +11,8 @@ import re
 
 import numpy as np
 import pandas as pd
+from scipy.integrate import dblquad, quad
+from scipy.optimize import minimize_scalar
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
@@ -249,6 +251,341 @@ def hasSymbolic() -> bool:
     Sortie : bool.
     """
     return data_manager.hasSymbolic()
+
+
+def analytical(sec: dict) -> dict:
+    """Méthode A : formules fermées des éléments et théorème de Huygens, propriétés de la section en G.
+
+    Entrée : `sec` (dict de section, dimensions en m). Sortie : dict P en SI (S en m², moments statiques en m³,
+    moments quadratiques en m⁴) : champs de ARCHITECTURE §2, `shear` (shearFactors), `huygens` (DataFrame de la
+    décomposition), `report` (list[str]) et `latex` (list[str]).
+    """
+    sec = validateSection(sec)
+    prims = _buildPrims(sec)
+    core = _huygensCore(prims)
+    core, repClosed, texClosed = _closedForm(sec, core)
+    P = _assembleP(sec, prims, core, "analytique")
+    P["huygens"] = core["table"]
+
+    rep = [f"Méthode A — formules fermées et théorème de Huygens ({_typeLabel(sec)})", _describeSection(sec)]
+    if repClosed:
+        rep += repClosed
+        tex = texClosed
+    else:
+        repH, tex = _huygensText(core)
+        rep += repH
+    if sec["type"] == "profile":
+        rep.append(
+            "Remarque : géométrie simplifiée (âme et ailes d'épaisseurs constantes a et e, congés de raccordement et "
+            "inclinaison des ailes ignorés) : un écart de quelques % avec les valeurs du catalogue est attendu "
+            "(voir compare)."
+        )
+    repC, texC = _commonText(P)
+    P["report"] = rep + repC
+    P["latex"] = tex + texC
+    return P
+
+
+def integral(sec: dict, mode: str | None = None) -> dict:
+    """Méthode B : intégration surfacique exacte (SymPy) ou numérique (dblquad), primitive par primitive.
+
+    Entrées : `sec` ; `mode` = 'symbolique' ou 'numerique' (alias acceptés) ; None = symbolique si SymPy est disponible.
+    Sortie : dict P comme analytical (sans huygens), plus IxDirect (m⁴, ∬ r² dS), methodUsed, method et
+    integrals (list[str], intégrales posées en LaTeX). Erreur : MecaStruct:GeometryEngine:unknownMode.
+    """
+    sec = validateSection(sec)
+    if mode is None or mode == "":
+        mode = "symbolique" if hasSymbolic() else "numerique"
+    mode = _normalizeMode(mode)
+    prims = _buildPrims(sec)
+    notes = []
+    R = None
+    if mode == "symbolique" and not hasSymbolic():
+        notes.append("SymPy indisponible : repli sur l'intégration numérique (dblquad).")
+        mode = "numerique"
+    if mode == "symbolique":
+        try:
+            R = _integrateSymbolic(prims)
+        except Exception as err:  # repli numérique sur toute erreur SymPy, comme GeometryEngine.m
+            notes.append(f"Échec du calcul symbolique ({err}) : repli sur l'intégration numérique (dblquad).")
+            mode = "numerique"
+    if R is None:
+        R = _integrateNumeric(prims)
+
+    symbolique = mode == "symbolique"
+    core = _cleanIyz({k: R[k] for k in ("S", "MO1z", "MO1y", "yG", "zG", "Iz", "Iy", "Iyz")})
+    P = _assembleP(sec, prims, core, "intégrale symbolique" if symbolique else "intégrale numérique")
+    P["IxDirect"] = R["IxDirect"]
+    P["methodUsed"] = "symbolique" if symbolique else "numérique"
+    P["integrals"] = _integralStrings(prims, R)
+
+    fs = _num
+    if symbolique:
+        rep = ["Méthode B — intégration surfacique exacte (calcul symbolique SymPy, intégrales imbriquées)"]
+    else:
+        rep = ["Méthode B — intégration surfacique numérique (dblquad, tolérance relative 1e-13)"]
+    rep += [_describeSection(sec)] + notes
+    rep.append(
+        "Coordonnées (y, z) dans le repère O1 ; rectangles : dS = dy·dz ; disques et couronnes : dS = r·dr·dθ "
+        "avec y = yc + r·sin θ, z = zc + r·cos θ."
+    )
+    for k, p in enumerate(prims):
+        sgTxt = "+" if p["sign"] > 0 else "−"
+        if p["kind"] == "rect":
+            rep.append(
+                f"  {k + 1}. {p['label']} ({sgTxt}) : z ∈ [{fs(p['z1'])} ; {fs(p['z2'])}] m, "
+                f"y ∈ [{fs(p['y1'])} ; {fs(p['y2'])}] m"
+            )
+        else:
+            rep.append(
+                f"  {k + 1}. {p['label']} ({sgTxt}) : centre (zc = {fs(p['zc'])} m, yc = {fs(p['yc'])} m), "
+                f"r ∈ [{fs(p['Ri'])} ; {fs(p['R'])}] m, θ ∈ [0 ; 2π]"
+            )
+        rep.append(
+            f"     S_{k + 1} = {fs(R['Si'][k])} m², M_O1z,{k + 1} = {fs(R['MO1zi'][k])} m³, "
+            f"M_O1y,{k + 1} = {fs(R['MO1yi'][k])} m³ ; contributions en G : I_Gz = {fs(R['Izi'][k])} m⁴, "
+            f"I_Gy = {fs(R['Iyi'][k])} m⁴, I_Gyz = {fs(R['Iyzi'][k])} m⁴"
+        )
+    rep.append(f"Aire : S = ∬ dS = {fs(P['S'])} m² ({fs(P['S'] * 1e4)} cm²)")
+    rep.append(f"Moments statiques : M_O1z = ∬ y1 dS = {fs(P['MO1z'])} m³ ; M_O1y = ∬ z1 dS = {fs(P['MO1y'])} m³")
+    rep.append(f"Barycentre : yG = M_O1z/S = {fs(P['yG'])} m ; zG = M_O1y/S = {fs(P['zG'])} m")
+    rep.append(
+        f"I_Gz = ∬ y² dS = {fs(P['Iz'])} m⁴ ({fs(P['Iz'] * 1e8)} cm⁴) ; "
+        f"I_Gy = ∬ z² dS = {fs(P['Iy'])} m⁴ ({fs(P['Iy'] * 1e8)} cm⁴)"
+    )
+    rep.append(f"Produit d'inertie : I_Gyz = ∬ y·z dS = {fs(P['Iyz'])} m⁴")
+    ecIx = abs(P["IxDirect"] - (P["Iz"] + P["Iy"])) / max(abs(P["IxDirect"]), np.finfo(float).tiny)
+    rep.append(
+        f"Contrôle : Ix = ∬ r² dS = {fs(P['IxDirect'])} m⁴ ; I_Gz + I_Gy = {fs(P['Iz'] + P['Iy'])} m⁴ "
+        f"(écart relatif {ecIx:.2g})"
+    )
+    tex = [
+        r"$S = \int\!\!\int_S dS = " + _texNum(P["S"]) + r"\ \mathrm{m^2}$",
+        r"$y_G = \frac{1}{S}\int\!\!\int_S y_1\,dS = \frac{"
+        + _texNum(P["MO1z"])
+        + "}{"
+        + _texNum(P["S"])
+        + "} = "
+        + _texNum(P["yG"])
+        + r"\ \mathrm{m}$",
+        r"$z_G = \frac{1}{S}\int\!\!\int_S z_1\,dS = \frac{"
+        + _texNum(P["MO1y"])
+        + "}{"
+        + _texNum(P["S"])
+        + "} = "
+        + _texNum(P["zG"])
+        + r"\ \mathrm{m}$",
+        r"$I_{Gz} = \int\!\!\int_S y^2\,dS = " + _texNum(P["Iz"]) + r"\ \mathrm{m^4}$",
+        r"$I_{Gy} = \int\!\!\int_S z^2\,dS = " + _texNum(P["Iy"]) + r"\ \mathrm{m^4}$",
+        r"$I_{Gyz} = \int\!\!\int_S y\,z\,dS = " + _texNum(P["Iyz"]) + r"\ \mathrm{m^4}$",
+        r"$I_x = \int\!\!\int_S r^2\,dS = " + _texNum(P["IxDirect"]) + r"\ \mathrm{m^4}$",
+    ]
+    repC, texC = _commonText(P)
+    P["report"] = rep + repC
+    P["latex"] = tex + texC
+    return P
+
+
+def tabulated(sec: dict) -> dict:
+    """Caractéristiques d'un profilé lues dans le catalogue ; les valeurs absentes sont déduites.
+
+    Entrée : `sec` (profilé du catalogue : h, b, a, e, S, Iz, Iy et, s'ils existent, Wz, Wy, rz, ry, c, J ou It ; m).
+    Sortie : dict P comme analytical (sans huygens), method 'tabulée'.
+    Erreur : MecaStruct:GeometryEngine:notProfile si sec.type n'est pas 'profile'.
+    """
+    sec = validateSection(sec)
+    if sec["type"] != "profile":
+        raise MecaStructError(
+            _ID + "notProfile",
+            "Les valeurs tabulées n'existent que pour un profilé du catalogue "
+            f"(sec.type = 'profile') ; type fourni : '{sec['type']}'.",
+        )
+    S = _catField(sec, "S", "aire")
+    Iz = _catField(sec, "Iz", "moment quadratique axe fort")
+    Iy = _catField(sec, "Iy", "moment quadratique axe faible")
+    h, b, a, e = sec["h"], sec["b"], sec["tw"], sec["tf"]
+    fs = _num
+    notes = []
+    yG = h / 2
+    if sec["profileShape"] == "U":
+        c = _optField(sec, "c")
+        if math.isfinite(c) and c > 0:
+            zG = c
+        else:
+            zG = _huygensCore(_buildPrims(sec))["zG"]
+            notes.append("Distance c (dos d'âme → G) absente du catalogue : zG calculé sur la géométrie simplifiée.")
+    else:
+        zG = b / 2
+
+    P = {
+        "type": "profile",
+        "method": "tabulée",
+        "S": S,
+        "zG": zG,
+        "yG": yG,
+        "MO1z": S * yG,
+        "MO1y": S * zG,
+        "Iz": Iz,
+        "Iy": Iy,
+        "Iyz": 0.0,
+        "Ix": Iz + Iy,
+    }
+    P["I1"], P["I2"], P["alphaP"] = _principal(Iz, Iy, 0.0)
+    rz = _optField(sec, "rz")
+    ry = _optField(sec, "ry")
+    P["rz"] = rz if math.isfinite(rz) and rz > 0 else math.sqrt(Iz / S)
+    P["ry"] = ry if math.isfinite(ry) and ry > 0 else math.sqrt(Iy / S)
+    P["vyTop"], P["vyBot"], P["vzRight"], P["vzLeft"] = h - yG, yG, b - zG, zG
+    Wz = _optField(sec, "Wz")
+    Wy = _optField(sec, "Wy")
+    P["Wz"] = Wz if math.isfinite(Wz) and Wz > 0 else Iz / max(P["vyTop"], P["vyBot"])
+    P["Wy"] = Wy if math.isfinite(Wy) and Wy > 0 else Iy / max(P["vzRight"], P["vzLeft"])
+    J = _optField(sec, "J")
+    if not math.isfinite(J):
+        J = _optField(sec, "It")
+    if math.isfinite(J) and J > 0:
+        P["J"], P["Jmethod"] = J, "valeur du catalogue"
+    else:
+        P["J"], P["Jmethod"] = math.nan, "non tabulée (voir la méthode analytique : Σ l·t³/3)"
+
+    P["bbox"] = [0.0, b, 0.0, h]
+    P["shear"] = {"kCours": math.nan, "kyCours": math.nan, "kNum": math.nan, "kyNum": math.nan}
+    if sec["profileShape"] == "I":
+        Sw = (h - 2 * e) * a
+        P["k"], P["ky"], P["kSource"] = S / Sw, Sw / S, "cours"
+        P["shear"]["kCours"], P["shear"]["kyCours"] = P["k"], P["ky"]
+        kTxt = (
+            f"k = S/S_âme = {fs(P['k'])}, ky = S_âme/S = {fs(P['ky'])} "
+            f"(S_âme = (h − 2e)·a = {fs(Sw)} m², S du catalogue)"
+        )
+    else:
+        f = shearFactors(sec)
+        P["k"], P["ky"], P["kSource"] = f["kNum"], f["kyNum"], "numérique"
+        P["shear"]["kNum"], P["shear"]["kyNum"] = P["k"], P["ky"]
+        kTxt = f"k = {fs(P['k'])} (Jourawski), ky = {fs(P['ky'])} (énergie), calculés sur la géométrie simplifiée"
+    P["kz"] = _shearZ(sec, _buildPrims(sec), P["ky"])
+    kTxt += f" ; kz = {fs(P['kz'])} (énergie, effort tranchant Tz, géométrie simplifiée)"
+
+    rep = [
+        f"Valeurs tabulées du catalogue — {_describeSection(sec)}",
+        "Convention : Iz (application) = axe fort = Iy (Eurocode) ; Iy (application) = axe faible = Iz (Eurocode).",
+    ] + notes
+    rep += [
+        f"S = {fs(S)} m² ({fs(S * 1e4)} cm²)",
+        f"G : yG = h/2 = {fs(yG)} m ; zG = {fs(zG)} m (repère O1)",
+        f"Iz = {fs(Iz)} m⁴ ({fs(Iz * 1e8)} cm⁴) ; Iy = {fs(Iy)} m⁴ ({fs(Iy * 1e8)} cm⁴) ; Iyz = 0 (symétrie)",
+        f"Ix = Iz + Iy = {fs(P['Ix'])} m⁴",
+        f"rz = {fs(P['rz'])} m ; ry = {fs(P['ry'])} m",
+        f"Wz = {fs(P['Wz'])} m³ ({fs(P['Wz'] * 1e6)} cm³) ; Wy = {fs(P['Wy'])} m³ ({fs(P['Wy'] * 1e6)} cm³)",
+        f"J : {P['Jmethod']}",
+        "Cisaillement : " + kTxt,
+    ]
+    P["report"] = rep
+    P["latex"] = [
+        r"$S = "
+        + _texNum(S)
+        + r"\ \mathrm{m^2},\ I_{Gz} = "
+        + _texNum(Iz)
+        + r"\ \mathrm{m^4},\ I_{Gy} = "
+        + _texNum(Iy)
+        + r"\ \mathrm{m^4}$",
+        r"$r_z = \sqrt{\frac{I_{Gz}}{S}} = "
+        + _texNum(P["rz"])
+        + r"\ \mathrm{m},\ r_y = "
+        + _texNum(P["ry"])
+        + r"\ \mathrm{m}$",
+        r"$W_z = " + _texNum(P["Wz"]) + r"\ \mathrm{m^3},\ W_y = " + _texNum(P["Wy"]) + r"\ \mathrm{m^3}$",
+        r"$k = " + _texNum(P["k"]) + r",\ k_y = " + _texNum(P["ky"]) + "$",
+    ]
+    return P
+
+
+def compare(sec: dict) -> pd.DataFrame:
+    """Tableau comparatif des méthodes analytique, intégrale et tabulée.
+
+    Entrée : `sec`. Sortie : DataFrame, index S, yG, zG, Iz, Iy, Iyz, Ix, rz, ry, Wz, Wy ; colonnes Analytique,
+    Integrale, Tabulee (NaN si la section n'est pas un profilé) et EcartMax_pct (écart relatif maximal entre les
+    colonnes disponibles, en %). `attrs` : units, analytical, integral, tabulated (None hors profilé), report
+    (list[str], écarts commentés) et ecartAB_pct (écart analytique / intégrale, en %).
+    """
+    sec = validateSection(sec)
+    A = analytical(sec)
+    B = integral(sec)
+    names = ["S", "yG", "zG", "Iz", "Iy", "Iyz", "Ix", "rz", "ry", "Wz", "Wy"]
+    units = ["m^2", "m", "m", "m^4", "m^4", "m^4", "m^4", "m", "m", "m^3", "m^3"]
+    isProfile = sec["type"] == "profile"
+    T = tabulated(sec) if isProfile else None
+    n = len(names)
+    va, vb, vt = np.zeros(n), np.zeros(n), np.full(n, math.nan)
+    ec, ecAB, ecT = np.zeros(n), np.zeros(n), np.zeros(n)
+    Lref = max(A["bbox"][1] - A["bbox"][0], A["bbox"][3] - A["bbox"][2])
+    for k, nom in enumerate(names):
+        va[k] = A[nom]
+        vb[k] = B[nom]
+        if isProfile:
+            vt[k] = T[nom]
+        vals = np.array([va[k], vb[k], vt[k]])
+        vals = vals[~np.isnan(vals)]
+        if nom == "Iyz":
+            den = max(*np.abs(vals), abs(A["Iz"]), abs(A["Iy"]))
+        elif nom in ("yG", "zG"):
+            den = max(*np.abs(vals), 1e-6 * Lref)
+        else:
+            den = np.abs(vals).max()
+        if den > 0:
+            ec[k] = 100 * (vals.max() - vals.min()) / den
+            ecAB[k] = 100 * abs(va[k] - vb[k]) / den
+        if isProfile and vt[k] != 0:
+            ecT[k] = 100 * abs(va[k] - vt[k]) / abs(vt[k])
+
+    C = pd.DataFrame({"Analytique": va, "Integrale": vb, "Tabulee": vt, "EcartMax_pct": ec}, index=names)
+    fs = _num
+    rep = [f"Comparaison des méthodes — {_describeSection(sec)}", f"Méthode B : {B['method']}."]
+    iAB = int(np.argmax(ecAB))
+    rep.append(
+        f"Analytique / intégrale : écart relatif maximal {ecAB[iAB]:.3g} % ({names[iAB]}) — "
+        "les deux méthodes sont exactes et doivent coïncider."
+    )
+    if isProfile:
+        iT = int(np.argmax(ecT))
+        rep.append(
+            f"Catalogue / géométrie simplifiée : écart maximal {ecT[iT]:.3g} % ({names[iT]}, relatif au catalogue). "
+            "Écart attendu de quelques % : les congés de raccordement (r) et l'inclinaison éventuelle des ailes ne "
+            "sont pas modélisés par la géométrie simplifiée."
+        )
+        if ecT[iT] > 10:
+            rep.append(
+                "Écart supérieur à 10 % : typique des profilés à ailes inclinées (UPN, IPN), dont l'épaisseur d'aile e "
+                "du catalogue est une valeur moyenne ; les grandeurs relatives à l'axe faible (zG, Iy, Wy) sont "
+                "les plus affectées. Utiliser les valeurs tabulées pour le dimensionnement."
+            )
+        for k, nom in enumerate(names):
+            if nom != "Iyz" and vt[k] != 0:
+                rep.append(
+                    f"  {nom} : analytique {fs(va[k])}, catalogue {fs(vt[k])} {units[k]} "
+                    f"(écart {100 * (va[k] - vt[k]) / vt[k]:+.2f} %)"
+                )
+    C.attrs = {
+        "units": units,
+        "analytical": A,
+        "integral": B,
+        "tabulated": T,
+        "report": rep,
+        "ecartAB_pct": float(ecAB.max()),
+    }
+    return C
+
+
+def shearFactors(sec: dict) -> dict:
+    """Facteurs de cisaillement : k (τmax = k·T/S) et ky (section réduite ky·S), valeurs du cours et numériques.
+
+    Entrée : `sec`. Sortie : dict kCours, kyCours (NaN si le type n'a pas de valeur du cours), kNum, kyNum (-),
+    yAtMax (m, depuis G, cote du maximum de τ), Sweb (m², aire d'âme des I, NaN sinon), connected (bool, False si
+    la section n'est pas connexe selon y), report (list[str]) et latex (list[str]).
+    """
+    sec = validateSection(sec)
+    prims = _buildPrims(sec)
+    return _shearCore(sec, prims, _huygensCore(prims))
 
 
 # =====================================================================================
@@ -1329,3 +1666,404 @@ def _texNum(x: float, nd: int = 5) -> str:
         else:
             s = f"{mant} \\times 10^{{{ex_n}}}"
     return s
+
+
+# =====================================================================================
+#  Assemblage, cisaillement, intégrales (étape E07)
+# =====================================================================================
+
+
+def _assembleP(sec: dict, prims: list[dict], core: dict, method: str) -> dict:
+    """Champs communs des méthodes analytique et intégrale (GeometryEngine.assembleP)."""
+    S, Iz, Iy = core["S"], core["Iz"], core["Iy"]
+    P = {
+        "type": sec["type"],
+        "method": method,
+        "S": S,
+        "zG": core["zG"],
+        "yG": core["yG"],
+        "MO1z": core["MO1z"],
+        "MO1y": core["MO1y"],
+        "Iz": Iz,
+        "Iy": Iy,
+        "Iyz": core["Iyz"],
+        "Ix": Iz + Iy,
+    }
+    P["I1"], P["I2"], P["alphaP"] = _principal(Iz, Iy, core["Iyz"])
+    P["rz"] = math.sqrt(Iz / S)
+    P["ry"] = math.sqrt(Iy / S)
+    bb = _bboxPrims(prims)
+    P["vyTop"] = bb[3] - core["yG"]
+    P["vyBot"] = core["yG"] - bb[2]
+    P["vzRight"] = bb[1] - core["zG"]
+    P["vzLeft"] = core["zG"] - bb[0]
+    P["Wz"] = Iz / max(P["vyTop"], P["vyBot"])
+    P["Wy"] = Iy / max(P["vzRight"], P["vzLeft"])
+    P["J"], P["Jmethod"], P["Jlatex"] = _torsionConstant(sec, prims)
+    f = _shearCore(sec, prims, core)
+    if not math.isnan(f["kCours"]):
+        P["k"], P["ky"], P["kSource"] = f["kCours"], f["kyCours"], "cours"
+    else:
+        P["k"], P["ky"], P["kSource"] = f["kNum"], f["kyNum"], "numérique"
+    P["kz"] = _shearZ(sec, prims, P["ky"])
+    P["shear"] = f
+    P["bbox"] = bb
+    P["report"] = []
+    P["latex"] = []
+    return P
+
+
+def _innerRadius(p: dict) -> float:
+    """Rayon intérieur d'une primitive circulaire (0 pour un disque plein)."""
+    return p["Ri"] if p["kind"] == "annulus" and p["Ri"] > 0 else 0.0
+
+
+def _primIntegral(p: dict, L: float, g) -> float:
+    """∬ g(y, z) dS sur la primitive p, en coordonnées adimensionnées (x/L) ; signe non appliqué."""
+    # tolérance absolue 1e-15 comme AbsTol de MATLAB : évite de chercher une précision relative sur les zéros
+    if p["kind"] == "rect":
+        return dblquad(
+            lambda yy, zz: g(yy, zz), p["z1"] / L, p["z2"] / L, p["y1"] / L, p["y2"] / L, epsabs=1e-15, epsrel=1e-13
+        )[0]
+    ycs, zcs = p["yc"] / L, p["zc"] / L
+    return dblquad(
+        lambda rr, tt: g(ycs + rr * np.sin(tt), zcs + rr * np.cos(tt)) * rr,
+        0.0,
+        2 * np.pi,
+        _innerRadius(p) / L,
+        p["R"] / L,
+        epsabs=1e-15,
+        epsrel=1e-13,
+    )[0]
+
+
+def _integrateNumeric(prims: list[dict]) -> dict:
+    """Intégrales doubles numériques en coordonnées adimensionnées (x/L), primitive par primitive."""
+    L = _refLength(prims)
+    Si = np.array([p["sign"] * L**2 * _primIntegral(p, L, lambda y, z: 1.0) for p in prims])
+    MO1zi = np.array([p["sign"] * L**3 * _primIntegral(p, L, lambda y, z: y) for p in prims])
+    MO1yi = np.array([p["sign"] * L**3 * _primIntegral(p, L, lambda y, z: z) for p in prims])
+    S = Si.sum()
+    yG = MO1zi.sum() / S
+    zG = MO1yi.sum() / S
+    yGs, zGs = yG / L, zG / L
+    Izi = np.array([p["sign"] * L**4 * _primIntegral(p, L, lambda y, z: (y - yGs) ** 2) for p in prims])
+    Iyi = np.array([p["sign"] * L**4 * _primIntegral(p, L, lambda y, z: (z - zGs) ** 2) for p in prims])
+    Iyzi = np.array([p["sign"] * L**4 * _primIntegral(p, L, lambda y, z: (y - yGs) * (z - zGs)) for p in prims])
+    Ixi = np.array(
+        [p["sign"] * L**4 * _primIntegral(p, L, lambda y, z: (y - yGs) ** 2 + (z - zGs) ** 2) for p in prims]
+    )
+    return {
+        "Si": Si,
+        "MO1zi": MO1zi,
+        "MO1yi": MO1yi,
+        "Izi": Izi,
+        "Iyi": Iyi,
+        "Iyzi": Iyzi,
+        "Ixi": Ixi,
+        "S": S,
+        "MO1z": MO1zi.sum(),
+        "MO1y": MO1yi.sum(),
+        "yG": yG,
+        "zG": zG,
+        "Iz": Izi.sum(),
+        "Iy": Iyi.sum(),
+        "Iyz": Iyzi.sum(),
+        "IxDirect": Ixi.sum(),
+    }
+
+
+def _integrateSymbolic(prims: list[dict]) -> dict:
+    """Intégrales doubles exactes par SymPy, primitive par primitive ; résultats convertis en float."""
+    import sympy as sp  # import tardif : SymPy est optionnel
+
+    y, z = sp.symbols("y z", real=True)
+    r = sp.symbols("r", positive=True)
+    th = sp.symbols("theta", real=True)
+
+    def exact(v: float):
+        return sp.Rational(float(v))  # rationnel exact du flottant, comme sym(x) de MATLAB
+
+    def integ(p: dict, g):
+        """∬ g(y, z) dS sur la primitive p, exacte ; signe non appliqué."""
+        if p["kind"] == "rect":
+            inner = sp.integrate(g(y, z), (y, exact(p["y1"]), exact(p["y2"])))
+            return sp.integrate(inner, (z, exact(p["z1"]), exact(p["z2"])))
+        yy = exact(p["yc"]) + r * sp.sin(th)
+        zz = exact(p["zc"]) + r * sp.cos(th)
+        inner = sp.integrate(g(yy, zz) * r, (r, exact(_innerRadius(p)), exact(p["R"])))
+        return sp.integrate(inner, (th, 0, 2 * sp.pi))
+
+    def sums(g):
+        """Termes signés ∬ g dS de chaque primitive, et leur somme."""
+        terms = [p["sign"] * integ(p, g) for p in prims]
+        return terms, sum(terms)
+
+    Si_t, S = sums(lambda a, b: 1)
+    MO1zi_t, MO1z = sums(lambda a, b: a)
+    MO1yi_t, MO1y = sums(lambda a, b: b)
+    yG = MO1z / S
+    zG = MO1y / S
+    Izi_t, Iz = sums(lambda a, b: (a - yG) ** 2)
+    Iyi_t, Iy = sums(lambda a, b: (b - zG) ** 2)
+    Iyzi_t, Iyz = sums(lambda a, b: (a - yG) * (b - zG))
+    Ixi_t, Ix = sums(lambda a, b: (a - yG) ** 2 + (b - zG) ** 2)
+
+    def arr(terms):
+        return np.array([float(t) for t in terms])
+
+    return {
+        "Si": arr(Si_t),
+        "MO1zi": arr(MO1zi_t),
+        "MO1yi": arr(MO1yi_t),
+        "Izi": arr(Izi_t),
+        "Iyi": arr(Iyi_t),
+        "Iyzi": arr(Iyzi_t),
+        "Ixi": arr(Ixi_t),
+        "S": float(S),
+        "MO1z": float(MO1z),
+        "MO1y": float(MO1y),
+        "yG": float(yG),
+        "zG": float(zG),
+        "Iz": float(Iz),
+        "Iy": float(Iy),
+        "Iyz": float(Iyz),
+        "IxDirect": float(Ix),
+    }
+
+
+def _integralStrings(prims: list[dict], R: dict) -> list[str]:
+    """Intégrales posées en LaTeX avec leurs bornes numériques : sept lignes par primitive."""
+    tn = _texNum
+    c = []
+    yG, zG = R["yG"], R["zG"]
+    for k, p in enumerate(prims):
+        sg = "" if p["sign"] > 0 else "-"
+        ks = str(k + 1)
+        if p["kind"] == "rect":
+            dbl = (
+                r"\int_{"
+                + tn(p["z1"])
+                + "}^{"
+                + tn(p["z2"])
+                + r"}\!\!\int_{"
+                + tn(p["y1"])
+                + "}^{"
+                + tn(p["y2"])
+                + "} "
+            )
+            dS = r"dy\,dz"
+            ey = r"\left(y" + _offStr(-yG) + r"\right)"
+            ez = r"\left(z" + _offStr(-zG) + r"\right)"
+            my = r"y\,"
+            mz = r"z\,"
+        else:
+            dbl = r"\int_{0}^{2\pi}\!\!\int_{" + tn(_innerRadius(p)) + "}^{" + tn(p["R"]) + "} "
+            dS = r"r\,dr\,d\theta"
+            ey = r"\left(r\sin\theta" + _offStr(p["yc"] - yG) + r"\right)"
+            ez = r"\left(r\cos\theta" + _offStr(p["zc"] - zG) + r"\right)"
+            my = r"\left(" + tn(p["yc"]) + r" + r\sin\theta\right) "
+            mz = r"\left(" + tn(p["zc"]) + r" + r\cos\theta\right) "
+        c.append("$S^{(" + ks + ")} = " + sg + dbl + dS + " = " + tn(R["Si"][k]) + r"\ \mathrm{m^2}$")
+        c.append("$M_{O_1z}^{(" + ks + ")} = " + sg + dbl + my + dS + " = " + tn(R["MO1zi"][k]) + r"\ \mathrm{m^3}$")
+        c.append("$M_{O_1y}^{(" + ks + ")} = " + sg + dbl + mz + dS + " = " + tn(R["MO1yi"][k]) + r"\ \mathrm{m^3}$")
+        c.append(
+            "$I_{Gz}^{(" + ks + ")} = " + sg + dbl + ey + r"^2\," + dS + " = " + tn(R["Izi"][k]) + r"\ \mathrm{m^4}$"
+        )
+        c.append(
+            "$I_{Gy}^{(" + ks + ")} = " + sg + dbl + ez + r"^2\," + dS + " = " + tn(R["Iyi"][k]) + r"\ \mathrm{m^4}$"
+        )
+        c.append(
+            "$I_{Gyz}^{("
+            + ks
+            + ")} = "
+            + sg
+            + dbl
+            + ey
+            + ez
+            + r"\,"
+            + dS
+            + " = "
+            + tn(R["Iyzi"][k])
+            + r"\ \mathrm{m^4}$"
+        )
+        c.append(
+            "$I_{x}^{("
+            + ks
+            + ")} = "
+            + sg
+            + dbl
+            + r"\left["
+            + ey
+            + "^2 + "
+            + ez
+            + r"^2\right] "
+            + dS
+            + " = "
+            + tn(R["Ixi"][k])
+            + r"\ \mathrm{m^4}$"
+        )
+    return c
+
+
+def _shearZ(sec: dict, prims: list[dict], ky: float) -> float:
+    """Coefficient kz (effort tranchant Tz) : calcul énergétique de ky sur la section aux axes y et z échangés."""
+    if sec["type"] in ("rectangle", "disque", "couronne"):
+        return ky  # valeur du cours, indépendante de la direction
+    pr = [dict(p, z1=p["y1"], y1=p["z1"], z2=p["y2"], y2=p["z2"], zc=p["yc"], yc=p["zc"]) for p in prims]
+    kz = _shearCore({"type": "composite"}, pr, _huygensCore(pr))["kyNum"]
+    return kz if math.isfinite(kz) and kz > 0 else ky  # section non connexe selon z : pas de valeur énergétique
+
+
+def _courseShear(sec: dict, core: dict) -> tuple[float, float, float, str]:
+    """Valeurs tabulées du cours pour k et ky : (kCours, kyCours, Sweb, texte) ; NaN si le type n'en a pas."""
+    t = sec["type"]
+    nan = math.nan
+    if t == "rectangle":
+        return 3 / 2, 5 / 6, nan, "rectangle : k = 3/2, ky = 5/6"
+    if t == "disque":
+        return 4 / 3, 6 / 7, nan, "disque : k = 4/3, ky = 6/7"
+    if t == "couronne":
+        R, r = sec["D"] / 2, sec["d"] / 2
+        kC = 4 / 3 * (1 + r * R / (r**2 + R**2))
+        if r == 0:
+            return kC, 6 / 7, nan, f"couronne avec d = 0 (disque plein) : k = {_num(kC)}, ky = 6/7"
+        return kC, 1 / 2, nan, f"tube : k = 4/3·(1 + rR/(r² + R²)) = {_num(kC)}, ky = 1/2 (tube mince)"
+    if t == "I" or (t == "profile" and sec["profileShape"] == "I"):
+        Sweb = sec["tw"] * (sec["h"] - 2 * sec["tf"])
+        kC, kyC = core["S"] / Sweb, Sweb / core["S"]
+        if t == "I":
+            txt = (
+                f"poutre en I : k = S/S_âme = {_num(kC)}, ky = S_âme/S = {_num(kyC)} "
+                f"(S_âme = tw·(h − 2tf) = {_num(Sweb)} m²)"
+            )
+        else:
+            txt = (
+                f"profilé en I : k = S/S_âme = {_num(kC)}, ky = S_âme/S = {_num(kyC)} "
+                f"(S_âme = a·(h − 2e) = {_num(Sweb)} m², S de la géométrie simplifiée)"
+            )
+        return kC, kyC, Sweb, txt
+    if t == "profile":
+        return nan, nan, nan, "aucune valeur du cours pour un profilé en U (valeurs numériques retenues)"
+    return nan, nan, nan, "aucune valeur du cours pour ce type (valeurs numériques retenues)"
+
+
+def _shearCore(sec: dict, prims: list[dict], core: dict) -> dict:
+    """Facteurs de cisaillement (cours, Jourawski, énergie) : kCours, kyCours, kNum, kyNum, yAtMax, Sweb, connected."""
+    S, Iz, yG = core["S"], core["Iz"], core["yG"]
+    fs = _num
+    kC, kyC, Sweb, courseTxt = _courseShear(sec, core)
+    Lref = _refLength(prims)
+    tolW = 1e-12 * Lref
+    lev = _levels(prims)
+    yb = lev - yG
+    connected = True
+    # étranglement : largeur nulle (d'un côté) à une cote intérieure où Q ≠ 0
+    # (parties disjointes ou contact ponctuel, ex. disque posé sur un rectangle)
+    bb = _bboxPrims(prims)
+    for k in range(len(lev)):
+        if bb[2] + tolW < lev[k] < bb[3] - tolW:
+            bA = float(_widthCore(prims, yG, yb[k], "above"))
+            bB = float(_widthCore(prims, yG, yb[k], "below"))
+            if min(bA, bB) <= tolW and abs(float(_firstMomentCore(prims, yG, yb[k]))) > 1e-9 * S * Lref:
+                connected = False
+    bestR = -math.inf
+    yBest = math.nan
+    intQ2b = 0.0
+    absTol = 1e-15 * Iz**2 / S
+    for k in range(len(yb) - 1):
+        a, c = yb[k], yb[k + 1]
+        if c - a <= tolW:
+            continue
+        if float(_widthCore(prims, yG, (a + c) / 2, "above")) <= tolW:
+            connected = False
+            continue
+        t = np.linspace(a, c, 201)
+        if a < 0 < c:
+            t = np.unique(np.append(t, 0.0))
+        bt = _widthCore(prims, yG, t, "above")
+        bt[-1] = float(_widthCore(prims, yG, c, "below"))
+        Qt = _firstMomentCore(prims, yG, t)
+        rt = np.zeros(t.shape)
+        ok = bt > tolW
+        rt[ok] = Qt[ok] / bt[ok]
+        im = int(np.argmax(rt))
+        rmax = rt[im]
+        ym = t[im]
+        lo = t[max(im - 1, 0)]
+        hi = t[min(im + 1, len(t) - 1)]
+        if hi > lo:
+
+            def g(x):
+                return -float(_firstMomentCore(prims, yG, x)) / max(float(_widthCore(prims, yG, x, "above")), tolW)
+
+            res = minimize_scalar(g, bounds=(lo, hi), method="bounded", options={"xatol": 1e-12 * Lref})
+            if -res.fun > rmax:
+                rmax = -res.fun
+                ym = res.x
+        if rmax > bestR:
+            bestR = rmax
+            yBest = ym
+        intQ2b += quad(lambda x: float(_q2b(prims, yG, x, tolW)), a, c, epsabs=absTol, epsrel=1e-12)[0]
+    if connected and math.isfinite(bestR) and intQ2b > 0:
+        kNum = S * bestR / Iz
+        kyNum = Iz**2 / (S * intQ2b)
+        if abs(yBest) <= 1e-9 * Lref:
+            yBest = 0.0
+    else:
+        kNum = kyNum = yBest = math.nan
+
+    f = {
+        "kCours": kC,
+        "kyCours": kyC,
+        "kNum": kNum,
+        "kyNum": kyNum,
+        "yAtMax": yBest,
+        "Sweb": Sweb,
+        "connected": connected,
+    }
+    rep = ["Facteurs de cisaillement (effort tranchant Ty, flexion autour de z)", f"Valeurs du cours : {courseTxt}"]
+    if connected:
+        rep.append(
+            "Jourawski : τ(y) = T·Q(y)/(Iz·b(y)) ; maximum de Q/b en y = "
+            f"{fs(yBest)} m (depuis G) : kNum = S·Q/(Iz·b) = {fs(kNum)}"
+        )
+        rep.append(
+            "Énergie : 1/(ky·S) = ∫ Q(y)²/(Iz²·b(y)) dy ⇒ kyNum = Iz²/(S·∫ Q²/b dy) "
+            f"= {fs(kyNum)} (∫ Q²/b dy = {fs(intQ2b)} m⁶)"
+        )
+    else:
+        rep.append(
+            "Section non connexe ou à contact ponctuel selon y (b(y) nulle entre deux parties alors que Q ≠ 0) : "
+            "Jourawski non applicable, kNum = kyNum = NaN."
+        )
+    if sec["type"] == "disque":
+        rep.append(
+            f"Disque : l'intégration exacte donne kyNum = 9/10 = {fs(kyNum)} (1/ky = 10/9) ; valeur du cours 6/7 = "
+            f"{fs(6 / 7)} (écart {100 * (kyNum - 6 / 7) / (6 / 7):.2f} %) : 6/7 résulte de la théorie de l'élasticité "
+            "(Cowper, ν = 0), alors que la répartition de Jourawski ne retient que τxy moyen sur la largeur "
+            "et néglige τxz."
+        )
+    elif sec["type"] == "rectangle":
+        rep.append("Rectangle : kNum = 3/2 et kyNum = 5/6 exactement (valeurs du cours).")
+    elif sec["type"] == "couronne":
+        rep.append(
+            "Couronne : kNum coïncide exactement avec 4/3·(1 + rR/(r² + R²)) ; "
+            f"kyNum = {fs(kyNum)} tend vers 2/3 pour un tube mince : la formule énergétique ne retient que τxy moyen "
+            "sur la largeur horizontale b(y), alors que la valeur 1/2 du cours suppose un flux de cisaillement tangent "
+            "à la paroi (τxz pris en compte en haut et en bas)."
+        )
+    elif sec["type"] in ("I", "profile") and not math.isnan(kC):
+        rep.append(
+            "Profil en I : la formule du cours (S/S_âme) suppose τ uniforme dans l'âme ; Jourawski donne τmax en G : "
+            f"écart kNum/kCours = {100 * (kNum - kC) / kC:+.2f} %."
+        )
+    tex = [
+        r"$k = \frac{\tau_{max}\,S}{T} = \frac{S\,Q(y)}{I_{Gz}\,b(y)} = " + _texNum(kNum) + "$",
+        r"$k_y = \frac{I_{Gz}^2}{S \int Q(y)^2/b(y)\,dy} = " + _texNum(kyNum) + "$",
+    ]
+    if not math.isnan(kC):
+        tex.append(r"$k_{cours} = " + _texNum(kC) + r",\ k_{y,cours} = " + _texNum(kyC) + "$")
+    f["report"] = rep
+    f["latex"] = tex
+    return f
