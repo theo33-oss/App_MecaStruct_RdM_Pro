@@ -7,7 +7,8 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   Dépôt privé `App_MecaStruct_RdM_Pro` sur GitHub. Python 3.12.10 installé. 8 JSON de base et 9 fichiers golden (209 cas) exportés. Erreurs attendues seulement : erreur_tabulated_rectangle, truss_mecanisme.
 
 ## Phase 1 — Squelette
-- [ ] E01 — Dossier web/, dépendances, pytest, ruff, CI, page « Bonjour »
+- [x] E01 — Dossier web/, dépendances, pytest, ruff, CI, page « Bonjour »
+  Modèles copiés sans modification (dont tests.yml à la racine, non testé sur GitHub : pas de push). venv Python 3.12.10 : pytest 10 passed (0 skip), ruff « All checks passed! », Streamlit health ok et page « MecaStruct RdM Pro » vue. Étape E00 vérifiée : 8 JSON et 9 golden présents.
 
 ## Phase 2 — Moteurs de calcul
 - [ ] E02 — errors.py, utils.py, units.py (+ convertisseur)
