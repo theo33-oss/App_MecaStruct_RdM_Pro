@@ -24,7 +24,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   Port de ppEval, ppSample, ppIntegrate, ppDerivative, ppAdd, ppScale, ppMultiply, ppRefine, ppIntegral, ppZero, ppConst, poly2latex, poly2str ; PP en dataclass, asPP accepte le dict JSON. hasSymbolic réexporté de data_manager.
   Aides privées _tol, _segIndex, _mergeBreaks, _polyAdd, _pad, _shiftPoly, _polyStr, _num, _texNum prêtes pour E08 à E13.
   pytest 225 passed (8 nouveaux : testPp*, testPoly2*, testHasSymbolic portés + aides) ; ruff check et ruff format --check verts.
-- [ ] E06 — geometry.py 1/2
+- [x] E06 — geometry.py 1/2
+  Port de validateSection, primitives, widthAt, firstMomentAbove, outline, fromProfile, sectionTypes, hasSymbolic et des aides privées (Huygens, formules fermées, J, b(y), Q(y), contours, textes). _assembleP absente (E07). Écarts : widthAt prend side = 'max' par défaut (valeur MATLAB, pas « both » de la fiche) ; un profilé donné seulement par famille et nom est complété depuis le catalogue (demandé par la fiche, absent de MATLAB).
+  pytest 304 passed (79 nouveaux : tests portés, golden widthAt et firstMomentAbove, cohérence Huygens) ; ruff check et ruff format --check verts. Reportés à E07 : testReportFormat et erreurs de integral.
 - [ ] E07 — geometry.py 2/2
 - [ ] E08 — beam_solver.py 1/3 (modèle, sous-problèmes, coupures)
 - [ ] E09 — beam_solver.py 2/3 (hyperstatique)
