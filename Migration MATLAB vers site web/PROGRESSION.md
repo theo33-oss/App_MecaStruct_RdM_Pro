@@ -88,7 +88,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   pytest 840 passed (20 nouveaux) ; ruff check verts. Aperçus : python tools/preview_plots.py (21 HTML dans web/tools/out/), rendu à valider par Théo contre docs/img/02, 05, 10, 11.
 
 ## Phase 5 — Interface
-- [ ] E23 — Coquille Streamlit, Accueil, Formulaire rapide
+- [x] E23 — Coquille Streamlit, Accueil, Formulaire rapide
+  streamlit_app.py (10 pages par st.navigation), ui/state.py (init = loadExample de chaque onglet, comme au démarrage MATLAB), ui/widgets.py, ui/formula_panel.py, page Accueil (textes de buildHomeTab, visite en encadré), 9 pages vides. Écarts : formula_panel(None) ne dessine rien (Accueil, Convertisseur) ; test de l'Accueil par test_app_starts (st.page_link exige la navigation) ; applyNationalAnnex non porté (fiche E27).
+  pytest 850 passed (10 nouveaux, test_ui_smoke.py) ; ruff check verts ; navigation vérifiée par AppTest (pages Poutres, Sections, Flambage).
 - [ ] E24 — Base de données + Convertisseur
 - [ ] E25 — Sections
 - [ ] E26 — Poutres 1/2
