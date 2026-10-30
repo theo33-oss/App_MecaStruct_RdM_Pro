@@ -103,10 +103,24 @@ def _effortReading(N: float, Mfz: float, Mfy: float) -> str:
     return f"Lecture des efforts : {a} ; {b} ; {c}."
 
 
+def _rectangles(lignes: list[dict]) -> list[list[float]]:
+    """Rectangles [z1 z2 y1 y2] en m, depuis un tableau saisi en mm ; les lignes incomplètes sont ignorées."""
+    cles = ("z1", "z2", "y1", "y2")
+
+    def complete(ligne: dict) -> bool:
+        return all(isinstance(ligne.get(k), (int, float)) and math.isfinite(ligne[k]) for k in cles)
+
+    return [[toSI(ligne[k], "mm") for k in cles] for ligne in lignes if complete(ligne)]
+
+
 def _sectionFromSaisie(S: dict, dm: DataManager) -> dict:
     """buildSection : section de l'onglet Sections en SI (profilé du catalogue si le type est « profile »)."""
     if S["type"] == "profile":
         return geometry.fromProfile(dm.getProfile(S["fam"], S["prof"]))
+    if S["type"] == "composite":
+        return geometry.validateSection(
+            {"type": "composite", "rects": _rectangles(S["rects"]), "holes": _rectangles(S["holes"])}
+        )
     sec = {"type": S["type"], **{k: toSI(S[k], "mm") for k in _DIMS_SECTION.get(S["type"], ())}}
     return geometry.validateSection(sec)
 
@@ -172,6 +186,8 @@ def defaultSectionInput() -> dict:
         "t": 10.0,
         "tw": 8.0,
         "tf": 12.0,
+        "rects": [{"z1": 0.0, "z2": 100.0, "y1": 0.0, "y2": 200.0}],
+        "holes": [],
         "fam": "IPE",
         "prof": "IPE 200",
         "mode": "symbolique" if geometry.hasSymbolic() else "numerique",

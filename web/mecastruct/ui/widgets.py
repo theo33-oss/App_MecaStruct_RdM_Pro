@@ -44,9 +44,12 @@ def num(tab: str, champ: str, label: str, unit: str = "", help: str | None = Non
     return _lie(tab, champ, st.number_input, libelle, help=help, **kw)
 
 
-def choice(tab: str, champ: str, label: str, options: list, help: str | None = None) -> str:
-    """Liste déroulante liée à saisie[tab][champ]."""
-    return _lie(tab, champ, st.selectbox, label, options=options, help=help)
+def choice(
+    tab: str, champ: str, label: str, options: list, help: str | None = None, format_func: Callable | None = None
+) -> str:
+    """Liste déroulante liée à saisie[tab][champ] ; format_func donne le libellé affiché de chaque option."""
+    extra = {"format_func": format_func} if format_func is not None else {}
+    return _lie(tab, champ, st.selectbox, label, options=options, help=help, **extra)
 
 
 def check(tab: str, champ: str, label: str, help: str | None = None) -> bool:

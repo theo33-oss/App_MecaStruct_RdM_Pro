@@ -94,7 +94,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E24 — Base de données + Convertisseur
   Page Base de données : matériaux (filtre, formulaire, suppression des ajouts), profilés (cm², cm⁴, cm³ comme refreshProfileTable), matage, abaques Kt (valeurs initiales de loadExample : arbre de flexion, r/d 0,1, D/d 1,5), données utilisateur en JSON, documents docs/. Convertisseur : catalogue units.json, unités par défaut (defFrom/defTo), Inverser, tableaux MATLAB. Écarts : données utilisateur en JSON et non .mat ; les abaques gardent leurs paramètres par abaque.
   pytest 854 passed (4 nouveaux, test_pages_db_convert.py) ; ruff check verts. Vérification visuelle avec streamlit run non faite.
-- [ ] E25 — Sections
+- [x] E25 — Sections
+  Page Sections (disposition commune, exemple IPE, préréglages, dimensions pertinentes, transfert vers Poutres) ; section composée : tableaux rects et holes, pris en charge dans compute._sectionFromSaisie. Écarts : MATLAB exclut le composite de sa liste de types (buildSectionsTab), la fiche le demande : implémenté d'après la fiche. Chargement des efforts depuis la poutre reporté à E26 (dépend des résultats Poutres) ; le transfert n'alimente pas Flambage (page non encore portée).
+  pytest 858 passed (4 nouveaux, test_page_sections.py) ; ruff check verts. Rendu visuel avec streamlit run non vérifié.
 - [ ] E26 — Poutres 1/2
 - [ ] E27 — Poutres 2/2
 - [ ] E28 — Treillis + Sollicitations
