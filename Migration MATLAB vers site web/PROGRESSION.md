@@ -20,7 +20,10 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E04 — kt_mohr.py
   Port de ktCharts, evalKt, evalKtInfo, mohrTable ; abaques et table lus dans kt_charts.json et mohr_table.json. Les 10 couples inversés de Mohr reprennent la forme directe, a et b échangés.
   pytest 217 passed (16 nouveaux, dont 4 cas golden) ; ruff check et ruff format --check verts. Test LaTeX de MATLAB porté pour Kt et Mohr seulement (chaînes $…$, commandes interdites).
-- [ ] E05 — pp.py
+- [x] E05 — pp.py
+  Port de ppEval, ppSample, ppIntegrate, ppDerivative, ppAdd, ppScale, ppMultiply, ppRefine, ppIntegral, ppZero, ppConst, poly2latex, poly2str ; PP en dataclass, asPP accepte le dict JSON. hasSymbolic réexporté de data_manager.
+  Aides privées _tol, _segIndex, _mergeBreaks, _polyAdd, _pad, _shiftPoly, _polyStr, _num, _texNum prêtes pour E08 à E13.
+  pytest 225 passed (8 nouveaux : testPp*, testPoly2*, testHasSymbolic portés + aides) ; ruff check et ruff format --check verts.
 - [ ] E06 — geometry.py 1/2
 - [ ] E07 — geometry.py 2/2
 - [ ] E08 — beam_solver.py 1/3 (modèle, sous-problèmes, coupures)
