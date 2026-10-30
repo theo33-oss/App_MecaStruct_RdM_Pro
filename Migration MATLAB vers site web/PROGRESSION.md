@@ -58,7 +58,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 - [x] E15 — tensors.py
   Port de principal, facet, plane2D, plane2DStrain, mohr3D, criteria, yieldLoci et des aides de formats (_g et _texNum réutilisés de pp, comme truss_solver). Écarts : useSymbolic=None vaut numérique (PLAN §4.1) et le chemin SymPy n'est pris que si True ; _voigtToTensor ne traite que les contraintes (voigtToTensor complet en E16) ; « Symbolic Math Toolbox » devient « SymPy » dans les textes.
   pytest 685 passed (20 nouveaux : 12 tests MATLAB portés, 7 cas golden, rapports et LaTeX) ; ruff check et ruff format --check verts. Tests aléatoires en default_rng(17) (pas mt19937ar). Golden et tolérances inchangés.
-- [ ] E16 — hooke_gauges.py
+- [x] E16 — hooke_gauges.py
+  Port de complianceIsotropic à rosette60 (Hooke isotrope et 3D, états plans, orthotropie, Voigt, jauges, Wheatstone, rosettes), avec les aides de tensors.py. Écarts : testRenduLatex non porté (rendu MATLAB) ; testErreursEntrees réduit aux lignes E16 ; voigtToTensor complète le _voigtToTensor de E15 (kind, 3 composantes).
+  pytest 712 passed (27 nouveaux : 12 tests MATLAB portés, 15 cas golden) ; ruff check et ruff format --check verts. Golden : rel = 1e-9, abs = 1e-12 × max du cas (règle de la fiche), tolérance lâche sur Sred et checkResidual.
 - [ ] E17 — design_checks.py
 
 ## Phase 3 — Services
