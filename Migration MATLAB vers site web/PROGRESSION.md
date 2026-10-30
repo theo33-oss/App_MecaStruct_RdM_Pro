@@ -60,7 +60,8 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   pytest 685 passed (20 nouveaux : 12 tests MATLAB portés, 7 cas golden, rapports et LaTeX) ; ruff check et ruff format --check verts. Tests aléatoires en default_rng(17) (pas mt19937ar). Golden et tolérances inchangés.
 - [x] E16 — hooke_gauges.py
   Port de complianceIsotropic à rosette60 (Hooke isotrope et 3D, états plans, orthotropie, Voigt, jauges, Wheatstone, rosettes), avec les aides de tensors.py. Écarts : testRenduLatex non porté (rendu MATLAB) ; testErreursEntrees réduit aux lignes E16 ; voigtToTensor complète le _voigtToTensor de E15 (kind, 3 composantes).
-  pytest 712 passed (27 nouveaux : 12 tests MATLAB portés, 15 cas golden) ; ruff check et ruff format --check verts. Golden : rel = 1e-9, abs = 1e-12 × max du cas (règle de la fiche), tolérance lâche sur Sred et checkResidual.
+  pytest 712 passed (27 nouveaux : 12 tests MATLAB portés, 15 cas golden) ; ruff check et ruff format --check verts. Golden : rel = 1e-9 et abs par bloc (1e-12 × max du plus petit bloc qui contient le champ ; checkResidual à 1e-9), décidée par Théo (autorisation pour E16, code de test seulement) ; la règle par cas était trop large (Qred 2,3e11 rendait exx et ezz vides).
+  Limite restante : exx, eyy, gxy, exy, ezz de planeStress, ezz de planeStrain (attendu 0, tolérance 0,28) et les champs de rosette directement dans le dictionnaire, qui mélange déformations et contraintes, gardent une tolérance proche de leur valeur (voir verifier_golden).
 - [ ] E17 — design_checks.py
 
 ## Phase 3 — Services

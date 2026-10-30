@@ -32,7 +32,7 @@ from mecastruct.core.hooke_gauges import (
     wheatstone,
 )
 from mecastruct.core.tensors import criteria, plane2D
-from tests.golden_tools import assert_matches, get_case
+from tests.golden_tools import DEFAULT_IGNORE, assert_matches, get_case
 from tests.test_data_manager import FORBIDDEN_LATEX
 
 GOLDEN = "golden_tensors.json"
@@ -88,11 +88,62 @@ def _nombres(x):
         yield float(x)
 
 
+def _plus_grande_valeur(x) -> float:
+    """Plus grande valeur absolue finie d'une sortie attendue (0 si aucune)."""
+    return max((abs(v) for v in _nombres(x) if math.isfinite(v)), default=0.0)
+
+
+def _est_matrice(x) -> bool:
+    """Vrai pour une matrice attendue, écrite en liste de lignes (liste contenant des listes)."""
+    return isinstance(x, list) and any(isinstance(v, list) for v in x)
+
+
+def _champs(bloc, max_parent, chemin=()):
+    """Champs d'un bloc de résultats, chacun avec sa tolérance abs_ (règle par bloc, voir verifier_golden).
+
+    Renvoie (chemin, valeur attendue, abs_). Un sous-dictionnaire est parcouru avec son propre bloc.
+    """
+    max_bloc = _plus_grande_valeur(bloc)
+    for cle, val in bloc.items():
+        if cle in DEFAULT_IGNORE:
+            continue
+        if isinstance(val, dict):
+            yield from _champs(val, max_bloc, chemin + (cle,))
+        elif isinstance(val, str) or val is None:
+            yield chemin + (cle,), val, 0.0
+        elif cle == "checkResidual":
+            yield chemin + (cle,), val, 1e-9
+        elif _est_matrice(val):
+            yield chemin + (cle,), val, 1e-12 * (_plus_grande_valeur(val) or max_bloc or max_parent)
+        else:
+            yield chemin + (cle,), val, 1e-12 * (max_bloc or max_parent)
+
+
 def verifier_golden(identifiant, actual):
-    """Comparaison à un cas golden : rel = 1e-9, abs = 1e-12 × plus grande valeur absolue attendue du cas."""
+    """Comparaison à un cas golden : rel = 1e-9 et abs_ par bloc.
+
+    Règle (autorisée par Théo pour E16) : pour chaque champ, abs_ = 1e-12 × plus grande valeur absolue attendue du
+    plus petit bloc qui le contient. Ce bloc est la matrice elle-même si le champ est une matrice, sinon le
+    dictionnaire de résultats qui porte le champ (sous-dictionnaires compris). Un résidu sans unité (checkResidual)
+    reçoit abs_ = 1e-9. Si le bloc est entièrement nul, on prend le bloc parent.
+
+    Pourquoi la règle par cas (1e-12 × plus grande valeur du cas) est trop large : une seule grande valeur fixe la
+    tolérance absolue de tous les champs du cas. Dans planeStress, la matrice Qred vaut 2,3e11 : la tolérance
+    devient 0,23 et exx ≈ 4e-4 ou ezz ≈ 2e-4 pourraient s'écarter de 0,2 sans être vus. La règle par bloc évite cela
+    pour les matrices (Sred, Cred, Qred) et pour les sous-dictionnaires (strain2D, stress2D).
+    Limite connue : un champ scalaire ou vecteur placé directement dans un dictionnaire qui mélange contraintes et
+    déformations (planeStress, planeStrain, rosette45, rosette60) garde la tolérance de tout ce dictionnaire.
+    """
     cas = get_case(GOLDEN, identifiant)
-    echelle = max((abs(x) for x in _nombres(cas["sortie"]) if math.isfinite(x)), default=0.0)
-    assert_matches(actual, cas["sortie"], rel=1e-9, abs_=1e-12 * echelle)
+    sortie = cas["sortie"]
+    if not isinstance(sortie, dict):
+        assert_matches(actual, sortie, rel=1e-9, abs_=1e-12 * _plus_grande_valeur(sortie))
+        return
+    for chemin, attendu, tol in _champs(sortie, 0.0):
+        obtenu = actual
+        for cle in chemin:
+            obtenu = obtenu[cle]
+        assert_matches(obtenu, attendu, rel=1e-9, abs_=tol, path=".".join(chemin))
 
 
 # -------------------------------------------------------------------------------------------------
