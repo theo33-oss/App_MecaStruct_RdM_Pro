@@ -69,8 +69,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 
 ## Phase 3 — Services
 - [x] E18 — beam_services.py
-  Port de readBeamModel, beamThermal, beamCheck, computeBeam, computeCombinations, addQuickLoad, caseFactor, distCoeffs, beamEffortSheets. Écarts : defaultBeamInput() prend l'exemple « isostatique » (IPE 300, S235) lu dans la base ; computeCombinations n'attrape que MecaStructError ; beamCheck garde dm (signature de la fiche) sans l'utiliser ; BEAM_INPUT_DOC ne couvre que les champs de E18 (EC3, fatigue, charge mobile : E19-E20).
-  pytest 757 passed (20 nouveaux : cas README, conversions, distCoeffs, combinaisons, Gerber, tassement, charge rapide, poids propre) ; ruff check et ruff format --check verts. Cas README : 9,029 mm par les 4 méthodes seulement sans tranchant dans Castigliano (shear = False) ; avec tranchant, Castigliano donne 9,296 mm.
+  Port de readBeamModel, beamThermal, beamCheck, computeBeam, computeCombinations, addQuickLoad, caseFactor, distCoeffs, beamEffortSheets. Écarts : defaultBeamInput() a IPE 300, S235, L = 6 m, avec la case tranchant décochée (uicheckbox MATLAB par défaut ; l'exemple du menu la coche) ; computeCombinations attrape toute exception (MecaStructError : « erreur : … » ; autre : « Erreur de calcul (type) : … » et trace dans le log) ; beamCheck garde dm (signature de la fiche) sans l'utiliser ; BEAM_INPUT_DOC ne couvre que les champs de E18 (EC3, fatigue, charge mobile : E19-E20).
+  Décision de Théo : le tranchant suit MATLAB. Castigliano avec shear = True donne 9,296 mm (+3 %) ; intégration, aires et Mohr ne changent pas (9,029 mm). Le cas README garde shear = False explicite pour retrouver 9,029 mm par les 4 méthodes.
+  pytest 759 passed (22 nouveaux dans test_beam_services.py : cas README, conversions, distCoeffs, combinaisons, Gerber, tassement, charge rapide, poids propre, tranchant, erreur numérique isolée) ; ruff check et ruff format --check verts.
 - [ ] E19 — beam_design.py
 - [ ] E20 — compute.py + examples.py
 

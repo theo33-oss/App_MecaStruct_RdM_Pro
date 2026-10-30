@@ -1,5 +1,6 @@
 """Tests des services Poutres (saisie → modèle, calcul complet, combinaisons, charge rapide)."""
 
+import logging
 import math
 
 import numpy as np
@@ -10,6 +11,7 @@ from mecastruct.core.beam_solver import solveBeam
 from mecastruct.core.data_manager import DataManager
 from mecastruct.core.errors import MecaStructError
 from mecastruct.core.pp import ppEval
+from mecastruct.services import beam_services
 from mecastruct.services.beam_services import (
     addQuickLoad,
     beamCheck,
@@ -299,3 +301,41 @@ def test_tassement_decharge_l_appui(dm):
     s["supx"] = [{"name": "B", "k": 0.0, "dx": 0.0, "dy": -10.0, "dz": 0.0}]
     ry1 = computeBeam(s, dm)["sol"]["reactions"][1]["Ry"]
     assert ry1 < ry0
+
+
+def test_tranchant_castigliano_ecart_de_3_pour_cent(dm):
+    s = _ipe200_readme(dm)
+    s["shear"] = False
+    f0 = computeBeam(s, dm)["defl"]
+    s["shear"] = True
+    f1 = computeBeam(s, dm)["defl"]
+    assert f1["castigliano"]["fmax"] * 1e3 == pytest.approx(9.296, rel=1e-3)
+    for methode in ("integration", "aires", "mohr"):
+        assert f1[methode]["fmax"] == pytest.approx(f0[methode]["fmax"], rel=1e-12), methode
+    assert defaultBeamInput()["shear"] is False
+
+
+def test_combinaison_en_erreur_numerique_n_arrete_pas_les_autres(dm, monkeypatch, caplog):
+    real_solve = beam_services.solveBeam
+
+    def solve_defaillant(model, opts=None):
+        # simule une erreur numérique inattendue pour la seule combinaison ELU (charge de −13,5 kN/m)
+        if model["distLoads"] and model["distLoads"][0]["coeffs"][0] < -12e3:
+            raise ValueError("matrice singulière simulée")
+        return real_solve(model, opts)
+
+    monkeypatch.setattr(beam_services, "solveBeam", solve_defaillant)
+    s = defaultBeamInput()
+    s["combo"] = [
+        {"name": "ELS", "gG": 1.0, "gQ": 0.0, "gW": 0.0, "gS": 0.0},
+        {"name": "ELU", "gG": 1.35, "gQ": 0.0, "gW": 0.0, "gS": 0.0},
+        {"name": "ELS2", "gG": 1.0, "gQ": 0.0, "gW": 0.0, "gS": 0.0},
+    ]
+    with caplog.at_level(logging.ERROR, logger="mecastruct.services.beam_services"):
+        T = computeCombinations(s, dm)
+    assert T["Résistance"].iloc[1] == "Erreur de calcul (ValueError) : matrice singulière simulée"
+    assert np.isnan(T["f max (mm)"].iloc[1])
+    assert T["f max (mm)"].iloc[0] > 0 and T["f max (mm)"].iloc[2] > 0
+    assert T["Résistance"].iloc[0] == "vérifié"
+    assert T["f max (mm)"].iloc[3] == pytest.approx(T["f max (mm)"].iloc[[0, 2]].max())
+    assert any("ELU" in r.getMessage() for r in caplog.records if r.exc_info)

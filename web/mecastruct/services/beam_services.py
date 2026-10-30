@@ -5,6 +5,7 @@ addQuickLoad, caseFactor, distCoeffs, beamEffortSheets). Les unités de saisie s
 """
 
 import copy
+import logging
 import math
 import re
 
@@ -21,12 +22,16 @@ from mecastruct.core.solicitations import bendingStress
 from mecastruct.core.units import toSI
 
 _ID = "MecaStruct:App:invalidInput"
+logger = logging.getLogger(__name__)
 
 BEAM_INPUT_DOC = """Saisie de l'onglet Poutres : un dict dont les clés sont les noms des champs MATLAB (app.H.Beam).
 
 Valeurs dans les unités affichées : L (m), E, G, Re (GPa, GPa, MPa), S (mm²), Iz, Iy, Ix, Iyz (mm⁴), ky, kz (-),
-vy, vz (fibre extrême, mm), s, Kt (-), thDT (°C), thGy, thGz (°C), selfw (bool), plane ('xy' ou 'xz'), shear (bool),
-mat (nom du matériau), section (dict « sec » de la section Sections ou None).
+vy, vz (fibre extrême, mm), s, Kt (-), thDT (°C), thGy, thGz (°C), selfw (bool), plane ('xy' ou 'xz'), mat (nom du
+matériau), section (dict « sec » de la section Sections ou None).
+shear (bool) : « Tranchant dans Castigliano ». Par défaut décochée, comme la case MATLAB. Coché, il ajoute le
+tranchant à la flèche de Castigliano : une IPE 200 de 4 m sous 10 kN/m passe de 9,029 mm à 9,296 mm (+3 %).
+Les trois autres méthodes (intégration, aires, Mohr) ne tiennent pas compte du tranchant et ne changent pas.
 Tableaux (listes de dicts) :
   sup    : {pos (m), type, name}
   supx   : {name, k (kN/m), dx, dy, dz (mm)}
@@ -41,9 +46,10 @@ case : 'G' (permanent), 'Q' (exploitation), 'W' (vent) ou 'S' (neige).
 
 
 def defaultBeamInput() -> dict:
-    """Saisie par défaut de l'onglet Poutres (exemple « isostatique » : IPE 300, S235, L = 6 m).
+    """Saisie par défaut de l'onglet Poutres : IPE 300, S235, L = 6 m, case tranchant décochée.
 
     Sortie : dict au format de BEAM_INPUT_DOC, valeurs prises dans la base (aucune valeur recopiée à la main).
+    Le cas de l'exemple « isostatique » du menu coche la case tranchant ; ici elle reste décochée (valeur MATLAB).
     """
     dm = DataManager()
     mat = dm.getMaterial("S235")
@@ -79,7 +85,7 @@ def defaultBeamInput() -> dict:
         "thGz": 0.0,
         "selfw": False,
         "plane": "xy",
-        "shear": True,
+        "shear": False,
         "combo": [
             {"name": "ELS", "gG": 1.0, "gQ": 1.0, "gW": 0.0, "gS": 0.0},
             {"name": "ELU", "gG": 1.35, "gQ": 1.5, "gW": 0.0, "gS": 0.0},
@@ -440,7 +446,8 @@ def computeCombinations(saisie: dict, dm: DataManager) -> pd.DataFrame:
     """Résout chaque combinaison de cas du tableau combo, puis donne l'enveloppe (ligne « Enveloppe »).
 
     Superposition de cas : exacte pour une poutre linéaire. Une combinaison dont le calcul échoue garde ses
-    valeurs vides et le verdict « erreur : … ».
+    valeurs vides ; le verdict est « erreur : … » (MecaStructError) ou « Erreur de calcul (type) : … »
+    (autre exception, tracée dans le log du module).
     Entrées : `saisie` (BEAM_INPUT_DOC) ; `dm` (base de matériaux).
     Sortie : DataFrame, colonnes Combinaison, Mfz max/min (kN·m), Ty max/min (kN), N max/min (kN), f max (mm),
     Kt·σ max (MPa), σadm (MPa), Résistance.
@@ -467,6 +474,11 @@ def computeCombinations(saisie: dict, dm: DataManager) -> pd.DataFrame:
         except MecaStructError as err:
             ok[i] = False
             verdict.append(f"erreur : {err}")
+            continue
+        except Exception as err:  # comme MATLAB : une combinaison en erreur ne bloque pas les autres
+            logger.exception("Combinaison « %s » non calculée", row["name"])
+            ok[i] = False
+            verdict.append(f"Erreur de calcul ({type(err).__name__}) : {err}")
             continue
         e = sol["extrema"]
         v[i, :6] = [e["Mfz"]["max"], e["Mfz"]["min"], e["Ty"]["max"], e["Ty"]["min"], e["N"]["max"], e["N"]["min"]]
