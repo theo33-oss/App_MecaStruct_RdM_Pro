@@ -68,7 +68,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   pytest 737 passed (25 nouveaux : 13 tests MATLAB portés, 12 cas golden à rel 1e-9, aucune tolérance changée) ; ruff check et ruff format --check verts.
 
 ## Phase 3 — Services
-- [ ] E18 — beam_services.py
+- [x] E18 — beam_services.py
+  Port de readBeamModel, beamThermal, beamCheck, computeBeam, computeCombinations, addQuickLoad, caseFactor, distCoeffs, beamEffortSheets. Écarts : defaultBeamInput() prend l'exemple « isostatique » (IPE 300, S235) lu dans la base ; computeCombinations n'attrape que MecaStructError ; beamCheck garde dm (signature de la fiche) sans l'utiliser ; BEAM_INPUT_DOC ne couvre que les champs de E18 (EC3, fatigue, charge mobile : E19-E20).
+  pytest 757 passed (20 nouveaux : cas README, conversions, distCoeffs, combinaisons, Gerber, tassement, charge rapide, poids propre) ; ruff check et ruff format --check verts. Cas README : 9,029 mm par les 4 méthodes seulement sans tranchant dans Castigliano (shear = False) ; avec tranchant, Castigliano donne 9,296 mm.
 - [ ] E19 — beam_design.py
 - [ ] E20 — compute.py + examples.py
 
