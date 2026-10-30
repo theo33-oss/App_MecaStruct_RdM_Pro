@@ -2,7 +2,8 @@
 
 Ce fichier contient les aides de base (options, normalisation du modèle, charges réparties, quadrature de Gauss
 sur des matrices de coefficients, une ligne par tronçon, ordre polyval), la méthode des coupures, les 4 sous-problèmes
-(axial, flexion xy, flexion xz, torsion), la résolution isostatique et hyperstatique par Ménabréa, et solveBeam.
+(axial, flexion xy, flexion xz, torsion), la résolution isostatique et hyperstatique (Ménabréa et intégration, avec
+ressorts, tassements, dilatation thermique et rotules), et solveBeam.
 """
 
 import copy
@@ -756,9 +757,99 @@ def _baseOrder(unk: list[dict], isBend: bool) -> list[int]:
     return list(dict.fromkeys(order))
 
 
-def _integration(sp, A, bv, TL, ML, TU, MU, br, o, forceLsq):
-    """Méthode d'intégration (btsIntegration) : portée en E09 ; lève NotImplementedError("E09") d'ici là."""
-    raise NotImplementedError("E09")
+def _integration(sp, A, bv, TL, ML, TU, MU, br, o, forceLsq) -> tuple[np.ndarray, dict]:
+    """Méthode d'intégration : réactions et constantes d'intégration résolues ensemble (btsIntegration).
+
+    Le système réunit l'équilibre A·R + b = 0 et une condition cinématique par inconnue de liaison (déplacement nul,
+    imposé, ou lié à la réaction par un ressort), avec les inconnues R, les constantes C1 (et C2 en flexion) et un
+    saut de rotation par rotule.
+    Entrées : `sp` (sous-problème), `A`, `bv`, `TL`, `ML`, `TU`, `MU` (comme _menabrea), `br` (m), `o` (options),
+    `forceLsq` (moindres carrés de norme minimale même si le système est bien conditionné).
+    Sorties : `(R, info)` ; R = réactions (nu), info = dict subproblem, label, unknowns, K, f, solution, constants,
+    conditions, includeShear.
+    """
+    isBend = sp["kind"] == "bend"
+    neq, nu = A.shape
+    nc = 1 + int(isBend)  # constantes d'intégration (C1, C2) ; neq = nc + nombre de rotules
+    hp = np.asarray(sp["hinges"], dtype=float).ravel()
+    nh = hp.size
+    P = _vec(sp["unk"], "pos")
+    invk = np.zeros(nu)
+    iK = sp["spring"] > 0
+    invk[iK] = 1.0 / sp["spring"][iK]
+    useShear = bool(isBend and o["includeShearEnergy"] and math.isfinite(sp["shear"]))
+    Vp = np.zeros((nu, nu))
+    THp = np.zeros((nu, nu))
+    if isBend:
+        vL, thL = _bendDisp(ML, TL, br, P, sp["stiff"], sp["shear"], useShear)
+        for j in range(nu):
+            Vp[:, j], THp[:, j] = _bendDisp(MU[:, :, j], TU[:, :, j], br, P, sp["stiff"], sp["shear"], useShear)
+    else:
+        vL = _matEval(_matIntegrate(TL, br), br, P) / sp["stiff"]
+        for j in range(nu):
+            Vp[:, j] = _matEval(_matIntegrate(TU[:, :, j], br), br, P) / sp["stiff"]
+    n = nu + nc + nh  # inconnues : réactions, constantes, sauts de rotation aux rotules
+    K = np.zeros((n, n))
+    f = np.zeros(n)
+    K[:neq, :nu] = A
+    f[:neq] = -bv
+    cond = []
+    for k in range(nu):
+        r = neq + k
+        supName = sp["unk"][k]["name"]
+        if "_" in supName:
+            supName = supName.split("_", 1)[1]
+        if isBend and sp["unk"][k]["kind"] == "C":
+            K[r, :nu] = THp[k]
+            K[r, nu + 1] = 1
+            K[r, nu + nc :] = P[k] > hp + 1e-12  # sauts de rotation des rotules à gauche de l'appui
+            f[r] = -thL[k] - sp["kappa"] * P[k]
+            # avec le tranchant, v' = θ + T/kGS : l'encastrement impose la rotation de section θ = 0
+            cond.append(f"θ({supName}) = 0" if useShear else f"{sp['dispTxt']}'({supName}) = 0")
+        elif isBend:
+            K[r, :nu] = Vp[k]
+            K[r, k] += invk[k]
+            K[r, nu] = 1
+            K[r, nu + 1] = P[k]
+            K[r, nu + nc :] = np.maximum(P[k] - hp, 0.0)
+            f[r] = sp["delta"][k] - vL[k] - sp["kappa"] * P[k] ** 2 / 2
+            cond.append(_condText(sp["dispTxt"], supName, sp["delta"][k], sp["spring"][k]))
+        else:
+            K[r, :nu] = Vp[k]
+            K[r, k] += invk[k]
+            K[r, nu] = 1
+            f[r] = sp["delta"][k] - vL[k] - sp["kappa"] * P[k]
+            cond.append(_condText(sp["dispTxt"], supName, sp["delta"][k], sp["spring"][k]))
+    # équilibrage des lignes et colonnes (unités hétérogènes)
+    rs = np.max(np.abs(K), axis=1)
+    rs[rs == 0] = 1.0
+    Ks = K / rs[:, None]
+    fs = f / rs
+    cs = np.max(np.abs(Ks), axis=0)
+    cs[cs == 0] = 1.0
+    Ks = Ks / cs
+    if forceLsq or _rcond(Ks) < 1e-12:
+        zs = np.linalg.lstsq(Ks, fs, rcond=None)[0]
+    else:
+        zs = np.linalg.solve(Ks, fs)
+    z = zs / cs
+    constNames = list(sp["constNames"])
+    if useShear:
+        constNames[1] = f"C2 = θ(0) (rotation de section ; {sp['dispTxt']}'(0) = C2 + T(0)/(k·G·S))"
+    for hh in range(nh):
+        constNames.append(f"Δθ_R{hh + 1} = saut de rotation à la rotule s = {_num(hp[hh])} m")
+    info = {
+        "subproblem": sp["name"],
+        "label": sp["label"],
+        "unknowns": [u["name"] for u in sp["unk"]] + constNames,
+        "K": K,
+        "f": f,
+        "solution": z,
+        "constants": z[nu:],
+        "conditions": cond,
+        "includeShear": useShear,
+    }
+    return z[:nu], info
 
 
 def _cleanReactions(R: np.ndarray, unk: list[dict], isBend: bool, scaleEq: np.ndarray) -> np.ndarray:
@@ -1133,8 +1224,7 @@ def solveBeam(model: dict, opts: dict | None = None) -> dict:
     en N et N·m), breaks, N, Ty, Tz, Mt, Mfy, Mfz (PP), internalIntegral, methodCheck, equations, extrema,
     menabrea, reactionsMenabrea, reactionsIntegration, hyperCheck, integration, methodUsed, report, latex.
     Erreurs : MecaStruct:Beam:invalidModel, invalidSupport, invalidOption, mechanism.
-    Limite (E08) : la méthode intégrale, les équations et le rapport ne sont pas encore calculés (E10) ;
-    hyperMethod 'integration' ou 'both' lève NotImplementedError("E09") sur une poutre hyperstatique chargée.
+    Limite (E08) : la méthode intégrale, les équations et le rapport ne sont pas encore calculés (E10).
     """
     o = _beamOpts(opts)
     mdl, _ = _normalizeModel(model)  # notes « non fourni » : rapport (E10)
