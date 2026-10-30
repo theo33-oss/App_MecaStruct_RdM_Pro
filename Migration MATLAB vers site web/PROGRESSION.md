@@ -72,7 +72,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   Port de readBeamModel, beamThermal, beamCheck, computeBeam, computeCombinations, addQuickLoad, caseFactor, distCoeffs, beamEffortSheets. Écarts : defaultBeamInput() a IPE 300, S235, L = 6 m, avec la case tranchant décochée (uicheckbox MATLAB par défaut ; l'exemple du menu la coche) ; computeCombinations attrape toute exception (MecaStructError : « erreur : … » ; autre : « Erreur de calcul (type) : … » et trace dans le log) ; beamCheck garde dm (signature de la fiche) sans l'utiliser ; BEAM_INPUT_DOC ne couvre que les champs de E18 (EC3, fatigue, charge mobile : E19-E20).
   Décision de Théo : le tranchant suit MATLAB. Castigliano avec shear = True donne 9,296 mm (+3 %) ; intégration, aires et Mohr ne changent pas (9,029 mm). Le cas README garde shear = False explicite pour retrouver 9,029 mm par les 4 méthodes.
   pytest 759 passed (22 nouveaux dans test_beam_services.py : cas README, conversions, distCoeffs, combinaisons, Gerber, tassement, charge rapide, poids propre, tranchant, erreur numérique isolée) ; ruff check et ruff format --check verts.
-- [ ] E19 — beam_design.py
+- [x] E19 — beam_design.py
+  Port de useSectionForBeam, checkEurocode (poutre ou enveloppe), checkFatigue, findLightestProfile, computeMovingLoad, loadFromBeam, sendToTensor ; champs E19 ajoutés à defaultBeamInput (noms MATLAB). Écarts : clé secTabulated ajoutée à la saisie (la section d'un profilé reste dans section pour l'Eurocode, sans que beamCheck utilise le contour) ; findLightestProfile renvoie le dict du profilé (getProfile) ; loadFromBeam renvoie une copie de la saisie cible, sans message d'état ni avertissement de section ; applyNationalAnnex (UI) non porté, à faire en E23/E26.
+  pytest 767 passed (8 nouveaux dans test_beam_design.py : EC3 cohérent, Goodman, profilé le plus léger, flèche L/1000, charge mobile, Eurocode et fatigue portés de MATLAB) ; ruff check et ruff format --check verts.
 - [ ] E20 — compute.py + examples.py
 
 ## Phase 4 — Graphiques

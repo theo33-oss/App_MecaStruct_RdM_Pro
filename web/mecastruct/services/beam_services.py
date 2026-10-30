@@ -32,6 +32,10 @@ matériau), section (dict « sec » de la section Sections ou None).
 shear (bool) : « Tranchant dans Castigliano ». Par défaut décochée, comme la case MATLAB. Coché, il ajoute le
 tranchant à la flèche de Castigliano : une IPE 200 de 4 m sous 10 kN/m passe de 9,029 mm à 9,296 mm (+3 %).
 Les trois autres méthodes (intégration, aires, Mohr) ne tiennent pas compte du tranchant et ne changent pas.
+secTabulated (bool) : vrai si la section vient d'un profilé du catalogue (valeurs de la saisie, pas le contour).
+Champs E19 : na (« EN », « FR » ou « autre »), gM0, gM1, Cmy, CmLT (-), Lcr, LcrF (m, 0 = L), C1 (-),
+ecsrc (« courant » ou « enveloppe »), fR (-), fka, fkb (-), mvP (texte, kN), mvE (texte, m), mvN (positions),
+mvFixed (bool : garder les charges fixes avec le convoi), pfam (famille de profilés), pdef (flèche L/n, 0 = ignorée).
 Tableaux (listes de dicts) :
   sup    : {pos (m), type, name}
   supx   : {name, k (kN/m), dx, dy, dz (mm)}
@@ -86,6 +90,25 @@ def defaultBeamInput() -> dict:
         "selfw": False,
         "plane": "xy",
         "shear": False,
+        "na": "EN",
+        "gM0": 1.0,
+        "gM1": 1.0,
+        "Cmy": 1.0,
+        "CmLT": 1.0,
+        "Lcr": 0.0,
+        "LcrF": 0.0,
+        "C1": 1.0,
+        "ecsrc": "courant",
+        "fR": 0.0,
+        "fka": 1.0,
+        "fkb": 1.0,
+        "mvP": "-100",
+        "mvE": "1.5",
+        "mvN": 61,
+        "mvFixed": False,
+        "pfam": "IPE",
+        "pdef": 0.0,
+        "secTabulated": False,
         "combo": [
             {"name": "ELS", "gG": 1.0, "gQ": 1.0, "gW": 0.0, "gS": 0.0},
             {"name": "ELU", "gG": 1.35, "gQ": 1.5, "gW": 0.0, "gS": 0.0},
@@ -331,7 +354,7 @@ def beamCheck(saisie: dict, sol: dict, dm: DataManager) -> dict:
         return np.concatenate([ppEval(pp, s, "left"), ppEval(pp, s, "right")])
 
     N, Ty, Tz, Mfz, Mfy = (ev(sol[k]) for k in ("N", "Ty", "Tz", "Mfz", "Mfy"))
-    useSec = saisie.get("section") is not None
+    useSec = saisie.get("section") is not None and not saisie.get("secTabulated", False)
     if useSec:
         sec = saisie["section"]
         P = geometry.analytical(sec)
