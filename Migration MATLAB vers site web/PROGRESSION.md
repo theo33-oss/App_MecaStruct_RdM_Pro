@@ -55,7 +55,9 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   Port de BucklingEngine : analyze, stabilityCurve, listConditions, effectiveLengthCoefficient, hasSymbolic (réexporté de data_manager), modes propres, équation caractéristique, dérivation, rapport et LaTeX ; testBucklingDelegation porté. Chemin symbolique (dsolve, vpasolve) non porté : methodUsed = 'numérique' (fiche E14).
   Golden : 'symbolic' et 'determinant' (sorties du chemin symbolique) exclus de la comparaison (SYMBOLIQUE dans test_buckling.py). fdResidual de encastre-encastre : écart 8,5e-13 avec MATLAB (bruit d'arrondi), passe sous le plancher abs 1e-12, tolérances inchangées.
   pytest 665 passed (36 nouveaux, dont 7 golden) ; ruff check et ruff format --check verts. Rendu LaTeX non testé (contrôles de texte seulement, comme E04).
-- [ ] E15 — tensors.py
+- [x] E15 — tensors.py
+  Port de principal, facet, plane2D, plane2DStrain, mohr3D, criteria, yieldLoci et des aides de formats (_g et _texNum réutilisés de pp, comme truss_solver). Écarts : useSymbolic=None vaut numérique (PLAN §4.1) et le chemin SymPy n'est pris que si True ; _voigtToTensor ne traite que les contraintes (voigtToTensor complet en E16) ; « Symbolic Math Toolbox » devient « SymPy » dans les textes.
+  pytest 685 passed (20 nouveaux : 12 tests MATLAB portés, 7 cas golden, rapports et LaTeX) ; ruff check et ruff format --check verts. Tests aléatoires en default_rng(17) (pas mt19937ar). Golden et tolérances inchangés.
 - [ ] E16 — hooke_gauges.py
 - [ ] E17 — design_checks.py
 
