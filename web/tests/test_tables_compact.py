@@ -9,7 +9,7 @@ APP = Path(__file__).resolve().parents[1] / "app_pages"
 
 def _page(nom: str, compact: bool = True) -> AppTest:
     at = AppTest.from_file(str(APP / f"{nom}.py"), default_timeout=60)
-    at.session_state["mode_compact"] = compact
+    at.session_state["vue"] = "telephone" if compact else "pc"
     return at.run()
 
 
@@ -39,7 +39,7 @@ def test_une_valeur_saisie_dans_la_liste_est_recopiee_puis_retrouvee_dans_la_gri
     at = _page("treillis")
     at.number_input(key="Tr.nodes.l.1.x").set_value(7.5).run()
     assert at.session_state["saisie"]["Tr"]["nodes"][1]["x"] == 7.5
-    at.session_state["mode_compact"] = False
+    at.session_state["vue"] = "pc"
     at.run()
     assert not at.exception
     assert at.session_state["saisie"]["Tr"]["nodes"][1]["x"] == 7.5

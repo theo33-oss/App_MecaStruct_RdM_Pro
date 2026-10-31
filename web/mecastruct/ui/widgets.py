@@ -263,21 +263,53 @@ def choice_materiau(tab: str, champs: list[str], dm: Any, label: str = "Matéria
     return choice(tab, "mat", label, dm.listMaterials(), on_change=applique, **kw)
 
 
-def agent_mobile() -> bool:
-    """Vrai sur téléphone ou tablette d'après le User-Agent (Streamlit n'expose pas la largeur d'écran côté Python)."""
+VUES = {"pc": "PC", "tablette": "Tablette", "telephone": "Téléphone"}
+
+
+def vue_detectee() -> str:
+    """Vue d'après le User-Agent : « telephone », « tablette » ou « pc » (Streamlit n'expose pas la largeur d'écran)."""
     try:
         agent = st.context.headers.get("User-Agent", "")
     except Exception:  # hors session (test d'un module seul) : affichage ordinateur
-        return False
-    return any(marque in agent for marque in ("Mobi", "Android", "iPhone", "iPad"))
+        return "pc"
+    if "iPhone" in agent or "Mobi" in agent:
+        return "telephone"
+    return "tablette" if "Android" in agent or "iPad" in agent else "pc"
+
+
+def vue() -> str:
+    """Vue choisie sur la page d'accueil (« pc », « tablette » ou « telephone »), sinon la vue détectée."""
+    try:
+        choix = st.session_state.get("vue")
+    except Exception:  # hors session
+        choix = None
+    return choix if choix in VUES else vue_detectee()
 
 
 def is_compact() -> bool:
-    """Mode compact : choix de l'interrupteur de la barre latérale, sinon détection par le User-Agent."""
-    try:
-        return bool(st.session_state.get("mode_compact", agent_mobile()))
-    except Exception:  # hors session
-        return False
+    """Vue téléphone : graphiques moins hauts, tableaux en liste, formulaire en tiroir."""
+    return vue() == "telephone"
+
+
+def _change_vue() -> None:
+    """Callback du sélecteur : garde le choix sous une clé qui survit au changement de page (le widget, lui, non)."""
+    choix = st.session_state.get("vue_choix")
+    if choix in VUES:  # un clic sur le choix actif le désélectionne : on garde alors la vue courante
+        st.session_state["vue"] = choix
+
+
+def vue_selector() -> None:
+    """Trois choix exclusifs PC / Tablette / Téléphone : PC = menu à gauche, les autres = menu en haut."""
+    st.session_state["vue_choix"] = vue()
+    st.segmented_control(
+        "Affichage",
+        list(VUES),
+        format_func=VUES.get,
+        key="vue_choix",
+        on_change=_change_vue,
+        help="PC : menu à gauche. Tablette : menu en haut, graphiques tactiles. Téléphone : en plus, graphiques moins "
+        "hauts, tableaux en liste et formulaire en tiroir. Choisi seul d'après votre appareil.",
+    )
 
 
 def _theme_sombre() -> bool:
@@ -288,14 +320,15 @@ def _theme_sombre() -> bool:
 
 
 def plot(fig: Any, **kw) -> None:
-    """Graphique Plotly : sur mobile, sans barre d'outils, sans zoom (le doigt fait défiler la page), moins haut."""
-    if is_compact():
-        fig.update_layout(
-            height=max(300, int((fig.layout.height or 450) * 0.75)),
-            margin={"l": 40, "r": 8, "b": 70},
-            legend={"orientation": "h", "y": -0.2, "x": 0},
-            dragmode=False,
-        )
+    """Graphique Plotly : au doigt, sans barre d'outils ni zoom (le doigt fait défiler la page) ; téléphone : réduit."""
+    if vue() != "pc":
+        if is_compact():
+            fig.update_layout(
+                height=max(300, int((fig.layout.height or 450) * 0.75)),
+                margin={"l": 40, "r": 8, "b": 70},
+                legend={"orientation": "h", "y": -0.2, "x": 0},
+            )
+        fig.update_layout(dragmode=False)
         fig.update_xaxes(fixedrange=True)
         fig.update_yaxes(fixedrange=True)
         config = {"displayModeBar": False, "scrollZoom": False, "responsive": True}

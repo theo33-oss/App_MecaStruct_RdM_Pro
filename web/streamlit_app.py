@@ -30,11 +30,5 @@ pages = {
         st.Page("app_pages/convertisseur.py", title="Convertisseur", icon=":material/swap_horiz:"),
     ],
 }
-st.sidebar.toggle(
-    "Mode compact",
-    value=widgets.agent_mobile(),
-    key="mode_compact",
-    help="Graphiques moins hauts et sans zoom, tableaux en liste. Activé seul sur téléphone ; à régler ici sinon.",
-)
-pg = st.navigation(pages, position="top")
+pg = st.navigation(pages, position="sidebar" if widgets.vue() == "pc" else "top")
 pg.run()

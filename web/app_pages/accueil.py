@@ -15,6 +15,8 @@ st.write(
     "puis changez les valeurs. Que voulez-vous faire ?"
 )
 
+widgets.vue_selector()
+
 st.page_link(
     "app_pages/poutres.py",
     label="Calculer une poutre (réactions, diagrammes, flèche)",

@@ -20,7 +20,7 @@ def _figure() -> go.Figure:
 
 
 def test_plot_mobile(monkeypatch, appels):
-    monkeypatch.setattr(widgets, "is_compact", lambda: True)
+    monkeypatch.setattr(widgets, "vue", lambda: "telephone")
     fig = _figure()
     widgets.plot(fig)
     config = appels[0][1]["config"]
@@ -29,7 +29,7 @@ def test_plot_mobile(monkeypatch, appels):
 
 
 def test_plot_ordinateur(monkeypatch, appels):
-    monkeypatch.setattr(widgets, "is_compact", lambda: False)
+    monkeypatch.setattr(widgets, "vue", lambda: "pc")
     fig = _figure()
     widgets.plot(fig)
     assert appels[0][1]["config"]["displaylogo"] is False
@@ -69,17 +69,42 @@ def test_synthese_statut_texte_libre_sans_metrique(metriques):
     assert [v["label"] for v in metriques] == []
 
 
-def test_interrupteur_mode_compact_prime_sur_le_user_agent(monkeypatch):
-    monkeypatch.setattr(widgets, "agent_mobile", lambda: True)
-    monkeypatch.setattr(widgets.st, "session_state", {"mode_compact": False})
-    assert widgets.is_compact() is False
+def test_vue_choisie_prime_sur_le_user_agent(monkeypatch):
+    monkeypatch.setattr(widgets, "vue_detectee", lambda: "telephone")
+    monkeypatch.setattr(widgets.st, "session_state", {"vue": "pc"})
+    assert widgets.vue() == "pc" and widgets.is_compact() is False
     monkeypatch.setattr(widgets.st, "session_state", {})
-    assert widgets.is_compact() is True
+    assert widgets.vue() == "telephone" and widgets.is_compact() is True
+    monkeypatch.setattr(widgets.st, "session_state", {"vue": "n'importe quoi"})
+    assert widgets.vue() == "telephone"
+
+
+def test_plot_tablette_tactile_mais_pleine_hauteur(monkeypatch, appels):
+    monkeypatch.setattr(widgets, "vue", lambda: "tablette")
+    fig = _figure()
+    widgets.plot(fig)
+    assert appels[0][1]["config"]["displayModeBar"] is False
+    assert fig.layout.height == 600 and fig.layout.dragmode is False
 
 
 def test_plot_theme_sombre_garde_une_carte_claire(monkeypatch, appels):
-    monkeypatch.setattr(widgets, "is_compact", lambda: False)
+    monkeypatch.setattr(widgets, "vue", lambda: "pc")
     monkeypatch.setattr(widgets, "_theme_sombre", lambda: True)
     fig = _figure()
     widgets.plot(fig)
     assert fig.layout.paper_bgcolor == "white" and appels[0][1]["theme"] is None
+
+
+def test_selecteur_de_vue_sur_l_accueil_change_la_vue():
+    from pathlib import Path
+
+    from streamlit.testing.v1 import AppTest
+
+    appli = Path(__file__).resolve().parents[1] / "streamlit_app.py"  # l'accueil a besoin de la navigation
+    at = AppTest.from_file(str(appli), default_timeout=60).run()
+    assert not at.exception
+    assert at.session_state["vue_choix"] == "pc"
+    at.segmented_control(key="vue_choix").set_value("telephone").run()
+    assert at.session_state["vue"] == "telephone" and at.session_state["vue_choix"] == "telephone"
+    at.segmented_control(key="vue_choix").set_value(None).run()  # désélection : la vue reste
+    assert at.session_state["vue"] == "telephone"
