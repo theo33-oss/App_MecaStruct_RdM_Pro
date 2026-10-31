@@ -159,6 +159,14 @@ def choice_materiau(tab: str, champs: list[str], dm: Any, label: str = "Matéria
     return choice(tab, "mat", label, dm.listMaterials(), on_change=applique, **kw)
 
 
+def calc_button(key: str, label: str = "Calculer") -> bool:
+    """Bouton principal pleine largeur, à placer en haut de la colonne de saisie ; True au clic.
+
+    Le calcul se lance plus bas, une fois les champs affichés : la saisie est alors à jour.
+    """
+    return st.button(label, key=key, type="primary", width="stretch")
+
+
 def page_link(page: str, label: str, icon: str | None = None) -> None:
     """Lien vers une page de l'application ; omis hors de la navigation (test d'une page seule)."""
     try:

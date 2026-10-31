@@ -43,7 +43,7 @@ def _recharge_hooke() -> None:
 # ------------------------------------------------------------------------------------------- Loi de Hooke
 
 
-def _hooke_saisie() -> None:
+def _hooke_saisie(calcule: bool) -> None:
     saisie = state.saisie("Hoo")
     mode = widgets.choice("Hoo", "mode", "Loi", list(MODES), format_func=MODES.get)
     iso, ortho = mode != "ortho", mode == "ortho"
@@ -81,10 +81,9 @@ def _hooke_saisie() -> None:
             ("G23", "G23", "GPa"),
         ):
             widgets.num("Hoo", champ, nom, unite, disabled=not ortho)
-    colonnes = st.columns(2)
-    if colonnes[0].button("Calculer", key="Hoo.calc", type="primary", width="stretch"):
+    if calcule:
         _calcule("Hoo", lambda: compute.computeHooke(saisie, dm))
-    colonnes[1].button("Recharger l'exemple", key="Hoo.recharger", on_click=_recharge_hooke)
+    st.button("Recharger l'exemple", key="Hoo.recharger", on_click=_recharge_hooke)
 
 
 def _hooke_resultats() -> None:
@@ -109,7 +108,7 @@ def _hooke_resultats() -> None:
 # ------------------------------------------------------------------------------------------------- Jauges
 
 
-def _jauges_saisie() -> None:
+def _jauges_saisie(calcule: bool) -> None:
     saisie = state.saisie("Jau")
     with st.expander("Jauge (loi de Bridgman)", expanded=True):
         widgets.num("Jau", "K", "Facteur de jauge K", "-")
@@ -129,10 +128,9 @@ def _jauges_saisie() -> None:
         widgets.choice_materiau("Jau", ["E", "nu"], dm)
         widgets.num("Jau", "E", "E", "GPa")
         widgets.num("Jau", "nu", "ν", "-")
-    colonnes = st.columns(2)
-    if colonnes[0].button("Calculer", key="Jau.calc", type="primary", width="stretch"):
+    if calcule:
         _calcule("Jau", lambda: compute.computeGauges(saisie, dm))
-    colonnes[1].button("Recharger l'exemple", key="Jau.recharger", on_click=widgets._charge_exemple, args=("Jau",))
+    st.button("Recharger l'exemple", key="Jau.recharger", on_click=widgets._charge_exemple, args=("Jau",))
 
 
 def _jauges_resultats() -> None:
@@ -171,8 +169,9 @@ for onglet, (_, fiche, tab, saisie_fn, resultats_fn) in zip(onglets, ONGLETS, st
     with onglet:
         gauche, droite = st.columns([1, 2], gap="large")
         with gauche:
+            calcule = widgets.calc_button(f"{tab}.calc")
             widgets.file_bar(tab)
-            saisie_fn()
+            saisie_fn(calcule)
         with droite:
             widgets.validation_button(tab)
             resultats_fn()

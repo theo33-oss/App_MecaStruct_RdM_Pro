@@ -56,7 +56,7 @@ def _synthese(res: dict | None) -> None:
 # ------------------------------------------------------------------------------------------------- Traction
 
 
-def _traction_saisie() -> None:
+def _traction_saisie(calcule: bool) -> None:
     saisie = state.saisie("Tra")
     with st.expander("Barre et chargement", expanded=True):
         widgets.num("Tra", "N", "N (> 0 traction)", "kN")
@@ -78,7 +78,7 @@ def _traction_saisie() -> None:
             "Expression en x (m) donnant S en mm² : nombres, x, pi, sqrt, exp, log, sin, cos, tan, abs, + − * / ^. "
             "Exemple (barre conique d = 20 → 30 mm) : pi/4*(20 + 10*x)^2."
         )
-    if st.button("Calculer", key="Tra.calc", type="primary", width="stretch"):
+    if calcule:
         _calcule("Tra", lambda: compute.computeTraction(saisie, dm))
 
 
@@ -103,7 +103,7 @@ def _applique_matage() -> None:
         st.session_state["Cis.Padm"] = float(dm.BearingPressures["Pmin"].iloc[i]) / 1e6
 
 
-def _cisaillement_saisie() -> None:
+def _cisaillement_saisie(calcule: bool) -> None:
     saisie = state.saisie("Cis")
     with st.expander("Matériau et critère", expanded=True):
         widgets.choice_materiau("Cis", ["Re", "G"], dm)
@@ -127,7 +127,7 @@ def _cisaillement_saisie() -> None:
             on_change=_applique_matage,
         )
         widgets.num("Cis", "Padm", "P_adm", "MPa", min_value=0.0)
-        if st.button("Calculer cisaillement et matage", key="Cis.calc", type="primary"):
+        if calcule:
             _section_des_sections(saisie)
             _calcule("Cis", lambda: compute.computeShear(saisie, dm))
     with st.expander("Clavette parallèle"):
@@ -177,7 +177,7 @@ def _cisaillement_resultats() -> None:
 # ------------------------------------------------------------------------------------------------- Torsion
 
 
-def _torsion_saisie() -> None:
+def _torsion_saisie(calcule: bool) -> None:
     saisie = state.saisie("Tor")
     with st.expander("Arbre circulaire", expanded=True):
         widgets.num("Tor", "Mt", "Mt", "kN·m")
@@ -191,7 +191,7 @@ def _torsion_saisie() -> None:
         widgets.num("Tor", "s", "Coefficient de sécurité s", "-")
         widgets.num("Tor", "Kt", "Kt", "-", min_value=1.0)
         widgets.num("Tor", "thetaAdm", "θ admissible (0 = sans)", "°/m", min_value=0.0)
-    if st.button("Calculer", key="Tor.calc", type="primary", width="stretch"):
+    if calcule:
         _calcule("Tor", lambda: compute.computeTorsion(saisie, dm))
 
 
@@ -230,7 +230,7 @@ def _efforts_poutre(mode: str) -> None:
     )
 
 
-def _flexion_saisie() -> None:
+def _flexion_saisie(calcule: bool) -> None:
     saisie = state.saisie("Fle")
     st.caption("Section : celle de la page Sections (à calculer d'abord ; sinon la section de l'exemple).")
     with st.expander("Efforts dans la section étudiée", expanded=True):
@@ -274,7 +274,7 @@ def _flexion_saisie() -> None:
         widgets.choice_materiau("Fle", ["Re"], dm)
         widgets.num("Fle", "Re", "Re", "MPa")
         widgets.num("Fle", "s", "Coefficient de sécurité s", "-")
-    if st.button("Calculer", key="Fle.calc", type="primary", width="stretch"):
+    if calcule:
         _section_des_sections(saisie)
         _calcule("Fle", lambda: compute.computeBending(saisie, dm))
 
@@ -305,9 +305,10 @@ for onglet, (_, fiche, tab) in zip(onglets, ONGLETS, strict=True):
     with onglet:
         gauche, droite = st.columns([1, 2], gap="large")
         with gauche:
+            calcule = widgets.calc_button(f"{tab}.calc")
             widgets.file_bar(tab)
             widgets.example_picker(tab)
-            SOUS_PAGES[tab][0]()
+            SOUS_PAGES[tab][0](calcule)
         with droite:
             widgets.validation_button(tab)
             SOUS_PAGES[tab][1]()

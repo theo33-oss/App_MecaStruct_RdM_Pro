@@ -224,13 +224,13 @@ formula_panel("geometrie")
 
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
+    calc = widgets.calc_button("Sec.calc")
     widgets.file_bar("Sec")
     widgets.example_picker("Sec")
     with st.expander("Type de section", expanded=True):
         _saisie_geometrie()
     with st.expander("Matériau, méthode et efforts pour σ(y) et τ(y)", expanded=True):
         _saisie_efforts_et_methode()
-    calc = st.button("Calculer", type="primary", width="stretch")
     if calc:
         _calcule()
 

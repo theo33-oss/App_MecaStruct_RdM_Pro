@@ -112,11 +112,12 @@ formula_panel("treillis")
 
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
+    calcule = widgets.calc_button("Tr.calc")
     widgets.file_bar("Tr")
     widgets.example_picker("Tr")
     with st.expander("Matériau, section et nœuds", expanded=True):
         _saisie()
-    if st.button("Calculer", type="primary", width="stretch"):
+    if calcule:
         _calcule()
 
 with droite:

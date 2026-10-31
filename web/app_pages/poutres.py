@@ -657,6 +657,7 @@ formula_panel("equilibre")
 
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
+    calcule = widgets.calc_button("Beam.calc")
     colonnes = st.columns(2)
     colonnes[0].button(
         "↶ Annuler",
@@ -690,7 +691,7 @@ with gauche:
         _saisie_eurocode()
     with st.expander("Fatigue (Goodman)"):
         _saisie_fatigue()
-    if st.button("Calculer", type="primary", width="stretch"):
+    if calcule:
         _calcule()
     st.button("Envoyer au tenseur (point le plus sollicité)", key="Beam_btenseur", on_click=_envoie_tenseur)
     st.caption(
