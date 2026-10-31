@@ -164,7 +164,7 @@ def calc_button(key: str, label: str = "Calculer") -> bool:
 
     Le calcul se lance plus bas, une fois les champs affichés : la saisie est alors à jour.
     """
-    return st.button(label, key=key, type="primary", width="stretch")
+    return st.button(label, key=key, type="primary", width="stretch", icon=":material/calculate:")
 
 
 def tabs(contenus: list[tuple[str, Callable[[], Any]]]) -> None:
