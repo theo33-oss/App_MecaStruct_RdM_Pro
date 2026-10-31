@@ -75,3 +75,11 @@ def test_interrupteur_mode_compact_prime_sur_le_user_agent(monkeypatch):
     assert widgets.is_compact() is False
     monkeypatch.setattr(widgets.st, "session_state", {})
     assert widgets.is_compact() is True
+
+
+def test_plot_theme_sombre_garde_une_carte_claire(monkeypatch, appels):
+    monkeypatch.setattr(widgets, "is_compact", lambda: False)
+    monkeypatch.setattr(widgets, "_theme_sombre", lambda: True)
+    fig = _figure()
+    widgets.plot(fig)
+    assert fig.layout.paper_bgcolor == "white" and appels[0][1]["theme"] is None

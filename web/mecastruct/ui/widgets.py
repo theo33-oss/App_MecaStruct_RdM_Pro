@@ -177,6 +177,13 @@ def is_compact() -> bool:
         return False
 
 
+def _theme_sombre() -> bool:
+    try:
+        return st.context.theme.type == "dark"
+    except Exception:  # hors session, ou thème pas encore connu
+        return False
+
+
 def plot(fig: Any, **kw) -> None:
     """Graphique Plotly : sur mobile, sans barre d'outils, sans zoom (le doigt fait défiler la page), moins haut."""
     if is_compact():
@@ -191,6 +198,9 @@ def plot(fig: Any, **kw) -> None:
         config = {"displayModeBar": False, "scrollZoom": False, "responsive": True}
     else:
         config = {"displaylogo": False, "scrollZoom": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]}
+    if _theme_sombre():  # figures dessinées pour un fond blanc : elles restent des cartes claires sur la page sombre
+        fig.update_layout(paper_bgcolor="white", font_color="#1E1B2E")
+        kw.setdefault("theme", None)
     st.plotly_chart(fig, config=config, **kw)
 
 
