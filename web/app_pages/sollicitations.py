@@ -87,8 +87,8 @@ def _traction_resultats() -> None:
     if res is None:
         return
     r, saisie = res["result"], state.saisie("Tra")
-    st.plotly_chart(sollicitation_plots.tractionStress(r["x"], saisie["N"] * 1e3, r["Sx"], saisie["Kt"], r["sigmaAdm"]))
-    st.plotly_chart(sollicitation_plots.elongations(r["dL"]))
+    widgets.plot(sollicitation_plots.tractionStress(r["x"], saisie["N"] * 1e3, r["Sx"], saisie["Kt"], r["sigmaAdm"]))
+    widgets.plot(sollicitation_plots.elongations(r["dL"]))
     _synthese(res)
     widgets.formulas(r["latex"])
 
@@ -173,9 +173,9 @@ def _cisaillement_resultats() -> None:
             abs(jour["tauMax"]) / shear["tauAdm"],
             abs(bearing["P"]) / (saisie["Padm"] * 1e6),
         ]
-        st.plotly_chart(section_plots.section(sec, P))
-        st.plotly_chart(section_plots.sectionStress(sec, P, None, jour))
-        st.plotly_chart(
+        widgets.plot(section_plots.section(sec, P))
+        widgets.plot(section_plots.sectionStress(sec, P, None, jour))
+        widgets.plot(
             sollicitation_plots.ratios(
                 ["τmax/τadm", "τJourawski/τadm", "P/Padm"], taux, "Taux d'utilisation (cisaillement et matage)"
             )
@@ -214,8 +214,8 @@ def _torsion_resultats() -> None:
     if res is None:
         return
     r, saisie = res["result"], state.saisie("Tor")
-    st.plotly_chart(sollicitation_plots.torsionStress(r, saisie["D"] * 1e-3))
-    st.plotly_chart(sollicitation_plots.torsionAngle(saisie["L"], r["theta"], r["phi"]["analytique"]))
+    widgets.plot(sollicitation_plots.torsionStress(r, saisie["D"] * 1e-3))
+    widgets.plot(sollicitation_plots.torsionAngle(saisie["L"], r["theta"], r["phi"]["analytique"]))
     _synthese(res)
     widgets.formulas(r["latex"])
 
@@ -298,8 +298,8 @@ def _flexion_resultats() -> None:
     if res is None:
         return
     r = res["result"]
-    st.plotly_chart(sollicitation_plots.bendingMarks(section_plots.section(r["sec"], r["P"]), r["P"], r["bend"]))
-    st.plotly_chart(section_plots.sectionStress(r["sec"], r["P"], r["bend"], None))
+    widgets.plot(sollicitation_plots.bendingMarks(section_plots.section(r["sec"], r["P"]), r["P"], r["bend"]))
+    widgets.plot(section_plots.sectionStress(r["sec"], r["P"], r["bend"], None))
     _synthese(res)
     widgets.formulas(r["bend"]["latex"])
 

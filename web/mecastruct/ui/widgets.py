@@ -159,6 +159,32 @@ def choice_materiau(tab: str, champs: list[str], dm: Any, label: str = "Matéria
     return choice(tab, "mat", label, dm.listMaterials(), on_change=applique, **kw)
 
 
+def is_compact() -> bool:
+    """Vrai sur téléphone ou tablette d'après le User-Agent (Streamlit n'expose pas la largeur d'écran côté Python)."""
+    try:
+        agent = st.context.headers.get("User-Agent", "")
+    except Exception:  # hors session (test d'un module seul) : affichage ordinateur
+        return False
+    return any(marque in agent for marque in ("Mobi", "Android", "iPhone", "iPad"))
+
+
+def plot(fig: Any, **kw) -> None:
+    """Graphique Plotly : sur mobile, sans barre d'outils, sans zoom (le doigt fait défiler la page), moins haut."""
+    if is_compact():
+        fig.update_layout(
+            height=max(300, int((fig.layout.height or 450) * 0.75)),
+            margin={"l": 40, "r": 8, "b": 70},
+            legend={"orientation": "h", "y": -0.2, "x": 0},
+            dragmode=False,
+        )
+        fig.update_xaxes(fixedrange=True)
+        fig.update_yaxes(fixedrange=True)
+        config = {"displayModeBar": False, "scrollZoom": False, "responsive": True}
+    else:
+        config = {"displaylogo": False, "scrollZoom": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]}
+    st.plotly_chart(fig, config=config, **kw)
+
+
 def calc_button(key: str, label: str = "Calculer") -> bool:
     """Bouton principal pleine largeur, à placer en haut de la colonne de saisie ; True au clic.
 

@@ -92,7 +92,7 @@ def _hooke_resultats() -> None:
         return
     r, t = res["result"], res["tables"]
     st.success(res["status"])
-    st.plotly_chart(other_plots.mohr2D(r["mohr"]))
+    widgets.plot(other_plots.mohr2D(r["mohr"]))
     onglets = st.tabs(["Résultats", "Matrice", "Rapport", "Formules"])
     with onglets[0]:
         st.dataframe(t["Résultats"], hide_index=True)
@@ -142,8 +142,8 @@ def _jauges_resultats() -> None:
     widgets.graphs(
         "Jau_graphes_onglets",
         [
-            ("Mohr des déformations (rosette)", lambda: st.plotly_chart(other_plots.mohr2D(r["mohrDeformations"]))),
-            ("Mohr des contraintes (rosette)", lambda: st.plotly_chart(other_plots.mohr2D(r["mohrContraintes"]))),
+            ("Mohr des déformations (rosette)", lambda: widgets.plot(other_plots.mohr2D(r["mohrDeformations"]))),
+            ("Mohr des contraintes (rosette)", lambda: widgets.plot(other_plots.mohr2D(r["mohrContraintes"]))),
         ],
     )
     onglets = st.tabs(["Rosette", "Jauge et pont", "Rapport", "Formules"])

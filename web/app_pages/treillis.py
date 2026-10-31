@@ -125,6 +125,6 @@ with droite:
     resultat = state.result("Tr")
     figure = _figure(resultat)
     if figure is not None:
-        st.plotly_chart(figure)
+        widgets.plot(figure)
     if resultat is not None:
         _resultats(resultat)

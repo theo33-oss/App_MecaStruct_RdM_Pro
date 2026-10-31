@@ -18,7 +18,7 @@ from mecastruct.core.errors import MecaStructError
 from mecastruct.plots.other_plots import ktChart
 from mecastruct.services import compute
 from mecastruct.ui import state
-from mecastruct.ui.widgets import error_box
+from mecastruct.ui.widgets import error_box, plot
 
 state.init()
 dm = st.session_state["dm"]
@@ -230,7 +230,7 @@ def _abaques_kt() -> None:
         )
     )
     st.metric("Kt", f"{res['Kt']:.4g}")
-    st.plotly_chart(fig)
+    plot(fig)
     st.text("\n".join(res["rapport"]))
 
 

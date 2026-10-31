@@ -80,10 +80,10 @@ def _resultats(res: dict) -> None:
         [
             (
                 "Tricercle de Mohr",
-                lambda: st.plotly_chart(other_plots.mohr3D(r["mohr3D"], [fa["sigmaN"], fa["tauNorm"]])),
+                lambda: widgets.plot(other_plots.mohr3D(r["mohr3D"], [fa["sigmaN"], fa["tauNorm"]])),
             ),
-            ("Mohr 2D (plan x, y)", lambda: st.plotly_chart(other_plots.mohr2D(r["plane2D"], r["plane2D"]["theta"]))),
-            ("Lieu de plasticité", lambda: st.plotly_chart(other_plots.yieldLocus(r["loci"], _point_critere(r)))),
+            ("Mohr 2D (plan x, y)", lambda: widgets.plot(other_plots.mohr2D(r["plane2D"], r["plane2D"]["theta"]))),
+            ("Lieu de plasticité", lambda: widgets.plot(other_plots.yieldLocus(r["loci"], _point_critere(r)))),
         ],
     )
     onglets = st.tabs(["Principales", "Critères", "Facette", "Rapport", "Formules"])

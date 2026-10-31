@@ -92,8 +92,8 @@ def _resultats(res: dict) -> None:
     if math.isfinite(b["P"]):  # P = 0 : aucune charge appliquée, pas de verdict
         mot = "vérifié" if b["ok"] else "NON vérifié"
         widgets.status(f"P = {b['P'] / 1e3:.5g} kN, Padm = {b['Padm'] / 1e3:.5g} kN : {mot}", bool(b["ok"]))
-    st.plotly_chart(other_plots.bucklingCurve(c, b))
-    st.plotly_chart(other_plots.bucklingMode(b))
+    widgets.plot(other_plots.bucklingCurve(c, b))
+    widgets.plot(other_plots.bucklingMode(b))
     st.dataframe(res["tables"]["Synthèse"], hide_index=True)
     onglets = st.tabs(["Démonstration", "Rapport", "Formules"])
     with onglets[0]:

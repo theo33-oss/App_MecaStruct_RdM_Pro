@@ -187,10 +187,10 @@ def _resultats(res: dict, tables: dict, statut: str) -> None:
     widgets.graphs(
         "Sec_graphes_onglets",
         [
-            ("Section", lambda: st.plotly_chart(section_plots.section(sec, P))),
+            ("Section", lambda: widgets.plot(section_plots.section(sec, P))),
             (
                 "Contraintes σ(y) et τ(y)",
-                lambda: st.plotly_chart(section_plots.sectionStress(sec, P, res["bend"], res["jour"])),
+                lambda: widgets.plot(section_plots.sectionStress(sec, P, res["bend"], res["jour"])),
             ),
         ],
     )

@@ -580,7 +580,7 @@ def _schema(res: dict | None) -> None:
     except Exception as err:  # saisie incomplète : l'aperçu est seulement omis
         st.caption(f"Aperçu indisponible : {err}")
         return
-    st.plotly_chart(fig)
+    widgets.plot(fig)
 
 
 def _equations_par_troncon(sol: dict, comps: list[str]) -> None:
@@ -616,8 +616,8 @@ def _resultats(res: dict | None) -> None:
         if not comps:
             comps = [c for c in COMPOSANTES if any(np.any(k != 0) for k in asPP(sol[c]).coefs)] or ["Ty", "Mfz"]
         graphes += [
-            ("Diagrammes", lambda: st.plotly_chart(beam_plots.internalForces(sol, comps))),
-            ("Déformée α(s), v(s)", lambda: st.plotly_chart(beam_plots.deflection(res["model"], d))),
+            ("Diagrammes", lambda: widgets.plot(beam_plots.internalForces(sol, comps))),
+            ("Déformée α(s), v(s)", lambda: widgets.plot(beam_plots.deflection(res["model"], d))),
             ("Équations par tronçon", lambda: _equations_par_troncon(sol, comps)),
         ]
         tables += [
@@ -629,10 +629,10 @@ def _resultats(res: dict | None) -> None:
             ("Contraintes", lambda: _table(t["Contraintes"])),
         ]
     if r("BeamCombo") is not None:
-        graphes.append(("Combinaisons", lambda: st.plotly_chart(beam_plots.combinations(r("BeamCombo")))))
+        graphes.append(("Combinaisons", lambda: widgets.plot(beam_plots.combinations(r("BeamCombo")))))
         tables.append(("Combinaisons", lambda: _table(r("BeamCombo"))))
     if r("BeamMov") is not None:
-        graphes.append(("Charge mobile", lambda: st.plotly_chart(beam_plots.movingEnvelope(r("BeamMov")[1]))))
+        graphes.append(("Charge mobile", lambda: widgets.plot(beam_plots.movingEnvelope(r("BeamMov")[1]))))
         tables.append(("Charge mobile", lambda: _table(r("BeamMov")[0])))
     if r("BeamProf") is not None:
         tables.append(("Profilés", _affiche_profiles))
