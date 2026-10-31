@@ -232,3 +232,15 @@ def test_synthese_sous_le_bouton_calculer():
     fleche = res["defl"]["integration"]["fmax"] * 1e3
     assert at.metric[3].value == f"{fleche:.4g} mm"
     assert at.metric[4].delta.startswith(("vérifié", "NON vérifié"))
+
+
+def test_mode_compact_formulaire_derriere_un_bouton():
+    """Mode compact : plus de « Formulaire rapide » dans la barre latérale, un bouton « Formulaire » à la place."""
+    at = AppTest.from_file(PAGE, default_timeout=60)
+    at.session_state["mode_compact"] = True
+    at.run()
+    assert not at.exception
+    assert "Formulaire" in [b.label for b in at.button]
+    assert "Formulaire rapide" not in [s.value for s in at.sidebar.subheader]
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    assert "Formulaire rapide" in [s.value for s in at.sidebar.subheader]
