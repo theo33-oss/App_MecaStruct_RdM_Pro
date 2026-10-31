@@ -122,6 +122,8 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
 
 ## Phase 7 — Mise en ligne
 - [ ] E32 — Déploiement Streamlit Community Cloud + recette
+  Préparation faite (partie Claude Code), déploiement en ligne à faire par Théo. Vérifié : fichier principal web/streamlit_app.py, Python 3.12, web/data/ versionné (8 JSON), templates/ versionné, aucun chemin Windows en dur, aucun secret, aucune écriture disque (chemins relatifs à __file__, docs/ lu depuis le dépôt). requirements.txt : 9 paquets tous utilisés, plafonds à la version majeure suivante (pytest et ruff restent dans requirements-dev.txt). README mis à jour (limites : écart Flexion avec profilé du catalogue, E = 190 GPa pour S235 et S355, thème config.toml non appliqué sur Cloud car .streamlit/ est lu à la racine du dépôt).
+  Démarrage à froid : venv Python 3.12 vierge, pip install -r requirements.txt seul, AppTest de l'application complète lancée depuis la racine du dépôt : Accueil + 9 pages, « Calculer » cliqué sur 7 pages, aucune exception. pytest 1023 passed ; ruff check et ruff format --check verts. Rien poussé.
 - [ ] E33 — (option) Version GitHub Pages sans serveur
 
 ## Notes
