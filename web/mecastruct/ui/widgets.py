@@ -7,7 +7,7 @@ dans la saisie à chaque passage.
 import math
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import pandas as pd
 import streamlit as st
@@ -189,6 +189,61 @@ def graphs(key: str, contenus: list[tuple[str, Callable[[], Any]]], dessous: tup
             st.subheader(titre)
             affiche()
     return [c for c in contenus if c[0] in dessous]
+
+
+POSITIONS = ("Haut", "Bas")
+
+
+class Volet(NamedTuple):
+    """Un volet de saisie : clé, titre, position par défaut (« Haut » ou « Bas »), ouvert par défaut, affichage."""
+
+    cle: str
+    titre: str
+    defaut: str
+    ouvert: bool
+    saisie: Callable[[], None]
+
+
+def _cle_position(page: str, volet: Volet) -> str:
+    return f"mise_en_page.{page}.{volet.cle}"  # hors du préfixe « page. » : un exemple chargé ne la vide pas
+
+
+def _raz_mise_en_page(page: str, volets: list[Volet]) -> None:
+    """Remet le découpage par défaut (callback du bouton)."""
+    for v in volets:
+        st.session_state[_cle_position(page, v)] = v.defaut
+
+
+def panels(page: str, volets: list[Volet]) -> None:
+    """Volets de saisie en deux zones (haut, puis « Fonctions avancées ») et volet « Mise en page » pour les déplacer.
+
+    Les positions sont gardées dans st.session_state["mise_en_page"][page] : elles survivent à un changement de page.
+    Dans chaque zone, les volets suivent l'ordre de `volets`.
+    """
+    stock = st.session_state.setdefault("mise_en_page", {}).setdefault(page, {})
+    for v in volets:
+        cle = _cle_position(page, v)
+        if cle not in st.session_state:  # première visite, ou widget supprimé par un changement de page
+            st.session_state[cle] = stock.get(v.cle, v.defaut)
+        stock[v.cle] = st.session_state[cle]
+    haut = [v for v in volets if stock[v.cle] == "Haut"]
+    bas = [v for v in volets if stock[v.cle] != "Haut"]
+    for zone in (haut, bas):
+        if zone is bas and bas:
+            st.subheader("Fonctions avancées")
+        for v in zone:
+            with st.expander(v.titre, expanded=v.ouvert):
+                v.saisie()
+    with st.expander("Mise en page"):
+        st.caption("Pour chaque volet : en haut de la colonne, ou dans les fonctions avancées en bas.")
+        for v in volets:
+            st.radio(v.titre, POSITIONS, horizontal=True, key=_cle_position(page, v))
+        st.button(
+            "Réinitialiser la mise en page",
+            key=f"mise_en_page.{page}.raz",
+            on_click=_raz_mise_en_page,
+            args=(page, volets),
+        )
 
 
 def page_link(page: str, label: str, icon: str | None = None) -> None:

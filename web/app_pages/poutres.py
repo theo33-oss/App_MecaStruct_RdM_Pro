@@ -645,6 +645,38 @@ def _resultats(res: dict | None) -> None:
         widgets.tabs(tables)
 
 
+VOLETS = [
+    widgets.Volet("poutre", "Poutre et matériau", "Haut", True, _saisie_poutre_et_section),
+    widgets.Volet("section", "Section", "Haut", True, _saisie_section),
+    widgets.Volet("charges", "Appuis et charges", "Haut", True, _saisie_charges),
+    widgets.Volet("options", "Calcul et affichage", "Haut", True, _saisie_options),
+    widgets.Volet(
+        "rapide",
+        "Charge rapide (ajoute une ligne au tableau des charges réparties)",
+        "Bas",
+        False,
+        _saisie_charge_rapide,
+    ),
+    widgets.Volet(
+        "imposees",
+        "Ressorts, tassements, rotules, température, poids propre",
+        "Bas",
+        False,
+        _saisie_actions_imposees,
+    ),
+    widgets.Volet(
+        "combos",
+        "Combinaisons de cas (G permanentes, Q exploitation, W vent, S neige)",
+        "Bas",
+        False,
+        _saisie_combinaisons,
+    ),
+    widgets.Volet("mobile", "Charge mobile (convoi d'essieux, enveloppe)", "Bas", False, _saisie_charge_mobile),
+    widgets.Volet("profile", "Dimensionnement : profilé le plus léger", "Bas", False, _saisie_profile),
+    widgets.Volet("ec3", "Eurocode 3 simplifié (flexion + tranchant)", "Bas", False, _saisie_eurocode),
+    widgets.Volet("fatigue", "Fatigue (Goodman)", "Bas", False, _saisie_fatigue),
+]
+
 st.title("Poutres")
 formula_panel("equilibre")
 
@@ -662,28 +694,7 @@ with gauche:
     colonnes[1].button("↷ Rétablir", key="Beam_retablir", on_click=_historique, args=(1,))
     widgets.file_bar("Beam")
     widgets.example_picker("Beam")
-    with st.expander("Poutre et matériau", expanded=True):
-        _saisie_poutre_et_section()
-    with st.expander("Section", expanded=True):
-        _saisie_section()
-    with st.expander("Appuis et charges", expanded=True):
-        _saisie_charges()
-    with st.expander("Charge rapide (ajoute une ligne au tableau des charges réparties)"):
-        _saisie_charge_rapide()
-    with st.expander("Ressorts, tassements, rotules, température, poids propre"):
-        _saisie_actions_imposees()
-    with st.expander("Calcul et affichage", expanded=True):
-        _saisie_options()
-    with st.expander("Combinaisons de cas (G permanentes, Q exploitation, W vent, S neige)"):
-        _saisie_combinaisons()
-    with st.expander("Charge mobile (convoi d'essieux, enveloppe)"):
-        _saisie_charge_mobile()
-    with st.expander("Dimensionnement : profilé le plus léger"):
-        _saisie_profile()
-    with st.expander("Eurocode 3 simplifié (flexion + tranchant)"):
-        _saisie_eurocode()
-    with st.expander("Fatigue (Goodman)"):
-        _saisie_fatigue()
+    widgets.panels("Beam", VOLETS)
     if calcule:
         _calcule()
     st.button("Envoyer au tenseur (point le plus sollicité)", key="Beam_btenseur", on_click=_envoie_tenseur)

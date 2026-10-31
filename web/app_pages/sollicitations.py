@@ -105,13 +105,15 @@ def _applique_matage() -> None:
 
 def _cisaillement_saisie(calcule: bool) -> None:
     saisie = state.saisie("Cis")
-    with st.expander("Matériau et critère", expanded=True):
+
+    def materiau() -> None:
         widgets.choice_materiau("Cis", ["Re", "G"], dm)
         widgets.num("Cis", "Re", "Re", "MPa")
         widgets.num("Cis", "G", "G", "GPa")
         widgets.choice("Cis", "crit", "Critère (τe)", list(CRITERES), format_func=CRITERES.get)
         widgets.num("Cis", "s", "Coefficient de sécurité s", "-")
-    with st.expander("Cisaillement simple, Jourawski et matage", expanded=True):
+
+    def simple() -> None:
         widgets.num("Cis", "T", "T", "kN")
         widgets.num("Cis", "S", "S cisaillée", "mm²", min_value=0.0)
         widgets.num("Cis", "k", "k = τmax/τmoy", "-")
@@ -127,10 +129,8 @@ def _cisaillement_saisie(calcule: bool) -> None:
             on_change=_applique_matage,
         )
         widgets.num("Cis", "Padm", "P_adm", "MPa", min_value=0.0)
-        if calcule:
-            _section_des_sections(saisie)
-            _calcule("Cis", lambda: compute.computeShear(saisie, dm))
-    with st.expander("Clavette parallèle"):
+
+    def clavette() -> None:
         widgets.num("Cis", "C", "Couple C", "kN·m")
         widgets.num("Cis", "Dk", "Diamètre d'arbre D", "mm")
         widgets.num("Cis", "ak", "Largeur a", "mm")
@@ -138,13 +138,27 @@ def _cisaillement_saisie(calcule: bool) -> None:
         widgets.num("Cis", "Lk", "Longueur L (0 = dimensionner)", "mm", min_value=0.0)
         if st.button("Calculer la clavette", key="Cis.key"):
             _calcule("CisKey", lambda: compute.computeKey(saisie, dm))
-    with st.expander("Goupille / rivet"):
+
+    def goupille() -> None:
         widgets.num("Cis", "Fp", "F", "kN")
         widgets.num("Cis", "dp", "d", "mm")
         widgets.num("Cis", "ep", "e — épaisseur matée", "mm")
         widgets.num("Cis", "np", "Sections cisaillées n", "-", step=1)
         if st.button("Calculer la goupille", key="Cis.pin"):
             _calcule("CisPin", lambda: compute.computePin(saisie, dm))
+
+    widgets.panels(
+        "Cis",
+        [
+            widgets.Volet("materiau", "Matériau et critère", "Haut", True, materiau),
+            widgets.Volet("simple", "Cisaillement simple, Jourawski et matage", "Haut", True, simple),
+            widgets.Volet("clavette", "Clavette parallèle", "Bas", False, clavette),
+            widgets.Volet("goupille", "Goupille / rivet", "Bas", False, goupille),
+        ],
+    )
+    if calcule:
+        _section_des_sections(saisie)
+        _calcule("Cis", lambda: compute.computeShear(saisie, dm))
 
 
 def _cisaillement_resultats() -> None:

@@ -163,3 +163,58 @@ def test_graphiques_empiles_puis_en_onglets():
     at.toggle(key="Beam_graphes_onglets").set_value(True).run()
     assert not at.exception and "Diagrammes" not in {s.value for s in at.subheader}
     assert "Diagrammes" in [t.label for t in at.tabs]
+
+
+def _ordre(at: AppTest) -> list[str]:
+    """Libellés des boutons, volets et titres de la page, dans l'ordre d'affichage (parcours en profondeur)."""
+    sortie = []
+
+    def parcours(bloc):
+        for el in bloc.children.values():
+            if el.type in ("button", "expander"):
+                sortie.append(el.label)
+            elif el.type == "subheader":
+                sortie.append(el.value)
+            if hasattr(el, "children"):
+                parcours(el)
+
+    parcours(at.main)
+    return sortie
+
+
+ESSENTIELS = ["Poutre et matériau", "Section", "Appuis et charges", "Calcul et affichage"]
+AVANCES = [
+    "Fatigue (Goodman)",
+    "Eurocode 3 simplifié (flexion + tranchant)",
+    "Charge mobile (convoi d'essieux, enveloppe)",
+]
+
+
+def test_volets_avances_sous_le_bouton_calculer():
+    """Par défaut : Calculer, volets essentiels, « Fonctions avancées », volets avancés, « Mise en page »."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    assert not at.exception
+    ordre = _ordre(at)
+    calcul, avance, mise = ordre.index("Calculer"), ordre.index("Fonctions avancées"), ordre.index("Mise en page")
+    assert all(calcul < ordre.index(t) < avance for t in ESSENTIELS)
+    assert all(avance < ordre.index(t) < mise for t in AVANCES)
+
+
+def test_mise_en_page_deplace_un_volet_puis_reinitialise():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    at.radio(key="mise_en_page.Beam.fatigue").set_value("Haut").run()
+    ordre = _ordre(at)
+    assert ordre.index("Fatigue (Goodman)") < ordre.index("Fonctions avancées")
+    at.radio(key="mise_en_page.Beam.section").set_value("Bas").run()
+    ordre = _ordre(at)
+    assert ordre.index("Section") > ordre.index("Fonctions avancées")
+    _bouton(at, "Réinitialiser la mise en page").click().run()
+    ordre = _ordre(at)
+    assert ordre.index("Section") < ordre.index("Fonctions avancées") < ordre.index("Fatigue (Goodman)")
+
+
+def test_mise_en_page_survit_au_chargement_d_un_exemple():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    at.radio(key="mise_en_page.Beam.fatigue").set_value("Haut").run()
+    _bouton(at, "Charger l'exemple").click().run()
+    assert at.radio(key="mise_en_page.Beam.fatigue").value == "Haut"

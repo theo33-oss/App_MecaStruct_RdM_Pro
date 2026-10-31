@@ -110,3 +110,33 @@ def test_sections_cornière_envoie_les_moments_principaux():
     fla = at.session_state["saisie"]["Fla"]
     assert abs(P["Iyz"]) > 0
     assert fla["Iz"] == pytest.approx(P["I1"] * 1e12) and fla["Iy"] == pytest.approx(P["I2"] * 1e12)
+
+
+def _volets(at: AppTest) -> list[tuple[str, str]]:
+    """(type, libellé) des volets et des titres de la page, dans l'ordre d'affichage."""
+    sortie = []
+
+    def parcours(bloc):
+        for el in bloc.children.values():
+            if el.type == "expander":
+                sortie.append(("expander", el.label))
+            elif el.type == "subheader":
+                sortie.append(("subheader", el.value))
+            if hasattr(el, "children"):
+                parcours(el)
+
+    parcours(at.main)
+    return sortie
+
+
+def test_cisaillement_clavette_et_goupille_sous_les_fonctions_avancees():
+    """Sollicitations : Clavette et Goupille sous « Fonctions avancées » ; le choix « Haut » remonte la clavette."""
+    at = _page("sollicitations")
+    assert not at.exception
+    ordre = _volets(at)
+    i = ordre.index(("subheader", "Fonctions avancées"))  # seul le sous-onglet Cisaillement en a
+    assert ("expander", "Cisaillement simple, Jourawski et matage") in ordre[:i]
+    assert ("expander", "Clavette parallèle") in ordre[i:] and ("expander", "Goupille / rivet") in ordre[i:]
+    at.radio(key="mise_en_page.Cis.clavette").set_value("Haut").run()
+    ordre = _volets(at)
+    assert ("expander", "Clavette parallèle") in ordre[: ordre.index(("subheader", "Fonctions avancées"))]
