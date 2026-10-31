@@ -590,13 +590,6 @@ def _equations_par_troncon(sol: dict, comps: list[str]) -> None:
         widgets.formulas([eq[c] for c in comps])
 
 
-def _onglets(contenus: list[tuple[str, object]]) -> None:
-    """Affiche les onglets (titre, fonction d'affichage sans argument)."""
-    for onglet, (_, affiche) in zip(st.tabs([titre for titre, _ in contenus]), contenus, strict=True):
-        with onglet:
-            affiche()
-
-
 def _table(df) -> None:
     st.dataframe(df, hide_index=True)
 
@@ -610,7 +603,7 @@ def _affiche_profiles() -> None:
 
 
 def _resultats(res: dict | None) -> None:
-    """Ligne d'état, onglets graphiques, onglets de résultats (ceux des calculs faits)."""
+    """Ligne d'état, graphiques (empilés ou en onglets), onglets de résultats (ceux des calculs faits)."""
     r = state.result
     texte, ok = st.session_state.get("Beam_etat", (None, None))
     if texte:
@@ -647,9 +640,9 @@ def _resultats(res: dict | None) -> None:
         tables.append(("Eurocode 3", lambda: _table(r("BeamEC3")[1])))
     if r("BeamFat") is not None:
         tables.append(("Fatigue", lambda: _table(r("BeamFat")[1])))
-    _onglets(graphes)
+    tables = widgets.graphs("Beam_graphes_onglets", graphes, dessous=("Équations par tronçon",)) + tables
     if tables:
-        _onglets(tables)
+        widgets.tabs(tables)
 
 
 st.title("Poutres")

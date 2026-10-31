@@ -167,6 +167,30 @@ def calc_button(key: str, label: str = "Calculer") -> bool:
     return st.button(label, key=key, type="primary", width="stretch")
 
 
+def tabs(contenus: list[tuple[str, Callable[[], Any]]]) -> None:
+    """Affiche des onglets ; `contenus` = liste de (titre, fonction d'affichage sans argument)."""
+    for onglet, (_, affiche) in zip(st.tabs([titre for titre, _ in contenus]), contenus, strict=True):
+        with onglet:
+            affiche()
+
+
+def graphs(key: str, contenus: list[tuple[str, Callable[[], Any]]], dessous: tuple[str, ...] = ()) -> list:
+    """Graphiques les uns sous les autres, chacun avec son titre ; l'interrupteur « Graphiques en onglets » les groupe.
+
+    Les titres de `dessous` ne sont pas tracés en mode empilé : ils sont renvoyés, pour que l'appelant les range avec
+    ses propres onglets (en mode onglets, ils restent dans les onglets des graphiques et la liste renvoyée est vide).
+    """
+    en_onglets = len(contenus) > 1 and st.toggle("Graphiques en onglets", key=key)
+    if en_onglets:
+        tabs(contenus)
+        return []
+    for titre, affiche in contenus:
+        if titre not in dessous:
+            st.subheader(titre)
+            affiche()
+    return [c for c in contenus if c[0] in dessous]
+
+
 def page_link(page: str, label: str, icon: str | None = None) -> None:
     """Lien vers une page de l'application ; omis hors de la navigation (test d'une page seule)."""
     try:

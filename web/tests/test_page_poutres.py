@@ -150,3 +150,16 @@ def test_envoyer_au_tenseur():
     ten = at.session_state["saisie"]["Ten"]
     sigma = at.session_state["res"]["Beam"]["check"]["sigma"] / 1e6
     assert ten["sig"][0][0] == pytest.approx(sigma) and ten["mat"] == "S235"
+
+
+def test_graphiques_empiles_puis_en_onglets():
+    """Après « Calculer » : graphiques sous des titres, équations en onglets ; l'interrupteur rétablit les onglets."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _bouton(at, "Charger l'exemple").click().run()
+    _bouton(at, "Calculer").click().run()
+    assert not at.exception
+    assert {"Schéma", "Diagrammes", "Déformée α(s), v(s)"} <= {s.value for s in at.subheader}
+    assert "Équations par tronçon" in [t.label for t in at.tabs]
+    at.toggle(key="Beam_graphes_onglets").set_value(True).run()
+    assert not at.exception and "Diagrammes" not in {s.value for s in at.subheader}
+    assert "Diagrammes" in [t.label for t in at.tabs]

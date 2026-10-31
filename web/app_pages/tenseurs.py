@@ -75,13 +75,17 @@ def _resultats(res: dict) -> None:
     ok = bool(r["criteria"]["okTresca"] and r["criteria"]["okVM"])
     widgets.status(res["status"], ok)
     fa = r["facet"]
-    graphes = st.tabs(["Tricercle de Mohr", "Mohr 2D (plan x, y)", "Lieu de plasticité"])
-    with graphes[0]:
-        st.plotly_chart(other_plots.mohr3D(r["mohr3D"], [fa["sigmaN"], fa["tauNorm"]]))
-    with graphes[1]:
-        st.plotly_chart(other_plots.mohr2D(r["plane2D"], r["plane2D"]["theta"]))
-    with graphes[2]:
-        st.plotly_chart(other_plots.yieldLocus(r["loci"], _point_critere(r)))
+    widgets.graphs(
+        "Ten_graphes_onglets",
+        [
+            (
+                "Tricercle de Mohr",
+                lambda: st.plotly_chart(other_plots.mohr3D(r["mohr3D"], [fa["sigmaN"], fa["tauNorm"]])),
+            ),
+            ("Mohr 2D (plan x, y)", lambda: st.plotly_chart(other_plots.mohr2D(r["plane2D"], r["plane2D"]["theta"]))),
+            ("Lieu de plasticité", lambda: st.plotly_chart(other_plots.yieldLocus(r["loci"], _point_critere(r)))),
+        ],
+    )
     onglets = st.tabs(["Principales", "Critères", "Facette", "Rapport", "Formules"])
     for onglet, nom in zip(onglets[:3], ("Principales", "Critères", "Facette"), strict=True):
         with onglet:

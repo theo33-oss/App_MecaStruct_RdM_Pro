@@ -184,11 +184,16 @@ def _resultats(res: dict, tables: dict, statut: str) -> None:
     """Graphiques (section, contraintes) puis résultats (comparaison, Huygens, cisaillement, rapport, formules)."""
     sec, P = res["sec"], res["P"]
     st.success(statut)
-    onglets_graphes = st.tabs(["Section", "Contraintes σ(y) et τ(y)"])
-    with onglets_graphes[0]:
-        st.plotly_chart(section_plots.section(sec, P))
-    with onglets_graphes[1]:
-        st.plotly_chart(section_plots.sectionStress(sec, P, res["bend"], res["jour"]))
+    widgets.graphs(
+        "Sec_graphes_onglets",
+        [
+            ("Section", lambda: st.plotly_chart(section_plots.section(sec, P))),
+            (
+                "Contraintes σ(y) et τ(y)",
+                lambda: st.plotly_chart(section_plots.sectionStress(sec, P, res["bend"], res["jour"])),
+            ),
+        ],
+    )
 
     onglets = st.tabs(
         ["Comparaison des méthodes", "Tableau de Huygens", "Facteurs de cisaillement", "Rapport", "Formules"]

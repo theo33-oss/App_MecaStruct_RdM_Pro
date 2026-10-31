@@ -139,11 +139,13 @@ def _jauges_resultats() -> None:
         return
     r, t = res["result"], res["tables"]
     st.success(res["status"])
-    graphes = st.tabs(["Mohr des déformations (rosette)", "Mohr des contraintes (rosette)"])
-    with graphes[0]:
-        st.plotly_chart(other_plots.mohr2D(r["mohrDeformations"]))
-    with graphes[1]:
-        st.plotly_chart(other_plots.mohr2D(r["mohrContraintes"]))
+    widgets.graphs(
+        "Jau_graphes_onglets",
+        [
+            ("Mohr des déformations (rosette)", lambda: st.plotly_chart(other_plots.mohr2D(r["mohrDeformations"]))),
+            ("Mohr des contraintes (rosette)", lambda: st.plotly_chart(other_plots.mohr2D(r["mohrContraintes"]))),
+        ],
+    )
     onglets = st.tabs(["Rosette", "Jauge et pont", "Rapport", "Formules"])
     with onglets[0]:
         st.dataframe(t["Rosette"], hide_index=True)
