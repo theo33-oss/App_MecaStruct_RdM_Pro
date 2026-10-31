@@ -17,8 +17,8 @@ Python/Streamlit** (dossier `web/`). Le plan complet est dans `Migration MATLAB 
 ## Règles absolues
 
 - **Ne jamais modifier** les fichiers MATLAB (`*.m` à la racine, `tests/*.m`) ni `docs/ARCHITECTURE.md`.
-  Ils sont la référence. Seuls `web/`, `.github/workflows/`, `Migration MATLAB vers site web/PROGRESSION.md` et
-  `Migration MATLAB vers site web/BLOCAGES.md` sont modifiables (et `CLAUDE.md` si une fiche le demande).
+  Ils sont la référence. Seuls `web/`, `.streamlit/` (thème, à la racine : seul endroit lu par Streamlit Community Cloud), `.github/workflows/`,
+  `Migration MATLAB vers site web/PROGRESSION.md` et `Migration MATLAB vers site web/BLOCAGES.md` sont modifiables (et `CLAUDE.md` si une fiche le demande).
 - **Ne jamais recopier à la main** une valeur numérique de la base (matériaux, profilés…) : elle vient
   de `web/data/*.json`.
 - **Ne jamais modifier un fichier golden** (`web/tests/golden/*.json`) ni affaiblir une tolérance de test
@@ -46,7 +46,7 @@ python -m pytest -q                      # tous les tests
 python -m pytest tests/test_geometry.py -q   # un seul fichier
 python -m ruff check .                   # qualité
 python -m ruff format .                  # mise en forme
-streamlit run streamlit_app.py           # lancer l'application (http://localhost:8501)
+cd ..; streamlit run web/streamlit_app.py  # lancer l'application depuis la racine (thème de .streamlit/) : http://localhost:8501
 ```
 Linux / macOS / Claude Code web : remplacer la première ligne par `source .venv/bin/activate`.
 

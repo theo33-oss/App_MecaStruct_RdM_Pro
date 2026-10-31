@@ -1,0 +1,45 @@
+# Thème et réglages de l'application web. Ce fichier doit être à la racine du dépôt : Streamlit Community Cloud
+# lance « streamlit run » depuis cette racine et ne lit pas web/.streamlit/. En local, lancer aussi depuis la racine :
+# streamlit run web/streamlit_app.py
+[client]
+toolbarMode = "minimal"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+baseFontSize = 16
+baseRadius = "0.375rem"
+buttonRadius = "0.375rem"
+showWidgetBorder = true
+showSidebarBorder = true
+paddingTop = "1.5rem"
+primaryColor = "#6E56CF"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F6FB"
+textColor = "#1E1B2E"
+borderColor = "#DDD8EA"
+linkColor = "#5746AF"
+linkUnderline = false
+codeBackgroundColor = "#F4F2F9"
+codeTextColor = "#5746AF"
+dataframeHeaderBackgroundColor = "#F1EFF7"
+headingFontSizes = ["1.75rem", "1.375rem", "1.125rem", "1rem"]
+headingFontWeights = [600, 600, 600, 600]
+metricValueFontSize = "1.75rem"
+metricValueFontWeight = 600
+greenColor = "#1A7F37"
+redColor = "#CF222E"
+yellowColor = "#9A6700"
+orangeColor = "#BC4C00"
+blueColor = "#0969DA"
+violetColor = "#6E56CF"
+# Okabe-Ito (sûre pour les daltoniens), sans le jaune illisible sur blanc
+chartCategoricalColors = ["#0072B2", "#D55E00", "#009E73", "#E69F00", "#CC79A7", "#56B4E9", "#6E56CF", "#1E1B2E"]
+
+[theme.sidebar]
+backgroundColor = "#F7F6FB"

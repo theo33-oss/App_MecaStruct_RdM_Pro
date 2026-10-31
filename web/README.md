@@ -47,21 +47,23 @@ Détail dans [PLAN.md §7](../Migration%20MATLAB%20vers%20site%20web/PLAN.md) :
   bandeau le signale.
 - **Téléversement et téléchargement** (enregistrer / ouvrir) : non pilotés par les tests automatiques.
 - **Hébergement gratuit** (Streamlit Community Cloud) : mise en veille après 12 h sans visite (réveil en
-  environ 30 s), environ 1 Go de mémoire. Le thème de `web/.streamlit/config.toml` n'y est pas appliqué
-  (Streamlit lit `.streamlit/` à la racine du dépôt) : l'application s'affiche avec le thème par défaut.
+  environ 30 s), environ 1 Go de mémoire. Le thème est dans `.streamlit/config.toml`, à la racine du dépôt
+  (Streamlit Community Cloud ne lit que ce dossier).
 
 Autres limites de calcul (aluminium, titane, cuivre, bois, béton, ressorts, tassements…) : voir le
 [README MATLAB](../README.md).
 
 ## Lancer l'application en local
 
-Depuis le dossier `web/`, dans Windows PowerShell :
+Dans Windows PowerShell, `python -m pytest` et `ruff` se lancent depuis `web/`, mais l'application se lance depuis la
+racine du dépôt, pour que le thème de `.streamlit/config.toml` s'applique :
 
 ```
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
-streamlit run streamlit_app.py
+cd ..
+streamlit run web/streamlit_app.py
 ```
 
 L'application s'ouvre sur http://localhost:8501. Arrêter le serveur avec Ctrl+C.
