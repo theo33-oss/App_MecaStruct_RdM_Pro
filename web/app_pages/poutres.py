@@ -602,6 +602,31 @@ def _affiche_profiles() -> None:
         st.button(f"Utiliser le profilé {best['Name']}", key="Beam_utilise", on_click=_utilise_profile)
 
 
+def _synthese(res: dict) -> list[dict]:
+    """Valeurs clés du dernier calcul (kN, kN·m, mm, MPa) pour les st.metric affichés sous « Calculer »."""
+    e, bd = res["sol"]["extrema"], res["check"]["bend"]
+    reaction = max((float(np.linalg.norm([r["Rx"], r["Ry"], r["Rz"]])) for r in res["sol"]["reactions"]), default=0.0)
+    ok = bool(bd["ok"])
+    return [
+        {"label": "Réaction max", "value": f"{reaction / 1e3:.4g} kN"},
+        {
+            "label": "|T| max",
+            "value": f"{max(abs(e[c][b]) for c in ('Ty', 'Tz') for b in ('max', 'min')) / 1e3:.4g} kN",
+        },
+        {
+            "label": "|Mf| max",
+            "value": f"{max(abs(e[c][b]) for c in ('Mfy', 'Mfz') for b in ('max', 'min')) / 1e3:.4g} kN·m",
+        },
+        {"label": "Flèche max", "value": f"{res['defl']['integration']['fmax'] * 1e3:.4g} mm"},
+        {
+            "label": "Kt·σ max",
+            "value": f"{bd['sigmaMaxKt'] / 1e6:.4g} MPa",
+            "delta": f"{'vérifié' if ok else 'NON vérifié'} (σadm {bd['sigmaAdm'] / 1e6:.4g})",
+            "delta_color": "green" if ok else "red",
+        },
+    ]
+
+
 def _resultats(res: dict | None) -> None:
     """Ligne d'état, graphiques (empilés ou en onglets), onglets de résultats (ceux des calculs faits)."""
     r = state.result
@@ -683,6 +708,7 @@ formula_panel("equilibre")
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
     calcule = widgets.calc_button("Beam.calc")
+    synthese = st.container()  # rempli après le calcul : valeurs clés visibles sans descendre la colonne de saisie
     colonnes = st.columns(2)
     colonnes[0].button(
         "↶ Annuler",
@@ -697,6 +723,9 @@ with gauche:
     widgets.panels("Beam", VOLETS)
     if calcule:
         _calcule()
+    if state.result("Beam") is not None:
+        with synthese:
+            widgets.synthese(_synthese(state.result("Beam")))
     st.button("Envoyer au tenseur (point le plus sollicité)", key="Beam_btenseur", on_click=_envoie_tenseur)
     st.caption(
         "Les efforts de la poutre se reprennent dans Sections : « Efforts en s » et « Efforts au point critique »."

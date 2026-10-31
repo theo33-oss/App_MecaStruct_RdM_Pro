@@ -1,7 +1,7 @@
 # Dépendances de l'application (lu par Streamlit Community Cloud, Python 3.12).
 # Chaque paquet est importé par mecastruct/ ou app_pages/ ; openpyxl est le moteur de pandas pour l'export .xlsx.
 # Plafond = prochaine version majeure, pour qu'une rupture future ne casse pas un redéploiement.
-streamlit>=1.55,<2
+streamlit>=1.66,<2
 numpy>=1.26,<3
 scipy>=1.12,<2
 sympy>=1.12,<2

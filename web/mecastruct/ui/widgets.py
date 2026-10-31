@@ -185,6 +185,13 @@ def plot(fig: Any, **kw) -> None:
     st.plotly_chart(fig, config=config, **kw)
 
 
+def synthese(valeurs: list[dict]) -> None:
+    """Rangée de st.metric (dicts label, value, delta facultatifs) ; passe à la ligne si la place manque."""
+    with st.container(horizontal=True):
+        for v in valeurs:
+            st.metric(border=True, delta_arrow="off", **v)
+
+
 def calc_button(key: str, label: str = "Calculer") -> bool:
     """Bouton principal pleine largeur, à placer en haut de la colonne de saisie ; True au clic.
 

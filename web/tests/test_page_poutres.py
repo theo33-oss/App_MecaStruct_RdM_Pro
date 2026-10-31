@@ -218,3 +218,17 @@ def test_mise_en_page_survit_au_chargement_d_un_exemple():
     at.radio(key="mise_en_page.Beam.fatigue").set_value("Haut").run()
     _bouton(at, "Charger l'exemple").click().run()
     assert at.radio(key="mise_en_page.Beam.fatigue").value == "Haut"
+
+
+def test_synthese_sous_le_bouton_calculer():
+    """Avant le calcul : aucune valeur ; après : 5 valeurs clés, la flèche est celle du calcul."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    assert not at.metric
+    _bouton(at, "Charger l'exemple").click().run()
+    _bouton(at, "Calculer").click().run()
+    assert not at.exception
+    assert [m.label for m in at.metric] == ["Réaction max", "|T| max", "|Mf| max", "Flèche max", "Kt·σ max"]
+    res = at.session_state["res"]["Beam"]
+    fleche = res["defl"]["integration"]["fmax"] * 1e3
+    assert at.metric[3].value == f"{fleche:.4g} mm"
+    assert at.metric[4].delta.startswith(("vérifié", "NON vérifié"))
