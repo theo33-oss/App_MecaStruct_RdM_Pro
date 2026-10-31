@@ -111,11 +111,13 @@ formula_panel("flambage")
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
     calcule = widgets.calc_button("Fla.calc")
+    synthese = st.container()
     widgets.file_bar("Fla")
     widgets.example_picker("Fla")
     _saisie()
     if calcule:
         _calcule()
+    widgets.synthese_resultat("Fla", synthese)
 
 with droite:
     widgets.validation_button("Fla")

@@ -103,11 +103,13 @@ formula_panel("tenseurs")
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
     calcule = widgets.calc_button("Ten.calc")
+    synthese = st.container()
     widgets.file_bar("Ten")
     widgets.example_picker("Ten")
     _saisie()
     if calcule:
         _calcule()
+    widgets.synthese_resultat("Ten", synthese)
 
 with droite:
     widgets.validation_button("Ten")

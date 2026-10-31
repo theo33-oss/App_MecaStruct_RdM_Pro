@@ -140,3 +140,13 @@ def test_cisaillement_clavette_et_goupille_sous_les_fonctions_avancees():
     at.radio(key="mise_en_page.Cis.clavette").set_value("Haut").run()
     ordre = _volets(at)
     assert ("expander", "Clavette parallèle") in ordre[: ordre.index(("subheader", "Fonctions avancées"))]
+
+
+@pytest.mark.parametrize("nom", ["treillis", "sections", "tenseurs", "flambage", "hooke_jauges", "sollicitations"])
+def test_valeurs_cles_sous_calculer(nom):
+    """Chaque page de calcul affiche ses valeurs clés (st.metric) après « Calculer », pas avant."""
+    at = _page(nom)
+    assert not at.metric
+    next(b for b in at.button if b.label == "Calculer").click().run()
+    assert not at.exception
+    assert len(at.metric) >= 1

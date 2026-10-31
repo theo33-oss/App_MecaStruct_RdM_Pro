@@ -172,8 +172,10 @@ for onglet, (_, fiche, tab, saisie_fn, resultats_fn) in zip(onglets, ONGLETS, st
         gauche, droite = st.columns([1, 2], gap="large")
         with gauche:
             calcule = widgets.calc_button(f"{tab}.calc")
+            synthese = st.container()
             widgets.file_bar(tab)
             saisie_fn(calcule)
+            widgets.synthese_resultat(tab, synthese)
         with droite:
             widgets.validation_button(tab)
             resultats_fn()

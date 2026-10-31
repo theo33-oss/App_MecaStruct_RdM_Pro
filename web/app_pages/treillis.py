@@ -113,12 +113,14 @@ formula_panel("treillis")
 gauche, droite = st.columns([1, 2], gap="large")
 with gauche:
     calcule = widgets.calc_button("Tr.calc")
+    synthese = st.container()
     widgets.file_bar("Tr")
     widgets.example_picker("Tr")
     with st.expander("Matériau, section et nœuds", expanded=True):
         _saisie()
     if calcule:
         _calcule()
+    widgets.synthese_resultat("Tr", synthese)
 
 with droite:
     widgets.validation_button("Tr")

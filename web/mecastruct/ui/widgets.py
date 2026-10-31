@@ -5,6 +5,7 @@ dans la saisie à chaque passage.
 """
 
 import math
+import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, NamedTuple
@@ -159,13 +160,21 @@ def choice_materiau(tab: str, champs: list[str], dm: Any, label: str = "Matéria
     return choice(tab, "mat", label, dm.listMaterials(), on_change=applique, **kw)
 
 
-def is_compact() -> bool:
+def agent_mobile() -> bool:
     """Vrai sur téléphone ou tablette d'après le User-Agent (Streamlit n'expose pas la largeur d'écran côté Python)."""
     try:
         agent = st.context.headers.get("User-Agent", "")
     except Exception:  # hors session (test d'un module seul) : affichage ordinateur
         return False
     return any(marque in agent for marque in ("Mobi", "Android", "iPhone", "iPad"))
+
+
+def is_compact() -> bool:
+    """Mode compact : choix de l'interrupteur de la barre latérale, sinon détection par le User-Agent."""
+    try:
+        return bool(st.session_state.get("mode_compact", agent_mobile()))
+    except Exception:  # hors session
+        return False
 
 
 def plot(fig: Any, **kw) -> None:
@@ -190,6 +199,35 @@ def synthese(valeurs: list[dict]) -> None:
     with st.container(horizontal=True):
         for v in valeurs:
             st.metric(border=True, delta_arrow="off", **v)
+
+
+_MORCEAU = re.compile(r"^(?P<label>[^=:]{1,25}?) = (?P<value>[^()]+?)(?: \((?P<note>[^()]+)\))?$")
+
+
+def synthese_statut(status: str) -> None:
+    """Rangée de st.metric tirée d'une ligne d'état « A = 1 u, B = 2 u (vérifié) — C = 3 u » ; rien sans « x = y »."""
+    valeurs = []
+    for morceau in re.split(r",\s|\s—\s", status):
+        m = _MORCEAU.match(morceau.strip())
+        if m is None:
+            continue
+        valeur, _, verdict = m["value"].partition(" : ")
+        note = (m["note"] or verdict).strip()
+        v = {"label": m["label"].strip(), "value": valeur.strip()}
+        if note:
+            v["delta"] = note
+            v["delta_color"] = {"vérifié": "green", "NON vérifié": "red"}.get(note, "off")
+        valeurs.append(v)
+    if valeurs:
+        synthese(valeurs)
+
+
+def synthese_resultat(tab: str, conteneur: Any) -> None:
+    """Remplit `conteneur` (réservé sous « Calculer ») avec les valeurs clés du résultat de l'onglet `tab`."""
+    res = state.result(tab)
+    if isinstance(res, dict) and res.get("status"):
+        with conteneur:
+            synthese_statut(res["status"])
 
 
 def calc_button(key: str, label: str = "Calculer") -> bool:

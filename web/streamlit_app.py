@@ -5,7 +5,7 @@ Lancement local : streamlit run streamlit_app.py
 
 import streamlit as st
 
-from mecastruct.ui import state
+from mecastruct.ui import state, widgets
 
 st.set_page_config(
     page_title="MecaStruct RdM Pro", page_icon=":material/architecture:", layout="wide", initial_sidebar_state="auto"
@@ -30,5 +30,11 @@ pages = {
         st.Page("app_pages/convertisseur.py", title="Convertisseur", icon=":material/swap_horiz:"),
     ],
 }
+st.sidebar.toggle(
+    "Mode compact",
+    value=widgets.agent_mobile(),
+    key="mode_compact",
+    help="Graphiques moins hauts et sans zoom, tableaux en liste. Activé seul sur téléphone ; à régler ici sinon.",
+)
 pg = st.navigation(pages, position="top")
 pg.run()

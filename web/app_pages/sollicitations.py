@@ -320,9 +320,11 @@ for onglet, (_, fiche, tab) in zip(onglets, ONGLETS, strict=True):
         gauche, droite = st.columns([1, 2], gap="large")
         with gauche:
             calcule = widgets.calc_button(f"{tab}.calc")
+            synthese = st.container()
             widgets.file_bar(tab)
             widgets.example_picker(tab)
             SOUS_PAGES[tab][0](calcule)
+            widgets.synthese_resultat(tab, synthese)
         with droite:
             widgets.validation_button(tab)
             SOUS_PAGES[tab][1]()
