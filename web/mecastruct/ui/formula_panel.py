@@ -29,10 +29,11 @@ _LIBELLES = {
 }
 
 
-def _fiche(key: str) -> None:
+def _fiche(key: str, titre: bool = True) -> None:
     """Sélecteur de fiche et formules de la clé `key` (là où l'appelant se trouve : barre latérale ou tiroir)."""
     cles = data_manager.formulaKeys()
-    st.subheader("Formulaire rapide")
+    if titre:
+        st.subheader("Formulaire rapide")
     choix = st.selectbox(
         "Fiche",
         cles,
@@ -49,7 +50,7 @@ def _fiche(key: str) -> None:
 
 @st.dialog("Formulaire rapide", width="large", position="right", icon=":material/function:")
 def _tiroir(key: str) -> None:
-    _fiche(key)
+    _fiche(key, titre=False)
 
 
 def formula_panel(key: str | None) -> None:

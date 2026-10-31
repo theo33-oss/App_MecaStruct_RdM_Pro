@@ -72,13 +72,116 @@ def text(tab: str, champ: str, label: str, help: str | None = None, **kw) -> str
     return _lie(tab, champ, st.text_input, label, help=help, **kw)
 
 
+def _defaut(cfg: dict) -> Any:
+    """Valeur d'une nouvelle ligne pour une colonne de column_config : son défaut, sinon selon le type."""
+    if cfg.get("default") is not None:
+        return cfg["default"]
+    tc = cfg["type_config"]
+    return {"number": 0.0, "checkbox": False, "selectbox": (tc.get("options") or [None])[0]}.get(tc["type"], "")
+
+
+def _valeur(ligne: dict, col: str, cfg: dict) -> Any:
+    """Valeur d'une cellule ; défaut de la colonne si elle est absente ou vide (None, NaN)."""
+    v = ligne.get(col)
+    return _defaut(cfg) if v is None or (isinstance(v, float) and math.isnan(v)) else v
+
+
+def _champ_ligne(cle: str, i: int, col: str, cfg: dict, ligne: dict) -> Any:
+    """Champ d'édition d'une cellule du tableau en liste ; clé « tab.champ.l.i.col »."""
+    k, tc, label = f"{cle}.l.{i}.{col}", cfg["type_config"], cfg["label"]
+    v = _valeur(ligne, col, cfg)
+    if k not in st.session_state:
+        st.session_state[k] = v
+    if tc["type"] == "number":
+        entier = str(tc.get("format") or "").endswith("d")
+        st.session_state[k] = int(st.session_state[k]) if entier else float(st.session_state[k])
+        return st.number_input(
+            label,
+            min_value=tc.get("min_value"),
+            max_value=tc.get("max_value"),
+            step=1 if entier else None,
+            key=k,
+            help=cfg.get("help"),
+        )
+    if tc["type"] == "selectbox":
+        return st.selectbox(label, tc["options"], key=k, help=cfg.get("help"))
+    if tc["type"] == "checkbox":
+        return st.checkbox(label, key=k, help=cfg.get("help"))
+    return st.text_input(label, key=k, help=cfg.get("help"))
+
+
+def _lignes_courantes(tab: str, champ: str, columns: dict) -> list[dict]:
+    """Lignes du tableau en liste, relues dans les champs affichés (les modifications non encore recopiées comptent)."""
+    cle = f"{tab}.{champ}"
+    lignes = [dict(ligne) for ligne in state.saisie(tab)[champ]]
+    for i, ligne in enumerate(lignes):
+        for col in columns:
+            if f"{cle}.l.{i}.{col}" in st.session_state:
+                ligne[col] = st.session_state[f"{cle}.l.{i}.{col}"]
+    return lignes
+
+
+def _efface_cles(tab: str, champ: str) -> None:
+    """Oublie les champs de ligne et l'état de l'éditeur : l'autre affichage repart de la saisie."""
+    cle = f"{tab}.{champ}"
+    for k in [k for k in st.session_state.keys() if k.startswith((f"{cle}.l.", f"{cle}.src")) or k == cle]:
+        del st.session_state[k]
+
+
+def _modifie_liste(tab: str, champ: str, columns: dict, supprime: int | None) -> None:
+    """Callback : supprime la ligne `supprime`, ou ajoute une ligne par défaut si `supprime` est None."""
+    lignes = _lignes_courantes(tab, champ, columns)
+    if supprime is None:
+        lignes.append({col: _defaut(cfg) for col, cfg in columns.items()})
+    else:
+        del lignes[supprime]
+    state.saisie(tab)[champ] = lignes
+    _efface_cles(tab, champ)
+
+
+def _table_liste(tab: str, champ: str, columns: dict, help: str | None) -> list[dict]:
+    """Mode compact : une ligne par volet (résumé), champs empilés, boutons Supprimer et Ajouter (pas de grille)."""
+    cle = f"{tab}.{champ}"
+    s = state.saisie(tab)
+    for k in [k for k in st.session_state.keys() if k == cle or k == f"{cle}.src"]:
+        del st.session_state[k]  # l'éditeur en grille repartira de la saisie au prochain affichage
+    if help:
+        st.caption(help)
+    for i, ligne in enumerate(s[champ]):
+        resume = " ; ".join(f"{_valeur(ligne, c, cfg)}" for c, cfg in list(columns.items())[:3])
+        with st.expander(f"{i + 1}. {resume}"):
+            for col, cfg in columns.items():
+                _champ_ligne(cle, i, col, cfg, ligne)
+            st.button(
+                "Supprimer cette ligne",
+                key=f"{cle}.l.{i}.sup",
+                icon=":material/delete:",
+                on_click=_modifie_liste,
+                args=(tab, champ, columns, i),
+            )
+    s[champ] = _lignes_courantes(tab, champ, columns)
+    st.button(
+        "Ajouter une ligne",
+        key=f"{cle}.l.ajout",
+        icon=":material/add:",
+        on_click=_modifie_liste,
+        args=(tab, champ, columns, None),
+    )
+    return s[champ]
+
+
 def table(tab: str, champ: str, columns: dict, help: str | None = None) -> list[dict]:
     """Tableau éditable (lignes ajoutables) sur saisie[tab][champ], liste de dicts ; columns = column_config.
 
     Le tableau de départ est gardé dans « tab.champ.src » : les modifications sont des différences appliquées à
     cette base, donc elle ne doit pas être remplacée à chaque passage (sinon elles seraient appliquées deux fois).
+    En mode compact, le tableau devient une liste de volets (une ligne chacun) plus facile à saisir au doigt.
     """
+    if is_compact():
+        return _table_liste(tab, champ, columns, help)
     cle = f"{tab}.{champ}"
+    for k in [k for k in st.session_state.keys() if k.startswith(f"{cle}.l.")]:
+        del st.session_state[k]  # champs de ligne du mode compact : périmés dès que la grille modifie la saisie
     src = f"{cle}.src"
     s = state.saisie(tab)
     if src not in st.session_state:
