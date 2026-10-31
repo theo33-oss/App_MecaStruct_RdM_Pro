@@ -19,45 +19,45 @@ showWidgetBorder = true
 showSidebarBorder = true
 paddingTop = "1.5rem"
 headingFontSizes = ["1.75rem", "1.375rem", "1.125rem", "1rem"]
-headingFontWeights = [600, 600, 600, 600]
+headingFontWeights = [700, 700, 700, 700]
 metricValueFontSize = "1.75rem"
 metricValueFontWeight = 600
 
 [theme.light]
-primaryColor = "#6E56CF"
+primaryColor = "#5B43B5"
 backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F7F6FB"
-textColor = "#1E1B2E"
-borderColor = "#DDD8EA"
-linkColor = "#5746AF"
+secondaryBackgroundColor = "#EEEBF7"
+textColor = "#14111F"
+borderColor = "#8E86AA"
+linkColor = "#43338F"
 linkUnderline = false
-codeBackgroundColor = "#F4F2F9"
-codeTextColor = "#5746AF"
-dataframeHeaderBackgroundColor = "#F1EFF7"
-greenColor = "#1A7F37"
-redColor = "#CF222E"
-yellowColor = "#9A6700"
-orangeColor = "#BC4C00"
-blueColor = "#0969DA"
-violetColor = "#6E56CF"
+codeBackgroundColor = "#EEEBF7"
+codeTextColor = "#43338F"
+dataframeHeaderBackgroundColor = "#E2DDF1"
+greenColor = "#17692F"
+redColor = "#B3141F"
+yellowColor = "#855900"
+orangeColor = "#A63F00"
+blueColor = "#0550AE"
+violetColor = "#5B43B5"
 # Okabe-Ito (sûre pour les daltoniens), sans le jaune illisible sur blanc
 chartCategoricalColors = ["#0072B2", "#D55E00", "#009E73", "#E69F00", "#CC79A7", "#56B4E9", "#6E56CF", "#1E1B2E"]
 
 [theme.light.sidebar]
-backgroundColor = "#F7F6FB"
+backgroundColor = "#E8E4F4"
 
 # Mode sombre : les graphiques Plotly gardent un fond blanc (voir widgets.plot), leurs couleurs sont celles du clair.
 [theme.dark]
-primaryColor = "#6E56CF"
-backgroundColor = "#121019"
-secondaryBackgroundColor = "#1C1926"
-textColor = "#ECEAF4"
-borderColor = "#2F2A40"
-linkColor = "#BAA7FF"
+primaryColor = "#7A63D8"
+backgroundColor = "#0E0B16"
+secondaryBackgroundColor = "#231E33"
+textColor = "#F5F3FF"
+borderColor = "#6E6590"
+linkColor = "#CDBFFF"
 linkUnderline = false
-codeBackgroundColor = "#1C1926"
-codeTextColor = "#BAA7FF"
-dataframeHeaderBackgroundColor = "#1C1926"
+codeBackgroundColor = "#231E33"
+codeTextColor = "#CDBFFF"
+dataframeHeaderBackgroundColor = "#2E2842"
 greenColor = "#3FB950"
 redColor = "#F85149"
 yellowColor = "#D29922"
@@ -67,4 +67,4 @@ violetColor = "#BAA7FF"
 chartCategoricalColors = ["#56B4E9", "#E8803A", "#2BC48F", "#F0B429", "#E08FBF", "#8FD0F5", "#BAA7FF", "#ECEAF4"]
 
 [theme.dark.sidebar]
-backgroundColor = "#1C1926"
+backgroundColor = "#1A1626"

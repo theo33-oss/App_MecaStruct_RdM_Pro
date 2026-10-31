@@ -20,11 +20,11 @@ widgets.vue_selector()
 st.page_link(
     "app_pages/poutres.py",
     label="Calculer une poutre (réactions, diagrammes, flèche)",
-    icon=":material/horizontal_rule:",
+    icon="📏",
 )
-st.page_link("app_pages/sollicitations.py", label="Dimensionner un arbre en torsion", icon=":material/ssid_chart:")
-st.page_link("app_pages/flambage.py", label="Vérifier une poutre au flambage", icon=":material/compress:")
-st.page_link("app_pages/convertisseur.py", label="Convertir une unité (psi, kip, in…)", icon=":material/swap_horiz:")
+st.page_link("app_pages/sollicitations.py", label="Dimensionner un arbre en torsion", icon="🔩")
+st.page_link("app_pages/flambage.py", label="Vérifier une poutre au flambage", icon="📐")
+st.page_link("app_pages/convertisseur.py", label="Convertir une unité (psi, kip, in…)", icon="🔁")
 
 with st.expander("Comment faire : une poutre de A à Z (5 étapes)", expanded=True):
     st.markdown(

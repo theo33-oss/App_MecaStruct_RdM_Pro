@@ -220,8 +220,8 @@ def _resultats(res: dict, tables: dict, statut: str) -> None:
         st.success("Section transmise aux pages Poutres et Flambage.")
         if envoi == "principaux":
             st.info("Iyz ≠ 0 : Flambage reçoit les moments principaux I1 et I2 ; Poutres garde Iz, Iy et Iyz.")
-        widgets.page_link("app_pages/poutres.py", "Ouvrir Poutres", ":material/horizontal_rule:")
-        widgets.page_link("app_pages/flambage.py", "Ouvrir Flambage", ":material/compress:")
+        widgets.page_link("app_pages/poutres.py", "Ouvrir Poutres", "📏")
+        widgets.page_link("app_pages/flambage.py", "Ouvrir Flambage", "📐")
 
 
 st.title("Sections droites")
