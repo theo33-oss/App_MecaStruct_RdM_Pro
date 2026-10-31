@@ -28,6 +28,7 @@ pages = {
     "🛠️ Outils": [
         st.Page("app_pages/base_de_donnees.py", title="Base de données", icon="📚"),
         st.Page("app_pages/convertisseur.py", title="Convertisseur", icon="🔁"),
+        st.Page("app_pages/references.py", title="Références", icon="📖"),
     ],
 }
 pg = st.navigation(pages, position="sidebar" if widgets.vue() == "pc" else "top")
