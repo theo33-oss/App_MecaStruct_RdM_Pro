@@ -4,7 +4,7 @@ Version web (Python, Streamlit) de l'application MATLAB MecaStruct RdM Pro, par 
 Les calculs sont ceux de l'application MATLAB, sans MATLAB. Le plan de migration est dans
 [PLAN.md](../Migration%20MATLAB%20vers%20site%20web/PLAN.md).
 
-**Adresse du site** : _à compléter après la mise en ligne_ (de la forme `https://<nom>.streamlit.app`).
+**Adresse du site** : https://appmecastructurerdm.streamlit.app/
 
 ## Mode d'emploi rapide
 
