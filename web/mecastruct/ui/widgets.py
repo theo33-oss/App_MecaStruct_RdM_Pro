@@ -203,9 +203,8 @@ def _ouvre(cle: str, lecture: Callable[[str], str]) -> bool:
 
 
 def file_bar(tab: str) -> None:
-    """Ligne « Enregistrer mon problème / Ouvrir un problème / Exporter en tableau » de l'onglet `tab`."""
-    colonnes = st.columns(3)
-    with colonnes[0]:
+    """Volet « Fichiers » (fermé) de l'onglet `tab` : enregistrer, ouvrir, exporter en tableau, en pile verticale."""
+    with st.expander("Fichiers"):
         st.download_button(
             "Enregistrer mon problème (.json)",
             lambda: project_io.problemToJson(tab, state.saisie(tab)),  # lu au clic : saisie à jour
@@ -213,8 +212,8 @@ def file_bar(tab: str) -> None:
             mime="application/json",
             key=f"fichier.{tab}.enregistrer",
             on_click="ignore",
+            width="stretch",
         )
-    with colonnes[1]:
 
         def lecture(texte: str) -> str:
             _applique(tab, project_io.problemFromJson(texte, tab)[1])
@@ -222,9 +221,8 @@ def file_bar(tab: str) -> None:
 
         if _ouvre(f"{tab}.problème", lecture):
             st.rerun()
-    res = state.result(tab)
-    feuilles = project_io.resultSheets(tab, res) if res else {}
-    with colonnes[2]:
+        res = state.result(tab)
+        feuilles = project_io.resultSheets(tab, res) if res else {}
         fmt = st.radio("Format d'export", ["xlsx", "csv"], horizontal=True, key=f"fichier.{tab}.format")
         st.download_button(
             "Exporter en tableau",
@@ -235,6 +233,7 @@ def file_bar(tab: str) -> None:
             on_click="ignore",
             disabled=not feuilles,
             help=None if feuilles else "Aucun résultat à exporter : cliquez d'abord sur « Calculer ».",
+            width="stretch",
         )
     msg = st.session_state.pop(f"fichier.{tab}.problème.msg", None)
     if msg:
