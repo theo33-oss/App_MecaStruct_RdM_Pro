@@ -235,6 +235,7 @@ with gauche:
         _calcule()
 
 with droite:
+    widgets.validation_button("Sec")
     r = state.result("Sec")
     if r is not None:
         _resultats(r["result"], r["tables"], r["status"])

@@ -174,4 +174,5 @@ for onglet, (_, fiche, tab, saisie_fn, resultats_fn) in zip(onglets, ONGLETS, st
             widgets.file_bar(tab)
             saisie_fn()
         with droite:
+            widgets.validation_button(tab)
             resultats_fn()

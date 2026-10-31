@@ -309,4 +309,5 @@ for onglet, (_, fiche, tab) in zip(onglets, ONGLETS, strict=True):
             widgets.example_picker(tab)
             SOUS_PAGES[tab][0]()
         with droite:
+            widgets.validation_button(tab)
             SOUS_PAGES[tab][1]()

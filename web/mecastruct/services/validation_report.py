@@ -20,11 +20,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
+from scipy.integrate import quad
 
 from mecastruct.core import data_manager, geometry
+from mecastruct.core.beam_solver import solveBeam
 from mecastruct.core.errors import MecaStructError
-from mecastruct.core.pp import asPP
+from mecastruct.core.pp import asPP, ppEval
 from mecastruct.services import beam_design, beam_services, compute
+from mecastruct.services.beam_services import buildBeamModel
 
 KEYS = ("Sec", "Beam", "Tr", "Tra", "Cis", "Tor", "Fle", "Fla", "Ten", "Hoo", "Jau")
 
@@ -1305,8 +1308,6 @@ def _grp(label: str) -> dict:
 
 
 def _handTra(saisie: dict, res: dict) -> list[dict]:
-    from scipy.integrate import quad
-
     n = _num
     T, r = saisie, res["result"]
     N = T["N"] * 1e3
@@ -1487,13 +1488,1625 @@ def _handSec(saisie: dict, res: dict) -> list[dict]:
     ]
 
 
-def _handRows(key: str, saisie: dict, res: dict, dm) -> list[dict]:
-    """Lignes de contrôle à la main de l'onglet (sans appeler les moteurs). Sous-étape A : Tra et Sec seulement."""
-    if key == "Sec":
-        return _handSec(saisie, res)
-    if key == "Tra":
-        return _handTra(saisie, res)
-    return []
+def _handCis(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    C, R = saisie, res["result"]
+    Re, s = C["Re"], C["s"]
+    if "tresca" in C["crit"].lower():
+        tauE = Re / 2
+        fte = r"\tau_e=\frac{R_e}{2}=\frac{%s}{2}" % n(Re)
+    else:
+        tauE = Re / math.sqrt(3)
+        fte = r"\tau_e=\frac{R_e}{\sqrt3}=\frac{%s}{\sqrt3}" % n(Re)
+    r, b = R["shear"], R["bearing"]
+    T, S, k = C["T"] * 1e3, C["S"], C["k"]
+    rows = [
+        _grp("Cisaillement simple (T en N, S en mm², contraintes en MPa)"),
+        _hc(
+            "Contrainte moyenne",
+            r"\tau_{moy}=\frac{T}{S}=\frac{%s}{%s}" % (n(T), n(S)),
+            T / S,
+            r["tauMoy"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "Contrainte maximale",
+            r"\tau_{max}=k\frac{T}{S}=%s\times\frac{%s}{%s}" % (n(k), n(T), n(S)),
+            k * T / S,
+            r["tauMax"] / 1e6,
+            "MPa",
+        ),
+        _hc("Limite élastique au cisaillement", fte, tauE, r["tauE"] / 1e6, "MPa"),
+        _hc(
+            "Contrainte admissible",
+            r"\tau_{adm}=\frac{\tau_e}{s}=\frac{%s}{%s}" % (n(tauE), n(s)),
+            tauE / s,
+            r["tauAdm"] / 1e6,
+            "MPa",
+        ),
+        _grp("Matage"),
+        _hc(
+            "Pression de matage",
+            r"P=\frac{F}{S_{mat}}=\frac{%s}{%s}" % (n(C["Fm"] * 1e3), n(C["Sm"])),
+            C["Fm"] * 1e3 / C["Sm"],
+            b["P"] / 1e6,
+            "MPa",
+        ),
+    ]
+    ex = _extras(res)
+    if ex.get("key") is not None and "F" in ex["key"]["result"]:
+        k2 = ex["key"]["result"]
+        Cc, D, a, bh, Lk = C["C"] * 1e6, C["Dk"], C["ak"], C["bk"], C["Lk"]
+        rows += [
+            _grp("Clavette parallèle (C en N·mm, dimensions en mm)"),
+            _hc("Effort tangentiel", r"F=\frac{2C}{D}=\frac{2\times%s}{%s}" % (n(Cc), n(D)), 2 * Cc / D, k2["F"], "N"),
+        ]
+        if "P" in k2:
+            rows += [
+                _hc(
+                    "Pression de matage",
+                    r"P=\frac{4C}{D\,b\,L}=\frac{4\times%s}{%s\times%s\times%s}" % (n(Cc), n(D), n(bh), n(Lk)),
+                    4 * Cc / (D * bh * Lk),
+                    k2["P"] / 1e6,
+                    "MPa",
+                ),
+                _hc(
+                    "Contrainte de cisaillement",
+                    r"\tau=\frac{2C}{a\,L\,D}=\frac{2\times%s}{%s\times%s\times%s}" % (n(Cc), n(a), n(Lk), n(D)),
+                    2 * Cc / (a * Lk * D),
+                    k2["tau"] / 1e6,
+                    "MPa",
+                ),
+            ]
+    if ex.get("pin") is not None:
+        p = ex["pin"]["result"]
+        F, d, e2, ns = C["Fp"] * 1e3, C["dp"], C["ep"], C["np"]
+        rows += [
+            _grp("Goupille / rivet (F en N, d et e en mm)"),
+            _hc(
+                "Pression de matage (formule du cours)",
+                r"P=\frac{2F}{d\,e}=\frac{2\times%s}{%s\times%s}" % (n(F), n(d), n(e2)),
+                2 * F / (d * e2),
+                p["P"] / 1e6,
+                "MPa",
+            ),
+            _hc(
+                "Contrainte de cisaillement",
+                r"\tau=\frac{4F}{n\pi d^2}=\frac{4\times%s}{%s\times\pi\times%s^2}" % (n(F), n(ns), n(d)),
+                4 * F / (ns * math.pi * d**2),
+                p["tau"] / 1e6,
+                "MPa",
+            ),
+        ]
+    return rows
+
+
+def _handTor(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    T, r = saisie, res["result"]
+    Mt, D, d, G, L = T["Mt"] * 1e6, T["D"], T["d"], T["G"] * 1e3, T["L"] * 1e3
+    Kt, Re, s = T["Kt"], T["Re"], T["s"]
+    Ix = math.pi * (D**4 - d**4) / 32
+    tau = Mt * (D / 2) / Ix
+    if "tresca" in T["crit"].lower():
+        tauE = Re / 2
+        fte = r"\tau_e=\frac{R_e}{2}=\frac{%s}{2}" % n(Re)
+    else:
+        tauE = Re / math.sqrt(3)
+        fte = r"\tau_e=\frac{R_e}{\sqrt3}=\frac{%s}{\sqrt3}" % n(Re)
+    th = Mt / (G * Ix)
+    return [
+        _grp("Arbre circulaire (Mt en N·mm, D et d en mm, G en MPa)"),
+        _hc(
+            "Moment quadratique polaire",
+            r"I_x=\frac{\pi(D^4-d^4)}{32}=\frac{\pi(%s^4-%s^4)}{32}" % (n(D), n(d)),
+            Ix,
+            r["Ix"] * 1e12,
+            "mm⁴",
+        ),
+        _hc(
+            "Contrainte de torsion nominale",
+            r"\tau=\frac{M_t\,D/2}{I_x}=\frac{%s\times%s}{%s}" % (n(Mt), n(D / 2), n(Ix)),
+            tau,
+            r["tauMaxNom"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "Contrainte maximale",
+            r"\tau_{max}=K_t\,\tau=%s\times%s" % (n(Kt), n(tau)),
+            Kt * tau,
+            r["tauMax"] / 1e6,
+            "MPa",
+        ),
+        _hc("Limite élastique au cisaillement", fte, tauE, (r["tauAdm"] * s) / 1e6, "MPa"),
+        _hc(
+            "Contrainte admissible",
+            r"\tau_{adm}=\frac{\tau_e}{s}=\frac{%s}{%s}" % (n(tauE), n(s)),
+            tauE / s,
+            r["tauAdm"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "Angle unitaire de torsion",
+            r"\theta=\frac{M_t}{G\,I_x}=\frac{%s}{%s\times%s}\ \mathrm{rad/mm}\ \times\frac{180}{\pi}\times1000"
+            % (n(Mt), n(G), n(Ix)),
+            math.degrees(th) * 1e3,
+            math.degrees(r["theta"]),
+            "°/m",
+        ),
+        _hc(
+            "Rotation totale",
+            r"\varphi=\theta\,L=%s\times%s" % (n(th), n(L)),
+            th * L * 1e3,
+            r["phi"]["analytique"] * 1e3,
+            "mrad",
+        ),
+        _hc(
+            "Raideur de torsion",
+            r"K=\frac{G\,I_x}{L}=\frac{%s\times%s}{%s}" % (n(G), n(Ix), n(L)),
+            G * Ix / L,
+            r["Ktorsion"] * 1e3,
+            "N·mm/rad",
+        ),
+    ]
+
+
+def _handFle(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    R = res["result"]
+    bd, P, F = R["bend"], R["P"], saisie
+    N, Mfz, Mfy = F["N"] * 1e3, F["Mfz"] * 1e6, F["Mfy"] * 1e6
+    S, Iz, Iy = P["S"] * 1e6, P["Iz"] * 1e12, P["Iy"] * 1e12
+    rows = [_grp("Contrainte normale σ = N/S − Mfz·y/Iz + Mfy·z/Iy (N, N·mm, mm)")]
+    if abs(P["Iyz"]) > 1e-9 * max(P["Iz"], P["Iy"]):
+        rows.append(_grp("Produit d'inertie non nul : formule générale utilisée par le solveur (non recalculée ici)."))
+        return rows
+    lt = np.asarray(bd["locMaxTraction"]) * 1e3
+    lc = np.asarray(bd["locMaxCompression"]) * 1e3
+    s1 = N / S - Mfz / Iz * lt[0] + Mfy / Iy * lt[1]
+    s2 = N / S - Mfz / Iz * lc[0] + Mfy / Iy * lc[1]
+
+    def fm(p):
+        return r"\sigma=\frac{%s}{%s}-\frac{%s}{%s}\times(%s)+\frac{%s}{%s}\times(%s)" % (
+            n(N),
+            n(S),
+            n(Mfz),
+            n(Iz),
+            n(p[0]),
+            n(Mfy),
+            n(Iy),
+            n(p[1]),
+        )
+
+    return rows + [
+        _hc("σ au point de traction maximale", fm(lt), s1, bd["sigmaMaxTraction"] / 1e6, "MPa"),
+        _hc("σ au point de compression maximale", fm(lc), s2, bd["sigmaMaxCompression"] / 1e6, "MPa"),
+        _hc(
+            "Contrainte amplifiée Kt·|σ|max",
+            r"K_t|\sigma|_{max}=%s\times%s" % (n(F["Kt"]), n(max(abs(s1), abs(s2)))),
+            F["Kt"] * max(abs(s1), abs(s2)),
+            bd["sigmaMaxKt"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "Contrainte admissible",
+            r"\sigma_{adm}=\frac{R_e}{s}=\frac{%s}{%s}" % (n(F["Re"]), n(F["s"])),
+            F["Re"] / F["s"],
+            bd["sigmaAdm"] / 1e6,
+            "MPa",
+        ),
+    ]
+
+
+_COEF_COND = {
+    "encastre-libre": 2.0,
+    "articule-articule": 1.0,
+    "encastre-articule": 1 / math.sqrt(2),
+    "encastre-encastre": 0.5,
+}
+
+
+def _handFla(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    F, b = saisie, res["result"]["analysis"]
+    E, Re, S, Iz, Iy = F["E"] * 1e3, F["Re"], F["S"], F["Iz"], F["Iy"]
+    L, s = F["L"] * 1e3, F["s"]
+    c = _COEF_COND.get(F["cond"], _NAN)
+    Imin = min(Iz, Iy)
+    rmin = math.sqrt(Imin / S)
+    Lp = c * L
+    lam = Lp / rmin
+    lim = math.pi * math.sqrt(E / Re)
+    PE = math.pi**2 * E * Imin / Lp**2
+    PC = Re * S
+    PR = PC / (1 + (lam / lim) ** 2)
+    if lam < 20:
+        Pc, reg = PC, "compression simple (λ < 20)"
+    elif lam < lim:
+        Pc, reg = PR, "Rankine (20 ≤ λ < λlim)"
+    else:
+        Pc, reg = PE, "Euler (λ ≥ λlim)"
+    return [
+        _grp("Flambage (E, Re en MPa ; S en mm² ; I en mm⁴ ; L en mm ; charges en kN)"),
+        _hc("Inertie minimale", r"I_{min}=\min(I_z,I_y)=\min(%s;%s)" % (n(Iz), n(Iy)), Imin, b["Imin"] * 1e12, "mm⁴"),
+        _hc(
+            "Rayon de giration minimal",
+            r"r_{min}=\sqrt{I_{min}/S}=\sqrt{%s/%s}" % (n(Imin), n(S)),
+            rmin,
+            b["rmin"] * 1e3,
+            "mm",
+        ),
+        _hc("Longueur de flambement", r"L'=c\,L=%s\times%s" % (n(c), n(L)), Lp * 1e-3, b["Lp"], "m"),
+        _hc("Élancement", r"\lambda=\frac{L'}{r_{min}}=\frac{%s}{%s}" % (n(Lp), n(rmin)), lam, b["lambda"]),
+        _hc(
+            "Élancement limite",
+            r"\lambda_{lim}=\pi\sqrt{E/R_e}=\pi\sqrt{%s/%s}" % (n(E), n(Re)),
+            lim,
+            b["lambdaLim"],
+        ),
+        _hc(
+            "Charge d'Euler",
+            r"P_E=\frac{\pi^2E\,I_{min}}{L'^2}=\frac{\pi^2\times%s\times%s}{%s^2}" % (n(E), n(Imin), n(Lp)),
+            PE / 1e3,
+            b["PE"] / 1e3,
+            "kN",
+        ),
+        _hc("Charge de compression simple", r"P_C=R_e\,S=%s\times%s" % (n(Re), n(S)), PC / 1e3, b["PC"] / 1e3, "kN"),
+        _hc(
+            "Charge de Rankine",
+            r"P_R=\frac{R_eS}{1+(\lambda/\lambda_{lim})^2}=\frac{%s}{1+(%s/%s)^2}" % (n(PC), n(lam), n(lim)),
+            PR / 1e3,
+            b["PR"] / 1e3,
+            "kN",
+        ),
+        _grp("Régime retenu par l'arbre de décision : " + reg),
+        _hc("Charge critique retenue", r"P_{crit}=%s\,\mathrm{kN}" % n(Pc / 1e3), Pc / 1e3, b["Pcrit"] / 1e3, "kN"),
+        _hc(
+            "Charge admissible",
+            r"P_{adm}=\frac{P_{crit}}{s}=\frac{%s}{%s}" % (n(Pc / 1e3), n(s)),
+            Pc / s / 1e3,
+            b["Padm"] / 1e3,
+            "kN",
+        ),
+    ]
+
+
+def _handTen(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    T, r = saisie, res["result"]
+    sg = np.array(T["sig"], dtype=float)
+    sg = (sg + sg.T) / 2
+    ev = np.sort(np.linalg.eigvalsh(sg))[::-1]
+    I1 = np.trace(sg)
+    I2 = (np.trace(sg) ** 2 - np.trace(sg @ sg)) / 2
+    I3 = np.linalg.det(sg)
+    pr, cr, fa = r["principal"], r["criteria"], r["facet"]
+    Re, s = T["Re"], T["s"]
+    tre = ev[0] - ev[2]
+    vm = math.sqrt(0.5 * ((ev[0] - ev[1]) ** 2 + (ev[1] - ev[2]) ** 2 + (ev[0] - ev[2]) ** 2))
+    nv = np.asarray(fa["n"], dtype=float).ravel()
+    Cn = sg @ nv
+    sn = float(Cn @ nv)
+    tn = float(np.linalg.norm(Cn - sn * nv))  # même définition que le solveur ; √(|C|² − σn²) donne du bruit près de 0
+    return [
+        _grp("Invariants et contraintes principales (MPa)"),
+        _hc(
+            "Premier invariant",
+            r"I_1=\mathrm{tr}\,\sigma=%s+%s+%s" % (n(sg[0, 0]), n(sg[1, 1]), n(sg[2, 2])),
+            I1,
+            pr["I1"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "Deuxième invariant",
+            r"I_2=\tfrac12[(\mathrm{tr}\,\sigma)^2-\mathrm{tr}(\sigma^2)]",
+            I2,
+            pr["I2"] / 1e12,
+            "MPa²",
+        ),
+        _hc("Troisième invariant", r"I_3=\det\sigma", I3, pr["I3"] / 1e18, "MPa³"),
+        _hc("Contrainte principale σI", r"\sigma_I=\max\ \mathrm{eig}(\sigma)", ev[0], pr["sigmaI"] / 1e6, "MPa"),
+        _hc("Contrainte principale σII", r"\sigma_{II}", ev[1], pr["sigmaII"] / 1e6, "MPa"),
+        _hc(
+            "Contrainte principale σIII", r"\sigma_{III}=\min\ \mathrm{eig}(\sigma)", ev[2], pr["sigmaIII"] / 1e6, "MPa"
+        ),
+        _grp("Critères de résistance"),
+        _hc("Tresca", r"\sigma_I-\sigma_{III}=%s-(%s)" % (n(ev[0]), n(ev[2])), tre, cr["sigmaEqTresca"] / 1e6, "MPa"),
+        _hc(
+            "Von Mises",
+            r"\sigma_{VM}=\sqrt{\tfrac12[(\sigma_I-\sigma_{II})^2+(\sigma_{II}-\sigma_{III})^2+(\sigma_I-\sigma_{III})^2]}",
+            vm,
+            cr["sigmaEqVM"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "Contrainte admissible", r"\frac{R_e}{s}=\frac{%s}{%s}" % (n(Re), n(s)), Re / s, cr["sigmaAdm"] / 1e6, "MPa"
+        ),
+        _grp("Facette de normale n"),
+        _hc("Contrainte normale", r"\sigma_n=\vec n^T[\sigma]\vec n", sn, fa["sigmaN"] / 1e6, "MPa"),
+        _hc("Contrainte tangentielle", r"\tau=\sqrt{|\vec C|^2-\sigma_n^2}", tn, fa["tauNorm"] / 1e6, "MPa"),
+    ]
+
+
+def _handHoo(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    K, R = saisie, res["result"]
+    E, nu = K["E"] * 1e3, K["nu"]
+    G = E / (2 * (1 + nu))
+    al, dT = K["alpha"] * 1e-6, K["dT"]
+    sx, sy, sz, syz, sxz, sxy = (K[c] for c in ("sxx", "syy", "szz", "syz", "sxz", "sxy"))
+    v = res["tables"]["Résultats"].iloc[:, 1].to_numpy(dtype=float)
+    rows: list[dict] = []
+    if K["mode"] == "iso3D":
+        exx = (sx - nu * (sy + sz)) / E + al * dT
+        eyy = (sy - nu * (sx + sz)) / E + al * dT
+        ezz = (sz - nu * (sx + sy)) / E + al * dT
+        rows = [
+            _grp("Hooke isotrope 3D (contraintes en MPa, E en MPa) ; déformations en µdéf"),
+            _hc(
+                "εxx",
+                r"\varepsilon_{xx}=\frac{\sigma_{xx}-\nu(\sigma_{yy}+\sigma_{zz})}{E}+\alpha\Delta T="
+                r"\frac{%s-%s(%s+%s)}{%s}" % (n(sx), n(nu), n(sy), n(sz), n(E)),
+                exx * 1e6,
+                v[0],
+                "µdéf",
+            ),
+            _hc(
+                "εyy",
+                r"\varepsilon_{yy}=\frac{\sigma_{yy}-\nu(\sigma_{xx}+\sigma_{zz})}{E}+\alpha\Delta T",
+                eyy * 1e6,
+                v[1],
+                "µdéf",
+            ),
+            _hc(
+                "εzz",
+                r"\varepsilon_{zz}=\frac{\sigma_{zz}-\nu(\sigma_{xx}+\sigma_{yy})}{E}+\alpha\Delta T",
+                ezz * 1e6,
+                v[2],
+                "µdéf",
+            ),
+            _hc("γyz", r"\gamma_{yz}=\frac{\tau_{yz}}{G}=\frac{%s}{%s}" % (n(syz), n(G)), syz / G * 1e6, v[3], "µdéf"),
+            _hc("γxz", r"\gamma_{xz}=\frac{\tau_{xz}}{G}", sxz / G * 1e6, v[4], "µdéf"),
+            _hc("γxy", r"\gamma_{xy}=\frac{\tau_{xy}}{G}=\frac{%s}{%s}" % (n(sxy), n(G)), sxy / G * 1e6, v[5], "µdéf"),
+        ]
+    elif K["mode"] == "planeStress":
+        exx = (sx - nu * sy) / E
+        eyy = (sy - nu * sx) / E
+        ezz = -nu * (sx + sy) / E
+        rows = [
+            _grp("Contraintes planes (σzz = τxz = τyz = 0) ; déformations en µdéf"),
+            _hc(
+                "εxx",
+                r"\varepsilon_{xx}=\frac{\sigma_{xx}-\nu\sigma_{yy}}{E}=\frac{%s-%s\times%s}{%s}"
+                % (n(sx), n(nu), n(sy), n(E)),
+                exx * 1e6,
+                v[0],
+                "µdéf",
+            ),
+            _hc("εyy", r"\varepsilon_{yy}=\frac{\sigma_{yy}-\nu\sigma_{xx}}{E}", eyy * 1e6, v[1], "µdéf"),
+            _hc("εzz", r"\varepsilon_{zz}=-\frac{\nu(\sigma_{xx}+\sigma_{yy})}{E}", ezz * 1e6, v[2], "µdéf"),
+            _hc("γxy", r"\gamma_{xy}=\frac{\tau_{xy}}{G}=\frac{%s}{%s}" % (n(sxy), n(G)), sxy / G * 1e6, v[3], "µdéf"),
+        ]
+    elif K["mode"] == "planeStrain":
+        ex, ey, gx = K["exx"] * 1e-6, K["eyy"] * 1e-6, K["gxy"] * 1e-6
+        c = E / ((1 + nu) * (1 - 2 * nu))
+        sxx = c * ((1 - nu) * ex + nu * ey)
+        syy = c * ((1 - nu) * ey + nu * ex)
+        sxy2 = G * gx
+        szz = nu * (sxx + syy)
+        rows = [
+            _grp("Déformations planes (εzz = γxz = γyz = 0) ; contraintes en MPa"),
+            _hc(
+                "σxx",
+                r"\sigma_{xx}=\frac{E}{(1+\nu)(1-2\nu)}[(1-\nu)\varepsilon_{xx}+\nu\varepsilon_{yy}]",
+                sxx,
+                v[0],
+                "MPa",
+            ),
+            _hc(
+                "σyy",
+                r"\sigma_{yy}=\frac{E}{(1+\nu)(1-2\nu)}[(1-\nu)\varepsilon_{yy}+\nu\varepsilon_{xx}]",
+                syy,
+                v[1],
+                "MPa",
+            ),
+            _hc("σxy", r"\tau_{xy}=G\,\gamma_{xy}=%s\times%s" % (n(G), n(gx)), sxy2, v[2], "MPa"),
+            _hc("σzz", r"\sigma_{zz}=\nu(\sigma_{xx}+\sigma_{yy})", szz, v[3], "MPa"),
+        ]
+    elif K["mode"] == "ortho":
+        E1, E2, E3 = K["E1"] * 1e3, K["E2"] * 1e3, K["E3"] * 1e3
+        n12, n13, n23 = K["nu12"], K["nu13"], K["nu23"]
+        G12, G13, G23 = K["G12"] * 1e3, K["G13"] * 1e3, K["G23"] * 1e3
+        n21, n31, n32 = n12 * E2 / E1, n13 * E3 / E1, n23 * E3 / E2
+        e11 = sx / E1 - n21 * sy / E2 - n31 * sz / E3
+        e22 = -n12 * sx / E1 + sy / E2 - n32 * sz / E3
+        e33 = -n13 * sx / E1 - n23 * sy / E2 + sz / E3
+        rows = [
+            _grp(
+                "Orthotrope : [S] symétrique, ν21 = ν12·E2/E1, ν31 = ν13·E3/E1, ν32 = ν23·E3/E2 ; déformations en µdéf"
+            ),
+            _hc(
+                "ε11",
+                r"\varepsilon_{11}=\frac{\sigma_{11}}{E_1}-\frac{\nu_{21}\sigma_{22}}{E_2}-\frac{\nu_{31}\sigma_{33}}{E_3}",
+                e11 * 1e6,
+                v[0],
+                "µdéf",
+            ),
+            _hc(
+                "ε22",
+                r"\varepsilon_{22}=-\frac{\nu_{12}\sigma_{11}}{E_1}+\frac{\sigma_{22}}{E_2}-\frac{\nu_{32}\sigma_{33}}{E_3}",
+                e22 * 1e6,
+                v[1],
+                "µdéf",
+            ),
+            _hc(
+                "ε33",
+                r"\varepsilon_{33}=-\frac{\nu_{13}\sigma_{11}}{E_1}-\frac{\nu_{23}\sigma_{22}}{E_2}+\frac{\sigma_{33}}{E_3}",
+                e33 * 1e6,
+                v[2],
+                "µdéf",
+            ),
+            _hc("γ23", r"\gamma_{23}=\frac{\tau_{23}}{G_{23}}", syz / G23 * 1e6, v[3], "µdéf"),
+            _hc("γ13", r"\gamma_{13}=\frac{\tau_{13}}{G_{13}}", sxz / G13 * 1e6, v[4], "µdéf"),
+            _hc("γ12", r"\gamma_{12}=\frac{\tau_{12}}{G_{12}}", sxy / G12 * 1e6, v[5], "µdéf"),
+        ]
+    ex, ey, exy = R["exx"], R["eyy"], R["exy"]
+    cen = (ex + ey) / 2
+    rad = math.sqrt(((ex - ey) / 2) ** 2 + exy**2)
+    m = R["mohr"]
+    return rows + [
+        _grp("Cercle de Mohr des déformations dans le plan (x, y), en µdéf"),
+        _hc(
+            "Centre",
+            r"\delta=\frac{\varepsilon_{xx}+\varepsilon_{yy}}{2}",
+            cen * 1e6,
+            (m["sigma1"] + m["sigma2"]) / 2 * 1e6,
+            "µdéf",
+        ),
+        _hc(
+            "Déformation principale ε1",
+            r"\varepsilon_1=\delta+\rho,\ "
+            r"\rho=\sqrt{\left(\frac{\varepsilon_{xx}-\varepsilon_{yy}}{2}\right)^2+\varepsilon_{xy}^2}",
+            (cen + rad) * 1e6,
+            m["sigma1"] * 1e6,
+            "µdéf",
+        ),
+        _hc("Déformation principale ε2", r"\varepsilon_2=\delta-\rho", (cen - rad) * 1e6, m["sigma2"] * 1e6, "µdéf"),
+    ]
+
+
+def _handJau(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    J, R = saisie, res["result"]
+    K, eps, R0, Vin = J["K"], J["eps"] * 1e-6, J["R0"], J["Vin"]
+    e4 = np.array([J["e1"], J["e2"], J["e3"], J["e4"]]) * 1e-6
+    if J["cfg"] == "quart":
+        ev, fac = np.array([e4[0], 0, 0, 0]), 1
+    elif J["cfg"] == "demi":
+        ev, fac = np.array([e4[0], e4[1], 0, 0]), 2
+    else:
+        ev, fac = e4, 4
+    Vout = Vin * K / 4 * (ev[0] - ev[1] + ev[2] - ev[3])
+    Vm = J["Vout"] * 1e-3
+    ebr = 4 * Vm / (K * Vin) / fac
+    ra, rb, rc = J["ra"] * 1e-6, J["rb"] * 1e-6, J["rc"] * 1e-6
+    E, nu = J["E"] * 1e3, J["nu"]
+    if J["rtype"] == "60":
+        exx, eyy, exy = ra, (2 * (rb + rc) - ra) / 3, (rb - rc) / math.sqrt(3)
+        fr = (
+            r"\varepsilon_{xx}=\varepsilon_0,\ \varepsilon_{yy}=\frac{2(\varepsilon_{60}+\varepsilon_{120})"
+            r"-\varepsilon_0}{3},\ \varepsilon_{xy}=\frac{\varepsilon_{60}-\varepsilon_{120}}{\sqrt3}"
+        )
+    else:
+        exx, eyy, exy = ra, rb, rc - (ra + rb) / 2
+        fr = (
+            r"\varepsilon_{xx}=\varepsilon_0,\ \varepsilon_{yy}=\varepsilon_{90},\ "
+            r"\varepsilon_{xy}=\varepsilon_{45}-\frac{\varepsilon_0+\varepsilon_{90}}{2}"
+        )
+    cen = (exx + eyy) / 2
+    rad = math.sqrt(((exx - eyy) / 2) ** 2 + exy**2)
+    sxx = E / (1 - nu**2) * (exx + nu * eyy)
+    syy = E / (1 - nu**2) * (eyy + nu * exx)
+    sxy = E / (1 + nu) * exy
+    cs = (sxx + syy) / 2
+    rs = math.sqrt(((sxx - syy) / 2) ** 2 + sxy**2)
+    g, br, ro = R["gauge"], R["bridge"], R["rosette"]
+    return [
+        _grp("Jauge (loi de Bridgman)"),
+        _hc(
+            "Variation relative de résistance",
+            r"\frac{\Delta R}{R}=K\,\varepsilon=%s\times%s" % (n(K), n(eps)),
+            K * eps,
+            g["dRsurR"],
+        ),
+        _hc(
+            "Variation de résistance",
+            r"\Delta R=R_0\,K\,\varepsilon=%s\times%s\times%s" % (n(R0), n(K), n(eps)),
+            R0 * K * eps,
+            g["dR"],
+            "Ω",
+        ),
+        _grp("Pont de Wheatstone"),
+        _hc(
+            "Tension de sortie linéarisée",
+            r"V_{out}=\frac{V_{in}K}{4}(\varepsilon_1-\varepsilon_2+\varepsilon_3-\varepsilon_4)=\frac{%s\times%s}{4}(\ldots)"
+            % (n(Vin), n(K)),
+            Vout * 1e3,
+            br["Vout"] * 1e3,
+            "mV",
+        ),
+        _hc(
+            "Déformation déduite de Vout mesurée",
+            r"\varepsilon=\frac{4V_{out}}{K\,V_{in}}\Big/\text{facteur de pont}=\frac{4\times%s}{%s\times%s}\Big/%d"
+            % (n(Vm), n(K), n(Vin), fac),
+            ebr * 1e6,
+            float(np.ravel(R["bridgeStrain"])[0]) * 1e6,
+            "µdéf",
+        ),
+        _grp("Rosette (déformations en µdéf, contraintes en MPa)"),
+        _hc("Déformation εxx", fr, exx * 1e6, ro["exx"] * 1e6, "µdéf"),
+        _hc("Déformation εyy", r"\varepsilon_{yy}", eyy * 1e6, ro["eyy"] * 1e6, "µdéf"),
+        _hc("Déformation εxy", r"\varepsilon_{xy}", exy * 1e6, ro["exy"] * 1e6, "µdéf"),
+        _hc(
+            "Déformation principale εI",
+            r"\varepsilon_I=\delta+\rho=%s+%s" % (n(cen * 1e6), n(rad * 1e6)),
+            (cen + rad) * 1e6,
+            ro["epsI"] * 1e6,
+            "µdéf",
+        ),
+        _hc(
+            "Déformation principale εII", r"\varepsilon_{II}=\delta-\rho", (cen - rad) * 1e6, ro["epsII"] * 1e6, "µdéf"
+        ),
+        _hc(
+            "Contrainte σxx (contraintes planes)",
+            r"\sigma_{xx}=\frac{E}{1-\nu^2}(\varepsilon_{xx}+\nu\varepsilon_{yy})=\frac{%s}{1-%s^2}(\ldots)"
+            % (n(E), n(nu)),
+            sxx,
+            ro["sxx"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "Contrainte σyy",
+            r"\sigma_{yy}=\frac{E}{1-\nu^2}(\varepsilon_{yy}+\nu\varepsilon_{xx})",
+            syy,
+            ro["syy"] / 1e6,
+            "MPa",
+        ),
+        _hc("Contrainte σxy", r"\tau_{xy}=\frac{E}{1+\nu}\varepsilon_{xy}", sxy, ro["sxy"] / 1e6, "MPa"),
+        _hc(
+            "Contrainte principale σI",
+            r"\sigma_I=\frac{\sigma_{xx}+\sigma_{yy}}{2}+\sqrt{\left(\frac{\sigma_{xx}-\sigma_{yy}}{2}\right)^2+\tau_{xy}^2}",
+            cs + rs,
+            ro["sigmaI"] / 1e6,
+            "MPa",
+        ),
+    ]
+
+
+def _handTruss(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    R = res["result"]
+    tr, ts = R["truss"], R["tsol"]
+    X = np.asarray(tr["nodes"], dtype=float)
+    B = np.asarray(tr["bars"], dtype=int)  # numéros de nœuds à partir de 1
+    m, dim, nn = len(B), X.shape[1], len(X)
+    E = np.broadcast_to(np.atleast_1d(np.asarray(tr["E"], dtype=float)), (m,))
+    S = np.broadcast_to(np.atleast_1d(np.asarray(tr["S"], dtype=float)), (m,))
+    N = np.asarray(ts["N"], dtype=float)
+    disp = np.asarray(ts["displacements"], dtype=float)
+    Lh = np.zeros(m)
+    U = np.zeros((m, dim))
+    for k in range(m):
+        dv = X[B[k, 1] - 1] - X[B[k, 0] - 1]
+        Lh[k] = np.linalg.norm(dv)
+        U[k] = dv / Lh[k]
+    sigH = N / S
+    dLH = N * Lh / (E * S)
+    # compatibilité : allongement déduit des déplacements nodaux
+    dLc = np.array([U[k] @ (disp[B[k, 1] - 1] - disp[B[k, 0] - 1]) for k in range(m)])
+    # équilibre nodal : Σ N u + F + R = 0
+    loads = np.asarray(tr["loads"], dtype=float)
+    reac = np.asarray(ts["reactions"], dtype=float)
+    resid = loads + reac
+    for k in range(m):
+        resid[B[k, 0] - 1] += N[k] * U[k]
+        resid[B[k, 1] - 1] -= N[k] * U[k]
+    fscale = max(1.0, float(np.max(np.abs(loads))), float(np.max(np.abs(reac))))
+    rows = [
+        _grp("Équilibre et compatibilité (vérifiés indépendamment du solveur)"),
+        _hc(
+            "Résidu d'équilibre de tous les nœuds (N)",
+            r"\max_i\left\|\sum_j N_{ij}\vec u_{ij}+\vec F_i+\vec R_i\right\|\ \text{(attendu 0)}",
+            float(np.max(np.linalg.norm(resid, axis=1))),
+            0.0,
+            "N",
+            1e-6 * fscale,
+        ),
+        _hc(
+            "Somme des forces extérieures + réactions (N)",
+            r"\left\|\sum_i(\vec F_i+\vec R_i)\right\|\ \text{(attendu 0)}",
+            float(np.linalg.norm(np.sum(loads + reac, axis=0))),
+            0.0,
+            "N",
+            1e-6 * fscale,
+        ),
+        _hc(
+            "Compatibilité : allongement des barres (max d'écart)",
+            r"\Delta L_{barre}=\vec u_{ij}\cdot(\vec u_j-\vec u_i)\ \text{contre}\ \frac{N\,L}{E\,S}",
+            float(np.max(np.abs(dLc - dLH))) * 1e3,
+            0.0,
+            "mm",
+            1e-6 * max(1e-3, float(np.max(np.abs(dLH))) * 1e3),
+        ),
+        _hc(
+            "Longueurs des barres (écart max)",
+            r"L=\sqrt{(x_j-x_i)^2+(y_j-y_i)^2}",
+            float(np.max(np.abs(Lh - np.asarray(ts["L0"], dtype=float)))),
+            0.0,
+            "m",
+            1e-9,
+        ),
+        _hc(
+            "Contraintes σ = N/S (écart max)",
+            r"\sigma=\frac{N}{S}",
+            float(np.max(np.abs(sigH - np.asarray(ts["sigma"], dtype=float)))) / 1e6,
+            0.0,
+            "MPa",
+            1e-6 * max(1.0, float(np.max(np.abs(sigH))) / 1e6),
+        ),
+        _hc(
+            "Hyperstatisme",
+            r"h=m+r-d\,n=%d+%d-%d\times%d" % (m, int(np.count_nonzero(tr["supports"])), dim, nn),
+            m + int(np.count_nonzero(tr["supports"])) - dim * nn,
+            ts["h"],
+        ),
+        _grp("Détail par barre : N (solveur), σ = N/S et ΔL = N·L/(E·S) recalculés"),
+    ]
+    sg = np.asarray(ts["sigma"], dtype=float)
+    dl = np.asarray(ts["dL"], dtype=float)
+    for k in range(m):
+        nm = f"Barre {k + 1} (nœuds {B[k, 0]}–{B[k, 1]})"
+        rows.append(
+            _hc(
+                f"{nm} : σ",
+                r"\sigma=\frac{%s\,\mathrm{N}}{%s\,\mathrm{m^2}}" % (n(N[k]), n(S[k])),
+                sigH[k] / 1e6,
+                sg[k] / 1e6,
+                "MPa",
+            )
+        )
+        rows.append(
+            _hc(
+                f"{nm} : ΔL",
+                r"\Delta L=\frac{N\,L}{E\,S}=\frac{%s\times%s}{%s\times%s}" % (n(N[k]), n(Lh[k]), n(E[k]), n(S[k])),
+                dLH[k] * 1e3,
+                dl[k] * 1e3,
+                "mm",
+            )
+        )
+    return rows
+
+
+def _qint(c, a: float, b: float, f) -> float:
+    """∫ p(x)·f(x) dx sur [a, b], avec p(x) = polyval(c, x − a) (charge répartie polynomiale)."""
+    return float(quad(lambda x: np.polyval(c, x - a) * f(x), a, b, epsabs=0, epsrel=1e-12)[0])
+
+
+def _beamPlaneRows(sol: dict, plane: str) -> list[dict]:
+    """Équilibre global et torseur de cohésion (par la gauche) d'un plan de flexion.
+
+    Plan 'y' : plan (x, y), Mfz et Ty ; plan 'z' : plan (x, z) équivalent (F' = Fz, C' = −My, p' = pz), avec
+    Mfy = −M' et Tz = T'.
+    """
+    n = _num
+    mo = sol["model"]
+    L = mo["L"]
+    rea, pl, pm, dl = sol["reactions"], mo["pointLoads"], mo["pointMoments"], mo["distLoads"]
+    if plane == "y":
+        fF, fC, fR, sC, sM, Mpp, Tpp = "Fy", "Mz", "Ry", 1, 1, sol["Mfz"], sol["Ty"]
+        lab, nM, nT, nF = "(x, y)", "Mfz", "Ty", "y"
+    else:
+        fF, fC, fR, sC, sM, Mpp, Tpp = "Fz", "My", "Rz", -1, -1, sol["Mfy"], sol["Tz"]
+        lab, nM, nT, nF = "(x, z)", "Mfy", "Tz", "z"
+    px = [p["pos"] for p in pl]
+    F = [p[fF] for p in pl]
+    cx = [p["pos"] for p in pm]
+    C = [sC * p[fC] for p in pm]
+    rp = [r["pos"] for r in rea]
+    rR = [r[fR] for r in rea]
+    rM = [sC * r[fC] for r in rea]
+    dist = [(d["a"], d["b"], np.asarray(d["coeffs"], dtype=float)) for d in dl if d["dir"] == nF]
+    sumF = sum(F) + sum(rR) + sum(_qint(c, a, b, lambda x: 1.0) for a, b, c in dist)
+    sumM = (
+        sum(x * f for x, f in zip(px, F, strict=True))
+        + sum(C)
+        + sum(x * r for x, r in zip(rp, rR, strict=True))
+        + sum(rM)
+        + sum(_qint(c, a, b, lambda x: x) for a, b, c in dist)
+    )
+    fsc = max([1.0, *map(abs, F), *map(abs, rR)])
+    tolE = 1e-6 * fsc * max(1.0, L)
+    rows = [
+        _grp(f"Équilibre global de la poutre, plan {lab}, recalculé à partir du modèle et des réactions du solveur"),
+        _hc(
+            f"Équilibre des forces en {nF} (N)",
+            r"\sum F_%s=\sum F_{ext}+\sum R=%s\ \text{(attendu 0)}" % (nF, n(sumF)),
+            sumF,
+            0.0,
+            "N",
+            tolE,
+        ),
+        _hc(
+            f"Équilibre des moments du plan {lab}, en s = 0 (N·m)",
+            r"\sum M(0)=\sum x_iF_i+\int x\,p\,dx+\sum C+\sum(x_RR+M_R)=%s\ \text{(attendu 0)}" % n(sumM),
+            sumM,
+            0.0,
+            "N·m",
+            tolE * max(1.0, L),
+        ),
+    ]
+    # coupes : abscisses types et extremum, décalées si elles tombent sur une charge ou un appui
+    s0 = [L * x for x in (0.1, 0.25, 0.5, 0.75, 0.9)] + [float(sol["extrema"][nM]["sMax"])]
+    posAll = px + cx + rp
+    for k, s in enumerate(s0):
+        if any(abs(p - s) < 1e-9 for p in posAll):
+            # charge en s = L : couper juste avant, sinon la somme à gauche l'inclut
+            s0[k] = s - 1e-6 * L if s + 1e-6 * L > L else s + 1e-6 * L
+    rows.append(
+        _grp(
+            f"Plan {lab} : {nM} et {nT} recalculés en sommant les actions à GAUCHE de la coupure "
+            "(le solveur somme à droite)"
+        )
+    )
+    for s in s0:
+        Mh = Th = 0.0
+        for x, f in zip(px, F, strict=True):
+            if x < s:
+                Mh += (s - x) * f
+                Th -= f
+        for x, c in zip(cx, C, strict=True):
+            if x < s:
+                Mh -= c
+        for x, r, m in zip(rp, rR, rM, strict=True):
+            if x < s:
+                Mh += (s - x) * r - m
+                Th -= r
+        for a, b, c in dist:
+            if s > a:
+                bb = min(b, s)
+                Mh += _qint(c, a, bb, lambda x, s=s: s - x)
+                Th -= _qint(c, a, bb, lambda x: 1.0)
+        Mh *= sM
+        Ms = ppEval(Mpp, s)
+        Ts = ppEval(Tpp, s)
+        tolM = 1e-6 * max(1.0, abs(Ms)) + 1e-6
+        tolT = 1e-6 * max(1.0, abs(Ts)) + 1e-6
+        rows.append(
+            _hc(
+                f"{nM} en s = {s:.4g} m",
+                r"M(s)=\sum_{gauche}\left[(s-x_i)F_{i}-C_{i}\right]+\int(s-x)p\,dx=%s\,\mathrm{kN\cdot m}"
+                % n(Mh / 1e3),
+                Mh / 1e3,
+                Ms / 1e3,
+                "kN·m",
+                tolM / 1e3,
+            )
+        )
+        rows.append(
+            _hc(
+                f"{nT} en s = {s:.4g} m",
+                r"T(s)=-\sum_{gauche}F-\int p\,dx=%s\,\mathrm{kN}" % n(Th / 1e3),
+                Th / 1e3,
+                Ts / 1e3,
+                "kN",
+                tolT / 1e3,
+            )
+        )
+    return rows
+
+
+def _handImposed(B: dict) -> list[dict]:
+    """Appuis élastiques, tassements et rotules : conditions que le résultat doit vérifier, lues sur la solution
+    (flèche aux appuis, moment aux rotules), sans refaire le calcul des réactions."""
+    n = _num
+    mo = B["sol"]["model"]
+    sup = mo["supports"]
+    rows: list[dict] = []
+    if sup and (any(s["spring"] > 0 for s in sup) or any(abs(s[c]) > 0 for s in sup for c in ("dx", "dy", "dz"))):
+        rows.append(
+            _grp(
+                "Appuis élastiques et tassements : déplacement de chaque appui = tassement − R/k "
+                "(flèche de la déformée, plan affiché)"
+            )
+        )
+        rf, df = ("Ry", "dy") if B["defl"]["plane"] == "xy" else ("Rz", "dz")
+        for i, s in enumerate(sup):
+            d = s[df]
+            R = B["sol"]["reactions"][i][rf]
+            if s["spring"] > 0:
+                d = d - R / s["spring"]
+            v = ppEval(B["defl"]["integration"]["vPP"], s["pos"], "left")
+            rows.append(
+                _hc(
+                    f"Déplacement de l'appui {s['name']} (mm)",
+                    r"v(s_%d)=d-\frac{R}{k}=%s-\frac{%s}{%s}"
+                    % (i + 1, n(s[df] * 1e3), n(R), n(max(s["spring"], np.finfo(float).eps))),
+                    d * 1e3,
+                    v * 1e3,
+                    "mm",
+                    1e-6 * max(1.0, abs(d * 1e3)),
+                )
+            )
+    hg = mo["hinges"]
+    if hg:
+        rows.append(_grp("Rotules intermédiaires : moment de flexion nul"))
+        mscale = float(np.max(np.abs(ppEval(B["sol"]["Mfz"], np.linspace(0, mo["L"], 41)))))
+        for h in hg:
+            m = ppEval(B["sol"]["Mfz"], h["pos"], "left")
+            rows.append(
+                _hc(
+                    f"M_fz à la rotule {h['name']} (N·m)",
+                    r"M_{fz}(%s)=%s\ \text{(attendu 0)}" % (n(h["pos"]), n(m)),
+                    0.0,
+                    m,
+                    "N·m",
+                    1e-6 * max(1.0, mscale),
+                )
+            )
+    return rows
+
+
+def _handBeam(saisie: dict, res: dict) -> list[dict]:
+    n = _num
+    B = res
+    sol = B["sol"]
+    mo = sol["model"]
+    L = mo["L"]
+    rea, pl, pm, dl = sol["reactions"], mo["pointLoads"], mo["pointMoments"], mo["distLoads"]
+    Fx = [p["Fx"] for p in pl]
+    rRx = [r["Rx"] for r in rea]
+    distX = [(d["a"], d["b"], np.asarray(d["coeffs"], dtype=float)) for d in dl if d["dir"] == "x"]
+    sumFx = sum(Fx) + sum(rRx) + sum(_qint(c, a, b, lambda x: 1.0) for a, b, c in distX)
+    rows = [
+        _grp("Équilibre axial, recalculé à partir du modèle et des réactions du solveur"),
+        _hc(
+            "Équilibre des forces en x (N)",
+            r"\sum F_x=%s\ \text{(attendu 0)}" % n(sumFx),
+            sumFx,
+            0.0,
+            "N",
+            1e-6 * max([1.0, *map(abs, Fx), *map(abs, rRx)]) * max(1.0, L),
+        ),
+    ]
+    # plan (x, y) toujours ; plan (x, z) seulement s'il y a des charges ou des réactions en z
+    rows += _beamPlaneRows(sol, "y")
+    hasZ = (
+        any(p["Fz"] != 0 for p in pl)
+        or any(p["My"] != 0 for p in pm)
+        or any(d["dir"] == "z" for d in dl)
+        or any(r["Rz"] != 0 or r["My"] != 0 for r in rea)
+    )
+    if hasZ:
+        rows += _beamPlaneRows(sol, "z")
+    rows += _handImposed(B)
+    # contrainte au point le plus sollicité
+    chk = B["check"]
+    bd = chk["bend"]
+    S, Iz, Iy = saisie["S"], saisie["Iz"], saisie["Iy"]
+    sec = _sec(saisie)
+    secT = sec["type"] if sec is not None else ""
+    if saisie["Iyz"] != 0:
+        rows.append(
+            _grp(
+                "Contrainte au point le plus sollicité : Iyz ≠ 0, flexion déviée : NON recalculée à la main "
+                "(la loi de Navier à axes principaux ne s'applique pas). "
+                f"Valeur du solveur : |σ|max = {bd['sigmaMaxAbs'] / 1e6:.6g} MPa"
+            )
+        )
+    elif secT in ("T", "U", "L", "composite"):
+        rows.append(
+            _grp(
+                f"Contrainte au point le plus sollicité : section dissymétrique ({secT}), contour exact utilisé par "
+                "le solveur : NON recalculée à la main. "
+                f"Valeur du solveur : |σ|max = {bd['sigmaMaxAbs'] / 1e6:.6g} MPa"
+            )
+        )
+    else:
+        # maximum de |σ| de la loi de Navier, trouvé sans le solveur : sur les 4 coins des fibres extrêmes saisies,
+        # ou sur le cercle (module du moment résultant) pour un disque ou une couronne
+        if secT in ("disque", "couronne"):
+            Rr = sec["D"] / 2 * 1e3
+            mres = math.hypot(chk["Mfz"], chk["Mfy"]) * 1e3
+            sh = abs(chk["N"]) / S + mres * Rr / Iz
+            ftxt = (
+                r"|\sigma|_{max}=\frac{|N|}{S}+\frac{\sqrt{M_{fz}^2+M_{fy}^2}\,R}{I}=\frac{%s}{%s}+\frac{%s\times%s}{%s}"
+                % (
+                    n(abs(chk["N"])),
+                    n(S),
+                    n(mres),
+                    n(Rr),
+                    n(Iz),
+                )
+            )
+        else:
+            vy, vz = saisie["vy"], saisie["vz"]
+            sh = max(
+                abs(chk["N"] / S - chk["Mfz"] * 1e3 * y / Iz + chk["Mfy"] * 1e3 * z / Iy)
+                for y in (-vy, vy)
+                for z in (-vz, vz)
+            )
+            ftxt = (
+                r"|\sigma|_{max}=\max_{\pm v_y,\pm v_z}\left|\frac{%s}{%s}-\frac{%s\,y}{%s}+\frac{%s\,z}{%s}\right|"
+                % (
+                    n(chk["N"]),
+                    n(S),
+                    n(chk["Mfz"] * 1e3),
+                    n(Iz),
+                    n(chk["Mfy"] * 1e3),
+                    n(Iy),
+                )
+            )
+        rows += [
+            _grp("Contrainte maximale au point le plus sollicité (N en N, M en N·mm)"),
+            _hc("|σ| max (loi de Navier, sans le solveur)", ftxt, sh, bd["sigmaMaxAbs"] / 1e6, "MPa"),
+        ]
+    cmp = B["defl"]["comparison"]
+    flexion = ~cmp["Methode"].astype(str).str.contains("tranchant")  # la ligne « flexion + tranchant » est à part
+    ecart = float(np.max(np.abs(cmp["Ecart_pct"].to_numpy(dtype=float)[flexion.to_numpy()])))
+    rows.append(
+        _grp(
+            f"Flèche (flexion seule) : écart maximal entre les méthodes = {ecart:.3g} % "
+            "(la ligne « flexion + tranchant » de Castigliano est à part ; voir §4)"
+        )
+    )
+    return rows
+
+
+def _handCombos(saisie: dict, res: dict, dm) -> list[dict]:
+    """Combinaisons : équilibre et torseur de chaque combinaison, superposition des cas, tableau = recalcul.
+
+    Ces contrôles font appel au solveur de poutre : ils vérifient la cohérence des combinaisons, pas le solveur.
+    """
+    T = _extras(res)["combos"]
+    noms = ("G", "Q", "W", "S")
+    used = [False] * 4
+    for tb in (saisie["pl"], saisie["pm"], saisie["dl"]):
+        for ligne in tb:
+            if str(ligne.get("case")) in noms:
+                used[noms.index(str(ligne["case"]))] = True
+    if saisie["selfw"]:
+        used[0] = True
+    s = np.linspace(0, saisie["L"], 21)
+    sols = {}
+    for k in (i for i in range(4) if used[i]):
+        fac = dict.fromkeys(noms, 0.0)
+        fac[noms[k]] = 1.0
+        sols[noms[k]] = solveBeam(buildBeamModel(saisie, dm, fac))
+    rows = [
+        _grp(
+            "Combinaisons : chaque ligne est résolue séparément, puis comparée (équilibre, superposition des cas, "
+            "tableau). Ces contrôles utilisent le solveur : ils vérifient la cohérence des combinaisons."
+        )
+    ]
+    gov = {"Mfz": ("", -math.inf), "Ty": ("", -math.inf)}
+    for i, ligne in enumerate(saisie["combo"]):
+        g = [beam_services._num(ligne[c], "γ") for c in ("gG", "gQ", "gW", "gS")]
+        sol = solveBeam(buildBeamModel(saisie, dm, dict(zip(noms, g, strict=True))))
+        nm = str(ligne["name"])
+        rows.append(_grp(f"Combinaison « {nm} » : γG = {g[0]:g}, γQ = {g[1]:g}, γW = {g[2]:g}, γS = {g[3]:g}"))
+        rows += _beamPlaneRows(sol, "y")
+        # superposition : Mfz(combinaison) = somme des γ·Mfz(cas), en 21 abscisses
+        sup = np.zeros_like(s)
+        for k in (i2 for i2 in range(4) if used[i2]):
+            sup = sup + g[k] * ppEval(sols[noms[k]]["Mfz"], s)
+        direct = ppEval(sol["Mfz"], s)
+        rows.append(
+            _hc(
+                "Moment fléchissant : superposition des cas (somme sur 21 abscisses de |Mfz|)",
+                r"\sum_s \left|\sum_c \gamma_c\,M_{fz,c}(s)\right|",
+                float(np.sum(np.abs(sup))) / 1e3,
+                float(np.sum(np.abs(direct))) / 1e3,
+                "kN·m",
+            )
+        )
+        e = sol["extrema"]
+        rows.append(
+            _hc(
+                "Tableau Combinaisons : Mfz max = recalcul de la combinaison",
+                "M_{fz,max}",
+                e["Mfz"]["max"] / 1e3,
+                T["Mfz max (kN·m)"].iloc[i],
+                "kN·m",
+            )
+        )
+        rows.append(
+            _hc(
+                "Tableau Combinaisons : Mfz min = recalcul de la combinaison",
+                "M_{fz,min}",
+                e["Mfz"]["min"] / 1e3,
+                T["Mfz min (kN·m)"].iloc[i],
+                "kN·m",
+            )
+        )
+        rows.append(
+            _hc(
+                "Tableau Combinaisons : Ty max = recalcul de la combinaison",
+                "T_{y,max}",
+                e["Ty"]["max"] / 1e3,
+                T["Ty max (kN)"].iloc[i],
+                "kN",
+            )
+        )
+        if e["Mfz"]["max"] > gov["Mfz"][1]:
+            gov["Mfz"] = (nm, e["Mfz"]["max"])
+        if e["Ty"]["max"] > gov["Ty"][1]:
+            gov["Ty"] = (nm, e["Ty"]["max"])
+    nT = len(T)
+    rows.append(
+        _hc(
+            "Enveloppe : Mfz max = plus grand Mfz max des combinaisons",
+            r"M_{fz,max}^{env}=\max_i M_{fz,max,i}",
+            float(np.max(T["Mfz max (kN·m)"].to_numpy(dtype=float)[: nT - 1])),
+            T["Mfz max (kN·m)"].iloc[nT - 1],
+            "kN·m",
+        )
+    )
+    rows.append(
+        _grp(
+            f"Combinaison dimensionnante : « {gov['Mfz'][0]} » pour Mfz max, « {gov['Ty'][0]} » pour Ty max. "
+            "L'enveloppe associe des maxima qui ne sont pas simultanés : elle est prudente."
+        )
+    )
+    return rows
+
+
+def _classe(x: float, lims) -> int:
+    """Première classe (1 à 3) dont la limite est respectée, sinon 4."""
+    return next((i for i, lim in enumerate(lims, 1) if x <= lim), 4)
+
+
+def _handEC3(saisie: dict, res: dict) -> list[dict]:  # noqa: C901
+    """Eurocode 3 : recalcul avec d'autres écritures (Wpl = 2·Sy, formules explicites) sans appeler design_checks."""
+    n = _num
+    B = saisie
+    r = _extras(res)["ec3"][0]
+    sec = B["section"]
+    rolled = sec["type"] == "profile"
+    if rolled:
+        h, b, tw, tf = sec["h"], sec["b"], sec["a"], sec["e"]
+        rr = sec["r"] if math.isfinite(sec.get("r", math.nan)) else 0.0
+    else:
+        h, b, tw, tf, rr = sec["h"], sec["b"], sec["tw"], sec["tf"], 0.0
+    fy, g0, g1 = B["Re"] * 1e6, B["gM0"], B["gM1"]
+    E, G = B["E"] * 1e9, B["G"] * 1e9
+    A, Iy, Iw_, It = B["S"] * 1e-6, B["Iz"] * 1e-12, B["Iy"] * 1e-12, B["Ix"] * 1e-12
+    Lcr = B["Lcr"] if B["Lcr"] > 0 else B["L"]
+    LcrF = B["LcrF"] if B["LcrF"] > 0 else B["L"]
+    C1 = B["C1"]
+    MEd, VEd = r["MEd"], r["VEd"]
+    Npl = A * fy / g0
+    NEd = r["axial"]["n"] * Npl
+    rows = [
+        _grp(
+            "Eurocode 3 : classes, résistances, déversement, N + M (EN 1993-1-1) ; efforts de calcul pris dans les "
+            "résultats de la poutre"
+        )
+    ]
+    # classes (tableau 5.2)
+    eps = math.sqrt(235e6 / fy)
+    hw = h - 2 * tf
+    cf = (b - tw - 2 * rr) / 2
+    cw = hw - 2 * rr
+    # âme (tableau 5.2, feuille 2) : ψ et α aux bords de l'âme, compression seule (r.Ncomp) avec la flexion MEd
+    sCw = r["Ncomp"] / A
+    sMw = abs(MEd) * (hw / 2) / Iy
+    psiW = -1.0
+    if sCw + sMw > 0:
+        psiW = (sCw - sMw) / (sCw + sMw)
+    alW = min(1.0, 1 / (1 - psiW))
+    if alW > 0.5:
+        limW = [396 / (13 * alW - 1), 456 / (13 * alW - 1)]
+    else:
+        limW = [36 / alW, 41.5 / alW]
+    limW.append(42 / (0.67 + 0.33 * psiW) if psiW > -1 else 62 * (1 - psiW) * math.sqrt(-psiW))
+    kf = _classe(cf / tf, [9 * eps, 10 * eps, 14 * eps])
+    kw = _classe(cw / tw, [x * eps for x in limW])
+    cls = max(kf, kw)
+    c = r["class"]
+    rows += [
+        _hc("ε = √(235/fy)", r"\varepsilon=\sqrt{235/%s}" % n(fy / 1e6), eps, c["eps"]),
+        _hc(
+            "Aile : c/tf",
+            r"c/t_f=\frac{(b-t_w-2r)/2}{t_f}=\frac{%s}{%s}" % (n(cf * 1e3), n(tf * 1e3)),
+            cf / tf,
+            c["ratioFlange"],
+        ),
+        _hc(
+            "Âme : c/tw",
+            r"c/t_w=\frac{h-2t_f-2r}{t_w}=\frac{%s}{%s}" % (n(cw * 1e3), n(tw * 1e3)),
+            cw / tw,
+            c["ratioWeb"],
+        ),
+        _hc(
+            "Classe de la section (tableau 5.2 : aile 9ε, 10ε, 14ε ; âme selon ψ et α)",
+            r"\text{classe}=\max(%d,%d)" % (kf, kw),
+            cls,
+            c["class"],
+            "",
+            0.0,
+        ),
+    ]
+    if cls > 3:
+        return rows
+    # flexion et tranchant (6.2.5, 6.2.6, 6.2.8)
+    hfil = (1 - math.pi / 4) * rr**2
+    Sy = b * tf * (h - tf) / 2 + tw * (hw / 2) * (hw / 4) + 2 * hfil * (hw / 2 - 0.2234 * rr)
+    Wpl = 2 * Sy
+    Wel = Iy / (h / 2)
+    W = Wel if cls == 3 else Wpl
+    Mc = W * fy / g0
+    eta = 1.0 if fy > 460e6 else 1.2
+    Av = max(A - 2 * b * tf + (tw + 2 * rr) * tf, eta * hw * tw)
+    Vpl = Av * (fy / math.sqrt(3)) / g0
+    red = abs(VEd) > 0.5 * Vpl
+    MRd = Mc
+    if red:
+        rho = (2 * abs(VEd) / Vpl - 1) ** 2
+        MRd = max(0.0, min(Mc, (W - rho * (hw * tw) ** 2 / (4 * tw)) * fy / g0))
+    rows += [
+        _hc(
+            "Wpl = 2·Sy (moment statique d'une demi-section)",
+            r"W_{pl}=2\left[b t_f\frac{h-t_f}{2}+t_w\frac{h_w}{2}\frac{h_w}{4}+2A_f(\tfrac{h_w}{2}-0{,}2234r)\right]=%s"
+            % n(Wpl * 1e6),
+            Wpl * 1e6,
+            r["Wpl"] * 1e6,
+            "cm³",
+        ),
+        _hc(
+            "Wel = Iy/(h/2)",
+            r"W_{el}=\frac{I_y}{h/2}=\frac{%s}{%s}" % (n(Iy * 1e8), n(h * 50)),
+            Wel * 1e6,
+            r["Wel"] * 1e6,
+            "cm³",
+        ),
+        _hc(
+            "Mc,Rd = W·fy/γM0 (§6.2.5, éq. 6.13/6.14)",
+            r"M_{c,Rd}=\frac{%s\times%s}{%s}" % (n(W * 1e6), n(fy / 1e6), n(g0)),
+            Mc / 1e3,
+            r["Mc"] / 1e3,
+            "kN·m",
+        ),
+        _hc(
+            "Av (§6.2.6(3))",
+            r"A_v=\max(A-2bt_f+(t_w+2r)t_f,\ \eta h_w t_w)=%s" % n(Av * 1e6),
+            Av * 1e6,
+            r["Av"] * 1e6,
+            "mm²",
+        ),
+        _hc(
+            "Vpl,Rd = Av·(fy/√3)/γM0 (§6.2.6(2))",
+            r"V_{pl,Rd}=\frac{%s\,(%s/\sqrt3)}{%s}" % (n(Av * 1e6), n(fy / 1e6), n(g0)),
+            Vpl / 1e3,
+            r["Vpl"] / 1e3,
+            "kN",
+        ),
+        _hc(
+            "MRd après réduction par le tranchant (§6.2.8)",
+            r"V_{Ed}=%s\ \text{kN}\ \ \text{; réduction : }%d" % (n(VEd / 1e3), int(red)),
+            MRd / 1e3,
+            r["MRd"] / 1e3,
+            "kN·m",
+        ),
+        _hc("MEd / MRd (éq. 6.12)", r"\frac{%s}{%s}" % (n(MEd / 1e3), n(MRd / 1e3)), MEd / MRd, r["ratioM"]),
+        _hc("VEd / Vpl,Rd (éq. 6.17)", r"\frac{%s}{%s}" % (n(VEd / 1e3), n(Vpl / 1e3)), VEd / Vpl, r["ratioV"]),
+    ]
+    # déversement (6.3.2.3 ; Mcr : NCCI SN003)
+    Iw = Iw_ * (h - tf) ** 2 / 4
+    Mcr = C1 * math.pi**2 * E * Iw_ / Lcr**2 * math.sqrt(Iw / Iw_ + Lcr**2 * G * It / (math.pi**2 * E * Iw_))
+    lam = math.sqrt(W * fy / Mcr)
+    tall = h / b > 2 + 1e-9
+    cv = "bc" if rolled else "cd"
+    alt = [0.21, 0.34, 0.49, 0.76]
+    curve = cv[int(tall)]
+    al = alt[ord(curve) - ord("a")]
+    Phi = 0.5 * (1 + al * (lam - 0.4) + 0.75 * lam**2)
+    chi = min(1.0, 1 / lam**2, 1 / (Phi + math.sqrt(max(Phi**2 - 0.75 * lam**2, 0))))
+    if lam <= 0.4:
+        chi = 1.0
+    Mb = chi * W * fy / g1
+    lt = r["ltb"]
+    rows += [
+        _hc(
+            "Mcr (poutre à fourches, charge au centre de torsion)",
+            r"M_{cr}=C_1\frac{\pi^2EI_z}{L_{cr}^2}\sqrt{\frac{I_w}{I_z}+\frac{L_{cr}^2GI_t}{\pi^2EI_z}}"
+            r"\ ;\ C_1=%s,\ L_{cr}=%s\ \text{m}" % (n(C1), n(Lcr)),
+            Mcr / 1e3,
+            lt["Mcr"] / 1e3,
+            "kN·m",
+        ),
+        _hc(
+            "λ̄LT = √(W·fy/Mcr)",
+            r"\bar\lambda_{LT}=\sqrt{\frac{%s\times%s}{%s}}" % (n(W * 1e6), n(fy / 1e6), n(Mcr / 1e3)),
+            lam,
+            lt["lambda"],
+        ),
+        _hc(f"αLT (courbe {curve}, tableaux 6.5 puis 6.3)", r"\alpha_{LT}=%s" % n(al), al, lt["alpha"]),
+        _hc(
+            "χLT (éq. 6.57, λ̄LT,0 = 0,4, β = 0,75)",
+            r"\chi_{LT}=\frac{1}{\Phi_{LT}+\sqrt{\Phi_{LT}^2-0{,}75\bar\lambda_{LT}^2}},\ \Phi_{LT}=%s" % n(Phi),
+            chi,
+            lt["chi"],
+        ),
+        _hc(
+            "Mb,Rd = χLT·W·fy/γM1 (éq. 6.55)",
+            r"M_{b,Rd}=%s\times%s\times%s/%s" % (n(chi), n(W * 1e6), n(fy / 1e6), n(g1)),
+            Mb / 1e3,
+            lt["MbRd"] / 1e3,
+            "kN·m",
+        ),
+        _hc("MEd / Mb,Rd (éq. 6.54)", r"\frac{%s}{%s}" % (n(MEd / 1e3), n(Mb / 1e3)), MEd / Mb, lt["ratio"]),
+    ]
+    # flexion + effort normal (6.2.9)
+    n_ = NEd / Npl
+    ax = r["axial"]
+    if cls <= 2:
+        a_ = min((A - 2 * b * tf) / A, 0.5)
+        free = n_ <= 0.25 and NEd <= 0.5 * hw * tw * fy / g0
+        if free:
+            MN = Mc
+        elif n_ >= 1:
+            MN = 0.0
+        else:
+            MN = min(Mc, Mc * (1 - n_) / (1 - 0.5 * a_))
+        MN = min(MN, MRd)
+        rows += [
+            _hc("n = NEd/Npl,Rd", r"n=\frac{%s}{%s}" % (n(NEd / 1e3), n(Npl / 1e3)), n_, ax["n"]),
+            _hc(
+                "MN,y,Rd (§6.2.9.1, éq. 6.36 ; sans réduction si 6.33 et 6.34)",
+                r"M_{N,y,Rd}=M_{pl,y,Rd}\frac{1-n}{1-0{,}5a},\ a=%s" % n(a_),
+                MN / 1e3,
+                ax["MNRd"] / 1e3,
+                "kN·m",
+            ),
+        ]
+    else:
+        sig = NEd / A + MEd / Wel
+        rows.append(
+            _hc(
+                "σx,Ed = NEd/A + MEd/Wel (§6.2.9.2, éq. 6.42)",
+                r"\sigma_{x,Ed}=\frac{%s}{%s}+\frac{%s}{%s}" % (n(NEd / 1e3), n(A * 1e6), n(MEd / 1e3), n(Wel * 1e6)),
+                sig / 1e6,
+                ax["sigma"] / 1e6,
+                "MPa",
+            )
+        )
+    # flambement par flexion (6.3.1), axe faible z-z
+    if r["buck"] is not None:
+        bk = r["buck"]
+        Nc = bk["NEd"]
+        hb = h / b
+        if rolled:
+            if hb > 1.2:
+                cz = "d" if tf * 1e3 > 100 else ("c" if tf * 1e3 > 40 else "b")
+            else:
+                cz = "d" if tf * 1e3 > 100 else "c"
+        else:
+            cz = "d" if tf * 1e3 > 40 else "c"
+        alz = alt[ord(cz) - ord("a")]
+        Ncr = math.pi**2 * E * Iw_ / Lcr**2
+        lz = math.sqrt(A * fy / Ncr)
+        Pz = 0.5 * (1 + alz * (lz - 0.2) + lz**2)
+        chz = min(1.0, 1 / (Pz + math.sqrt(max(Pz**2 - lz**2, 0))))
+        if lz <= 0.2 or Nc / Ncr <= 0.04:
+            chz = 1.0
+        az = bk["axes"][1]
+        rows += [
+            _hc(
+                "Flambement z-z : Ncr = π²·E·Iz/Lcr²",
+                r"N_{cr}=\frac{\pi^2EI_z}{L_{cr}^2}=%s\ \text{kN}" % n(Ncr / 1e3),
+                Ncr / 1e3,
+                az["Ncr"] / 1e3,
+                "kN",
+            ),
+            _hc(
+                f"Flambement z-z : λ̄ (courbe {cz}, tableaux 6.2 et 6.1)",
+                r"\bar\lambda=\sqrt{\frac{Af_y}{N_{cr}}}=%s" % n(lz),
+                lz,
+                az["lambda"],
+            ),
+            _hc(
+                "Flambement z-z : χ (éq. 6.49)",
+                r"\chi=\frac{1}{\Phi+\sqrt{\Phi^2-\bar\lambda^2}},\ \Phi=%s" % n(Pz),
+                chz,
+                az["chi"],
+            ),
+            _hc(
+                "Flambement z-z : Nb,Rd = χ·A·fy/γM1 (éq. 6.47)",
+                r"N_{b,Rd}=%s\times%s\times%s/%s" % (n(chz), n(A * 1e6), n(fy / 1e6), n(g1)),
+                chz * A * fy / g1 / 1e3,
+                az["NbRd"] / 1e3,
+                "kN",
+            ),
+        ]
+        # interaction N + M (6.3.3, annexe B, tableau B.2) : refait avec le χ de l'axe fort recalculé ici
+        if r["inter"] is not None:
+            it = r["inter"]
+            if rolled:
+                if hb > 1.2:
+                    cy = "d" if tf * 1e3 > 100 else ("b" if tf * 1e3 > 40 else "a")
+                else:
+                    cy = "d" if tf * 1e3 > 100 else "b"
+            else:
+                cy = "c" if tf * 1e3 > 40 else "b"
+            aly = [0.21, 0.34, 0.49, 0.76][ord(cy) - ord("a")]
+            Ncry = math.pi**2 * E * Iy / LcrF**2  # axe fort : longueur du plan fort, pas la longueur entre entretoises
+            ly = math.sqrt(A * fy / Ncry)
+            Py = 0.5 * (1 + aly * (ly - 0.2) + ly**2)
+            chy = min(1.0, 1 / (Py + math.sqrt(max(Py**2 - ly**2, 0))))
+            if ly <= 0.2 or Nc / Ncry <= 0.04:
+                chy = 1.0
+            nY_ = Nc / (chy * A * fy / g1)
+            nZ_ = Nc / (chz * A * fy / g1)
+            Cmy, CmL = B["Cmy"], B["CmLT"]
+            if cls <= 2:
+                kyy = min(Cmy * (1 + (ly - 0.2) * nY_), Cmy * (1 + 0.8 * nY_))
+                if lz >= 0.4:
+                    kzy = max(1 - 0.1 * lz * nZ_ / (CmL - 0.25), 1 - 0.1 * nZ_ / (CmL - 0.25))
+                else:
+                    kzy = min(0.6 + lz, 1 - 0.1 * lz * nZ_ / (CmL - 0.25))
+            else:
+                kyy = min(Cmy * (1 + 0.6 * ly * nY_), Cmy * (1 + 0.6 * nY_))
+                kzy = max(1 - 0.05 * lz * nZ_ / (CmL - 0.25), 1 - 0.05 * nZ_ / (CmL - 0.25))
+            dn = chi * W * fy / g1
+            rows += [
+                _hc(
+                    f"Flambement y-y : χy (courbe {cy})",
+                    r"\chi_y=\frac{1}{\Phi+\sqrt{\Phi^2-\bar\lambda_y^2}},\ \bar\lambda_y=%s" % n(ly),
+                    chy,
+                    bk["axes"][0]["chi"],
+                ),
+                _hc(
+                    "kyy (annexe B, tableau B.2)",
+                    r"k_{yy}=C_{my}\left[1+(\bar\lambda_y-0{,}2)n_Y\right]\le C_{my}(1+0{,}8\,n_Y)\ ;\ n_Y=%s" % n(nY_),
+                    kyy,
+                    it["kyy"],
+                ),
+                _hc(
+                    "kzy (annexe B, tableau B.2)",
+                    r"k_{zy}=1-\frac{0{,}1\bar\lambda_z n_Z}{C_{mLT}-0{,}25}\ ;\ n_Z=%s" % n(nZ_),
+                    kzy,
+                    it["kzy"],
+                ),
+                _hc(
+                    "Éq. 6.61 : N/(χy·NRk/γM1) + kyy·M/(χLT·My,Rk/γM1)",
+                    r"%s+%s\frac{%s}{%s}" % (n(nY_), n(kyy), n(MEd / 1e3), n(dn / 1e3)),
+                    nY_ + kyy * MEd / dn,
+                    it["ratio61"],
+                ),
+                _hc(
+                    "Éq. 6.62 : N/(χz·NRk/γM1) + kzy·M/(χLT·My,Rk/γM1)",
+                    r"%s+%s\frac{%s}{%s}" % (n(nZ_), n(kzy), n(MEd / 1e3), n(dn / 1e3)),
+                    nZ_ + kzy * MEd / dn,
+                    it["ratio62"],
+                ),
+            ]
+    # voilement de l'âme par cisaillement (EN 1993-1-5 §5, âme non raidie)
+    et = 1.0 if fy > 460e6 else 1.2
+    w = r["web"]
+    if hw / tw > 72 * eps / et:
+        lw = hw / (86.4 * tw * eps)
+        if lw < 0.83 / et:
+            chw = et
+        elif lw < 1.08:
+            chw = 0.83 / lw
+        else:
+            chw = 1.37 / (0.7 + lw)
+        Vb = chw * fy * hw * tw / (math.sqrt(3) * g1)
+        rows += [
+            _hc(
+                "Voilement de l'âme : χw (tableau 5.1, poteau d'extrémité rigide)",
+                r"\bar\lambda_w=\frac{h_w}{86{,}4\,t_w\varepsilon}=%s" % n(lw),
+                chw,
+                w["chi"],
+            ),
+            _hc(
+                "Vb,Rd = χw·fy·hw·tw/(√3·γM1)",
+                r"V_{b,Rd}=\frac{%s\times%s\times%s}{\sqrt3\times%s}" % (n(chw), n(fy / 1e6), n(hw * tw * 1e6), n(g1)),
+                Vb / 1e3,
+                w["VbRd"] / 1e3,
+                "kN",
+            ),
+        ]
+    else:
+        rows.append(
+            _grp(
+                f"Voilement de l'âme par cisaillement : hw/tw = {hw / tw:.1f} ≤ 72ε/η = {72 * eps / et:.1f}, "
+                "sans objet."
+            )
+        )
+    rows.append(
+        _grp(
+            "Non recalculé : voilement local sous charges concentrées, flexion déviée, ELS, classe 4 ; annexe "
+            "nationale : seules γM0 et γM1 sont paramétrables. Le recalcul reprend les mêmes formules écrites "
+            "autrement (Wpl par le moment statique d'une demi-section) : il détecte les erreurs de programmation, "
+            "pas un choix de formule discutable."
+        )
+    )
+    return rows
+
+
+def _handFatigue(saisie: dict, res: dict, dm) -> list[dict]:
+    """Fatigue : Goodman recalculé à partir des champs de saisie et de la contrainte de la poutre."""
+    n = _num
+    B = saisie
+    f = _extras(res)["fatigue"][0]
+    bd = res["check"]["bend"]
+    Kt, R = B["Kt"], B["fR"]
+    Rm = dm.getMaterial(B["mat"])["Rm"]
+    smax = bd["sigmaMaxAbs"]
+    Se = B["fka"] * B["fkb"] * min(0.5 * Rm, 700e6)
+    sa = Kt * smax * (1 - R) / 2
+    sm = smax * (1 + R) / 2
+    nn = 1 / (sa / Se + max(sm, 0) / Rm)
+    return [
+        _grp("Fatigue (Goodman modifié, Shigley chap. 6) : recalcul à partir des champs de saisie"),
+        _hc(
+            "σmax nominale = Kt·σmax / Kt (la contrainte nominale n'est pas reconstruite à tort)",
+            r"\sigma_{max}=\frac{K_t\sigma_{max}}{K_t}=\frac{%s}{%s}" % (n(bd["sigmaMaxKt"] / 1e6), n(Kt)),
+            bd["sigmaMaxKt"] / Kt / 1e6,
+            smax / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "Se = ka·kb·min(0,5·Rm ; 700 MPa)",
+            r"S_e=%s\times%s\times\min(0{,}5\times%s,\,700)" % (n(B["fka"]), n(B["fkb"]), n(Rm / 1e6)),
+            Se / 1e6,
+            f["Se"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "σa = Kf·σmax·(1−R)/2",
+            r"\sigma_a=%s\times%s\times\frac{1-(%s)}{2}" % (n(Kt), n(smax / 1e6), n(R)),
+            sa / 1e6,
+            f["sigmaA"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "σm = σmax·(1+R)/2",
+            r"\sigma_m=%s\times\frac{1+(%s)}{2}" % (n(smax / 1e6), n(R)),
+            sm / 1e6,
+            f["sigmaM"] / 1e6,
+            "MPa",
+        ),
+        _hc(
+            "n = 1/(σa/Se + σm/Rm)",
+            r"n=\frac{1}{%s/%s+%s/%s}" % (n(sa / 1e6), n(Se / 1e6), n(max(sm, 0) / 1e6), n(Rm / 1e6)),
+            nn,
+            f["n"],
+        ),
+        _grp(
+            "Hypothèses non recalculables : acier, vie infinie, Kf = Kt (sensibilité à l'entaille q = 1), chargement "
+            "uniaxial d'amplitude constante. Autre vérification de fatigue des constructions métalliques : "
+            "EN 1993-1-9, non traitée."
+        ),
+    ]
+
+
+def _handProfiles(saisie: dict, res: dict, dm) -> list[dict]:
+    """Profilé le plus léger : cohérence du tableau (tri, σadm, masse, L/f, choix du premier qui vérifie)."""
+    n = _num
+    B = saisie
+    T = _extras(res)["profiles"][0]
+    L = B["L"]
+    rho = dm.getMaterial(B["mat"])["rho"]
+    S = T["S (mm²)"].to_numpy(dtype=float)
+    inv = int(np.sum(np.diff(S[~np.isnan(S)]) < 0))
+    sadm = T["σadm (MPa)"].to_numpy(dtype=float)
+    sadm = sadm[~np.isnan(sadm)]
+    r = T["Résistance"].astype(str)
+    ok = (~r.str.contains("NON") & ~r.str.contains("erreur")).to_numpy()
+    rows = [
+        _grp(f"Profilé le plus léger, famille {B['pfam']} : {len(T)} profilés essayés avec le chargement de l'onglet"),
+        _hc("Tri par aire croissante : nombre d'inversions", r"\#\{i:\ S_{i+1}<S_i\}", inv, 0, "", 0.0),
+        _hc(
+            "σadm = Re/s (tous les profilés)",
+            r"\sigma_{adm}=\frac{%s}{%s}" % (n(B["Re"]), n(B["s"])),
+            B["Re"] / B["s"],
+            sadm[0],
+            "MPa",
+        ),
+    ]
+    if not ok.any():
+        rows.append(_grp("Aucun profilé de cette famille ne vérifie le chargement : pas de profilé retenu."))
+        return rows
+    i1 = int(np.argmax(ok))
+    m_ = T["Masse (kg/m)"].iloc[i1]
+    Sb = S[i1]
+    f1 = T["f max (mm)"].iloc[i1]
+    rows += [
+        _hc(
+            f"Masse linéique du profilé retenu ({T['Profilé'].iloc[i1]}) = ρ·S",
+            r"m=\rho S=%s\times%s\times10^{-6}" % (n(rho), n(Sb)),
+            rho * Sb * 1e-6,
+            m_,
+            "kg/m",
+        ),
+        _hc(
+            "Le profilé retenu est le plus léger qui vérifie",
+            r"\min\{S_i:\ \text{vérifié}\}",
+            float(np.min(S[ok])),
+            Sb,
+            "mm²",
+        ),
+        _hc(
+            "L/f du profilé retenu = L / f max",
+            r"\frac{L}{f}=\frac{%s}{%s}" % (n(L * 1e3), n(f1)),
+            L * 1e3 / f1,
+            T["L/f (-)"].iloc[i1],
+        ),
+    ]
+    if B["pdef"] > 0:
+        rows.append(
+            _hc(
+                f"Critère de flèche L/{B['pdef']:g} respecté par le profilé retenu (0 = oui)",
+                r"\frac{L}{f}\ge %s" % n(B["pdef"]),
+                float(T["L/f (-)"].iloc[i1] < B["pdef"]),
+                0.0,
+                "",
+                0.0,
+            )
+        )
+    rows.append(
+        _grp(
+            "Non recalculé ici : la contrainte de chaque profilé (poids propre et moments dépendent du profilé). "
+            "Pour la contrôler, importer le profilé retenu dans l'onglet Poutres et consulter son dossier de "
+            "validation."
+        )
+    )
+    return rows
+
+
+def _safeRows(fn, nom: str) -> list[dict]:
+    try:
+        return fn()
+    except Exception as err:
+        return [_grp(f"{nom} : contrôle impossible ({getattr(err, 'message', err)})")]
+
+
+def _handExtras(saisie: dict, res: dict, dm) -> list[dict]:
+    """Contrôles des résultats ajoutés à l'onglet Poutres (présents seulement s'ils ont été calculés)."""
+    ex = _extras(res)
+    rows: list[dict] = []
+    if ex.get("combos") is not None:
+        rows += _safeRows(lambda: _handCombos(saisie, res, dm), "Combinaisons")
+    if ex.get("ec3") is not None:
+        rows += _safeRows(lambda: _handEC3(saisie, res), "Eurocode 3")
+    if ex.get("fatigue") is not None:
+        rows += _safeRows(lambda: _handFatigue(saisie, res, dm), "Fatigue")
+    if ex.get("profiles") is not None:
+        rows += _safeRows(lambda: _handProfiles(saisie, res, dm), "Profilé le plus léger")
+    return rows
+
+
+def _handRows(key: str, saisie: dict, res: dict, dm, withExtras: bool = True) -> list[dict]:
+    """Lignes de contrôle à la main de l'onglet (formules du cours, sans appeler les moteurs de calcul)."""
+    f = {
+        "Sec": _handSec,
+        "Beam": _handBeam,
+        "Tr": _handTruss,
+        "Tra": _handTra,
+        "Cis": _handCis,
+        "Tor": _handTor,
+        "Fle": _handFle,
+        "Fla": _handFla,
+        "Ten": _handTen,
+        "Hoo": _handHoo,
+        "Jau": _handJau,
+    }[key]
+    rows = f(saisie, res)
+    if key == "Beam" and withExtras:
+        rows = rows + _handExtras(saisie, res, dm)
+    return rows
 
 
 def _verdict(r: dict) -> tuple[float, bool]:
@@ -1555,7 +3168,7 @@ def _latexBlocks(key: str, res: dict) -> list[tuple[str, list[str]]]:
 
 def _handHTML(key: str, saisie: dict, res: dict, dm, withExtras: bool = True) -> tuple[str, int, int]:
     """Partie 3 : tableau des contrôles à la main, puis équations du solveur ; renvoie (html, nOK, nTot)."""
-    rows = _handRows(key, saisie, res, dm)
+    rows = _handRows(key, saisie, res, dm, withExtras)
     h = (
         "<p>Pour chaque grandeur, la formule est écrite avec les valeurs de ce problème, calculée à la main "
         "(sans appeler le solveur) puis comparée à la valeur du solveur.</p>"

@@ -6,13 +6,14 @@ dans la saisie à chaque passage.
 
 import math
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from mecastruct.core.errors import MecaStructError
-from mecastruct.services import compute, project_io
+from mecastruct.services import compute, project_io, validation_report
 from mecastruct.services.examples import exampleNames, loadExample
 from mecastruct.ui import state
 
@@ -257,3 +258,62 @@ def project_bar() -> None:
     msg = st.session_state.pop("fichier.projet.msg", None)
     if msg:
         (st.warning if msg.startswith("Onglets") else st.success)(msg)
+
+
+def _extras_precedents(tab: str) -> dict | None:
+    """Résultats facultatifs déjà calculés dans la session (Poutres : combinaisons, Eurocode 3, fatigue, profilé)."""
+    if tab != "Beam":
+        return None
+    cles = {"combos": "BeamCombo", "ec3": "BeamEC3", "fatigue": "BeamFat", "profiles": "BeamProf"}
+    return {nom: state.result(cle) for nom, cle in cles.items()}
+
+
+def _genere_validation(tab: str) -> None:
+    """Recalcule la page `tab` avec la saisie actuelle et garde le dossier de validation HTML (callback du bouton)."""
+    q = st.session_state
+    saisie = state.saisie(tab)
+    if tab in ("Cis", "Fle") and state.result("Sec") is not None:  # section de la page Sections, comme au calcul
+        saisie["section"] = state.result("Sec")["result"]["sec"]
+    try:
+        res = validation_report.recompute(tab, saisie, q["dm"], _extras_precedents(tab))
+        html = validation_report.generate(tab, saisie, res, q["dm"])
+    except Exception as err:  # MecaStructError : message et conseil ; autre erreur : trace complète
+        q[f"validation.{tab}.erreur"] = err
+        q.pop(f"validation.{tab}", None)
+        return
+    q.pop(f"validation.{tab}.erreur", None)
+    q[f"validation.{tab}"] = (validation_report.fileName(tab), html, datetime.now().strftime("%H:%M:%S"))
+
+
+def validation_button(tab: str) -> None:
+    """« Dossier de validation de ce problème » : recalcule la page, puis propose le fichier HTML à télécharger.
+
+    Actif seulement s'il y a un résultat pour l'onglet `tab`. Le PDF s'obtient par Imprimer → Enregistrer en PDF.
+    """
+    res = state.result(tab)
+    st.button(
+        "Dossier de validation de ce problème",
+        key=f"validation.{tab}.bouton",
+        on_click=_genere_validation,
+        args=(tab,),
+        disabled=res is None,
+        help=None if res else "Cliquez d'abord sur « Calculer ».",
+    )
+    err = st.session_state.get(f"validation.{tab}.erreur")
+    if err is not None:
+        error_box(err)
+    dossier = st.session_state.get(f"validation.{tab}")
+    if dossier is not None:
+        nom, html, heure = dossier
+        st.download_button(
+            f"Télécharger le dossier ({nom})",
+            html,
+            file_name=nom,
+            mime="text/html",
+            key=f"validation.{tab}.telecharger",
+            on_click="ignore",
+        )
+        st.caption(
+            f"Dossier généré à {heure} avec la saisie de ce moment. Formules affichées par MathJax (connexion "
+            "Internet requise). Pour un PDF : ouvrir le fichier, Imprimer → Enregistrer en PDF."
+        )

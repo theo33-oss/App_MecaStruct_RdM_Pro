@@ -120,6 +120,7 @@ with gauche:
         _calcule()
 
 with droite:
+    widgets.validation_button("Tr")
     resultat = state.result("Tr")
     figure = _figure(resultat)
     if figure is not None:

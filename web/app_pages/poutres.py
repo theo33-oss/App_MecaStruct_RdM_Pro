@@ -699,6 +699,7 @@ with gauche:
     _affiche_message()
 
 with droite:
+    widgets.validation_button("Beam")
     if state.result("Beam") is None and st.session_state.get("Beam_etat") is None:
         st.info("Aperçu de la poutre saisie. Cliquez sur « Calculer » pour les diagrammes et les résultats.")
     _resultats(state.result("Beam"))

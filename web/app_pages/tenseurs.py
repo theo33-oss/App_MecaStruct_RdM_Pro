@@ -105,5 +105,6 @@ with gauche:
         _calcule()
 
 with droite:
+    widgets.validation_button("Ten")
     if state.result("Ten") is not None:
         _resultats(state.result("Ten"))

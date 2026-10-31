@@ -115,7 +115,10 @@ Cocher `[x]` à la fin de chaque étape (tests verts + commit) et ajouter 1 à 3
   pytest 934 passed (26 nouveaux, test_project_io.py) ; ruff check et ruff format --check verts. Téléversement et téléchargement non vérifiés dans un navigateur (AppTest ne les pilote pas).
 
 ## Phase 6 — Dossier de validation
-- [ ] E31 — validation_report.py
+- [x] E31 — validation_report.py
+  Service validation_report.py (meta, recompute, generate, handCheck, fileName) et gabarit Jinja2 templates/validation.html.j2 (CSS de css(), MathJax 3 depuis cdnjs avec bandeau hors ligne, sommaire) : les 8 parties pour les 11 clés ; tous les hand* de ValidationReport.m portés (Sec, Tra, Cis, Tor, Fle, Fla, Ten, Hoo, Jau, Tr, Beam avec équilibre des deux plans, coupures, appuis élastiques, rotules, combinaisons, Eurocode 3, fatigue, profilé le plus léger), mêmes formules et tolérances que MATLAB. `validation_button(tab)` sur les pages de calcul (colonne de droite), actif après « Calculer ».
+  Écarts : (1) Cisaillement : MATLAB ne garde que le dernier calcul (goupille) dans le rapport et le tableau, Python met cisaillement, clavette et goupille. (2) Diagrammes Plotly interactifs et non PNG. (3) Le profilé le plus léger est toujours refait (MATLAB saute le balayage si la saisie est inchangée). (4) handCheck(…, withExtras=True) compte aussi les extras de la poutre, MATLAB non. (5) Flexion avec un profilé du catalogue : 3 écarts de 2,9 % au §3 (solveur : valeurs tabulées ; contrôle : géométrie analytique), MATLAB lit la même géométrie dans handFle ; non corrigé, à trancher. pyproject.toml : UP031 ignorée pour ce seul fichier (formules LaTeX en %).
+  pytest 1023 passed (89 nouveaux dans test_validation_report.py) ; ruff check et ruff format --check verts. Dossiers MATLAB Flambage (10 contrôles) et Poutre IPE 300 (16 contrôles) de validation/ retrouvés par Python aux 8 chiffres affichés. Golden, tests existants et tolérances inchangés.
 
 ## Phase 7 — Mise en ligne
 - [ ] E32 — Déploiement Streamlit Community Cloud + recette
