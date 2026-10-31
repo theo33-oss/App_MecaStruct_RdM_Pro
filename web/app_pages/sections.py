@@ -250,7 +250,7 @@ def _resultats(res: dict, tables: dict, statut: str, a_jour: bool) -> None:
 st.title("Sections droites")
 formula_panel("geometrie")
 
-gauche, droite = st.columns([1, 2], gap="large")
+gauche, droite = widgets.zones("Sec")
 with gauche:
     calc = widgets.calc_button("Sec.calc")
     synthese = st.container()

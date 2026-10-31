@@ -100,7 +100,7 @@ def _resultats(res: dict) -> None:
 st.title("Tenseurs & critères")
 formula_panel("tenseurs")
 
-gauche, droite = st.columns([1, 2], gap="large")
+gauche, droite = widgets.zones("Ten")
 with gauche:
     calcule = widgets.calc_button("Ten.calc")
     synthese = st.container()

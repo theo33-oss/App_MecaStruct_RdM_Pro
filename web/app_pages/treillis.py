@@ -110,7 +110,7 @@ def _resultats(res: dict) -> None:
 st.title("Treillis")
 formula_panel("treillis")
 
-gauche, droite = st.columns([1, 2], gap="large")
+gauche, droite = widgets.zones("Tr")
 with gauche:
     calcule = widgets.calc_button("Tr.calc")
     synthese = st.container()

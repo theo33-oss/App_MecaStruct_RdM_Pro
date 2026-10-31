@@ -376,6 +376,39 @@ def synthese_resultat(tab: str, conteneur: Any) -> None:
             synthese_statut(res["status"])
 
 
+def _css_visualisation(compact: bool) -> str:
+    """Style de la zone de visualisation épinglée : reste en haut de l'écran pendant qu'on défile dans la saisie.
+
+    L'épinglage porte sur le parent direct de la zone (seul assez haut pour la laisser glisser), la zone elle-même
+    défile en interne si son contenu dépasse l'écran.
+    """
+    fond, bord = ("#0E0B16", "#6E6590") if _theme_sombre() else ("#FFFFFF", "#8E86AA")
+    if compact:  # téléphone : bandeau en haut, au plus 42 % de la hauteur de l'écran
+        haut, hauteur, cadre = "3.75rem", "42vh", f"border-bottom: 1px solid {bord}; padding: 0.25rem 0 0.5rem;"
+    else:
+        haut, hauteur, cadre = "4rem", "calc(100vh - 4.5rem)", "padding-bottom: 0.5rem;"
+    return (
+        f'div:has(> [class*="st-key-visu_"]) {{ position: sticky; top: {haut}; z-index: 20; background: {fond}; }} '
+        f'[class*="st-key-visu_"] {{ max-height: {hauteur}; overflow-y: auto; {cadre} }}'
+    )
+
+
+def zones(nom: str) -> tuple[Any, Any]:
+    """Zones (saisie, visualisation) d'une page de calcul ; `nom` distingue les pages ou onglets d'une même page.
+
+    Ordinateur et tablette : deux colonnes, la visualisation reste épinglée en haut de l'écran quand on défile dans la
+    saisie. Téléphone : la visualisation passe au-dessus de la saisie, épinglée en bandeau.
+    """
+    st.sidebar.html("<style>" + _css_visualisation(is_compact()) + "</style>")
+    if is_compact():
+        visu = st.container(key=f"visu_{nom}")
+        return st.container(), visu
+    gauche, droite = st.columns([1, 2], gap="large")
+    with droite:
+        visu = st.container(key=f"visu_{nom}")
+    return gauche, visu
+
+
 def calc_button(key: str, label: str = "Calculer") -> bool:
     """Bouton principal pleine largeur, à placer en haut de la colonne de saisie ; True au clic.
 

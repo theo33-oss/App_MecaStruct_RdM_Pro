@@ -718,7 +718,7 @@ VOLETS = [
 st.title("Poutres")
 formula_panel("equilibre")
 
-gauche, droite = st.columns([1, 2], gap="large")
+gauche, droite = widgets.zones("Beam")
 with gauche:
     calcule = widgets.calc_button("Beam.calc")
     synthese = st.container()  # rempli après le calcul : valeurs clés visibles sans descendre la colonne de saisie

@@ -169,7 +169,7 @@ for onglet, (_, fiche, tab, saisie_fn, resultats_fn) in zip(onglets, ONGLETS, st
     if onglet.open:
         formula_panel(fiche)  # la fiche suit le sous-onglet ouvert
     with onglet:
-        gauche, droite = st.columns([1, 2], gap="large")
+        gauche, droite = widgets.zones(tab)
         with gauche:
             calcule = widgets.calc_button(f"{tab}.calc")
             synthese = st.container()

@@ -258,3 +258,19 @@ def test_schema_suit_la_saisie_apres_un_calcul():
     assert any("Le schéma suit la saisie" in c.value for c in at.caption)
     _bouton(at, "Calculer").click().run()
     assert not any("Le schéma suit la saisie" in c.value for c in at.caption)
+
+
+def test_telephone_schema_au_dessus_de_la_saisie_pc_a_cote():
+    """Téléphone : la visualisation (schéma) précède le bouton Calculer ; PC : le bouton précède le schéma."""
+    at = AppTest.from_file(PAGE, default_timeout=60)
+    at.session_state["vue"] = "telephone"
+    at.run()
+    assert not at.exception
+    ordre = _ordre(at)
+    assert ordre.index("Schéma") < ordre.index("Calculer")
+    at = AppTest.from_file(PAGE, default_timeout=60)
+    at.session_state["vue"] = "pc"
+    at.run()
+    assert not at.exception
+    ordre = _ordre(at)
+    assert ordre.index("Calculer") < ordre.index("Schéma")
