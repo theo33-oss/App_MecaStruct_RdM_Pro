@@ -180,14 +180,36 @@ def _saisie_efforts_et_methode() -> None:
     widgets.num("Sec", "Kt", "Kt (-)", min_value=1.0)
 
 
-def _resultats(res: dict, tables: dict, statut: str) -> None:
+def _apercu_section() -> None:
+    """Dessin de la section d'après la saisie actuelle (sans contraintes) ; rien si la saisie est incomplète."""
+    try:
+        sec = compute._sectionFromSaisie(saisie, dm)
+        fig = section_plots.section(sec, geometry.analytical(sec))
+    except Exception as err:  # saisie incomplète : l'aperçu est seulement omis
+        st.caption(f"Aperçu indisponible : {err}")
+        return
+    widgets.plot(fig)
+
+
+def _graphe_section(res: dict, a_jour: bool) -> None:
+    """Dessin de la section : celui du calcul s'il date de la saisie actuelle, sinon un aperçu de la saisie."""
+    if a_jour:
+        widgets.plot(section_plots.section(res["sec"], res["P"]))
+        return
+    _apercu_section()
+    st.caption(
+        "Le dessin suit la saisie. Les contraintes et les tableaux datent du dernier « Calculer » : "
+        "cliquez dessus pour les actualiser."
+    )
+
+
+def _resultats(res: dict, tables: dict, statut: str, a_jour: bool) -> None:
     """Graphiques (section, contraintes) puis résultats (comparaison, Huygens, cisaillement, rapport, formules)."""
     sec, P = res["sec"], res["P"]
-    st.success(statut)
     widgets.graphs(
         "Sec_graphes_onglets",
         [
-            ("Section", lambda: widgets.plot(section_plots.section(sec, P))),
+            ("Section", lambda: _graphe_section(res, a_jour)),
             (
                 "Contraintes σ(y) et τ(y)",
                 lambda: widgets.plot(section_plots.sectionStress(sec, P, res["bend"], res["jour"])),
@@ -195,6 +217,7 @@ def _resultats(res: dict, tables: dict, statut: str) -> None:
         ],
     )
 
+    st.success(statut)
     onglets = st.tabs(
         ["Comparaison des méthodes", "Tableau de Huygens", "Facteurs de cisaillement", "Rapport", "Formules"]
     )
@@ -242,7 +265,11 @@ with gauche:
     widgets.synthese_resultat("Sec", synthese)
 
 with droite:
-    widgets.validation_button("Sec")
     r = state.result("Sec")
-    if r is not None:
-        _resultats(r["result"], r["tables"], r["status"])
+    if r is None:
+        st.subheader("Section")
+        _apercu_section()
+        st.caption("Aperçu mis à jour à chaque modification. Cliquez sur « Calculer » pour les résultats.")
+    else:
+        _resultats(r["result"], r["tables"], r["status"], state.is_current("Sec"))
+    widgets.validation_button("Sec")

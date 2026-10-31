@@ -80,8 +80,8 @@ def _saisie() -> None:
 
 
 def _figure(res: dict | None):
-    """Treillis dessiné : avec efforts et déformée après calcul, sinon aperçu de la saisie."""
-    if res is None:
+    """Treillis dessiné : avec efforts si le calcul date de la saisie actuelle, sinon aperçu de la saisie."""
+    if res is None or not state.is_current("Tr"):
         try:
             return other_plots.truss(compute._readTruss(saisie))
         except Exception as err:  # saisie incomplète : l'aperçu est seulement omis
@@ -123,10 +123,19 @@ with gauche:
     widgets.synthese_resultat("Tr", synthese)
 
 with droite:
-    widgets.validation_button("Tr")
     resultat = state.result("Tr")
     figure = _figure(resultat)
     if figure is not None:
         widgets.plot(figure)
+    if resultat is None:
+        st.caption(
+            "Aperçu du treillis saisi, mis à jour à chaque modification. Cliquez sur « Calculer » pour les efforts."
+        )
+    elif not state.is_current("Tr"):
+        st.caption(
+            "Le dessin suit la saisie. Les efforts et les tableaux datent du dernier « Calculer » : "
+            "cliquez dessus pour les actualiser."
+        )
+    widgets.validation_button("Tr")
     if resultat is not None:
         _resultats(resultat)

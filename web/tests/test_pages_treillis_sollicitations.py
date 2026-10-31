@@ -150,3 +150,12 @@ def test_valeurs_cles_sous_calculer(nom):
     next(b for b in at.button if b.label == "Calculer").click().run()
     assert not at.exception
     assert len(at.metric) >= 1
+
+
+def test_dessin_du_treillis_suit_la_saisie_apres_un_calcul():
+    at = _page("treillis")
+    next(b for b in at.button if b.label == "Calculer").click().run()
+    assert not any("Le dessin suit la saisie" in c.value for c in at.caption)
+    at.number_input(key="Tr.E").set_value(150.0).run()
+    assert not at.exception
+    assert any("Le dessin suit la saisie" in c.value for c in at.caption)

@@ -571,16 +571,28 @@ def _saisie_fatigue() -> None:
 
 
 def _schema(res: dict | None) -> None:
-    """Schéma de la poutre : avec réactions après calcul, sinon aperçu de la saisie (sol=None)."""
+    """Schéma de la poutre : avec réactions si le calcul date de la saisie actuelle, sinon aperçu de la saisie."""
+    a_jour = res is not None and state.is_current("Beam")
     try:
-        if res is None:
-            fig = beam_plots.beamSchematic(beam_services.buildBeamModel(saisie, dm), None)
-        else:
+        if a_jour:
             fig = beam_plots.beamSchematic(res["model"], res["sol"])
+        else:
+            fig = beam_plots.beamSchematic(beam_services.buildBeamModel(saisie, dm), None)
     except Exception as err:  # saisie incomplète : l'aperçu est seulement omis
         st.caption(f"Aperçu indisponible : {err}")
         return
     widgets.plot(fig)
+    if res is None:
+        if st.session_state.get("Beam_etat") is None:
+            st.caption(
+                "Aperçu de la poutre saisie, mis à jour à chaque modification. "
+                "Cliquez sur « Calculer » pour les diagrammes et les résultats."
+            )
+    elif not a_jour:
+        st.caption(
+            "Le schéma suit la saisie. Les diagrammes et les résultats datent du dernier « Calculer » : "
+            "cliquez dessus pour les actualiser."
+        )
 
 
 def _equations_par_troncon(sol: dict, comps: list[str]) -> None:
@@ -628,11 +640,8 @@ def _synthese(res: dict) -> list[dict]:
 
 
 def _resultats(res: dict | None) -> None:
-    """Ligne d'état, graphiques (empilés ou en onglets), onglets de résultats (ceux des calculs faits)."""
+    """Graphiques (schéma en premier), ligne d'état, dossier de validation, onglets de résultats."""
     r = state.result
-    texte, ok = st.session_state.get("Beam_etat", (None, None))
-    if texte:
-        widgets.status(texte, ok)
     graphes = [("Schéma", lambda: _schema(res))]
     tables = []
     if res is not None:
@@ -666,6 +675,10 @@ def _resultats(res: dict | None) -> None:
     if r("BeamFat") is not None:
         tables.append(("Fatigue", lambda: _table(r("BeamFat")[1])))
     tables = widgets.graphs("Beam_graphes_onglets", graphes, dessous=("Équations par tronçon",)) + tables
+    texte, ok = st.session_state.get("Beam_etat", (None, None))
+    if texte:
+        widgets.status(texte, ok)
+    widgets.validation_button("Beam")
     if tables:
         widgets.tabs(tables)
 
@@ -733,7 +746,4 @@ with gauche:
     _affiche_message()
 
 with droite:
-    widgets.validation_button("Beam")
-    if state.result("Beam") is None and st.session_state.get("Beam_etat") is None:
-        st.info("Aperçu de la poutre saisie. Cliquez sur « Calculer » pour les diagrammes et les résultats.")
     _resultats(state.result("Beam"))

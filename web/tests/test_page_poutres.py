@@ -244,3 +244,17 @@ def test_mode_compact_formulaire_derriere_un_bouton():
     assert "Formulaire rapide" not in [s.value for s in at.sidebar.subheader]
     at = AppTest.from_file(PAGE, default_timeout=60).run()
     assert "Formulaire rapide" in [s.value for s in at.sidebar.subheader]
+
+
+def test_schema_suit_la_saisie_apres_un_calcul():
+    """Après « Calculer », changer L met le schéma à jour (aperçu) et signale que les résultats datent du calcul."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _bouton(at, "Charger l'exemple").click().run()
+    _bouton(at, "Calculer").click().run()
+    textes = [c.value for c in at.caption]
+    assert not any("Le schéma suit la saisie" in t for t in textes)
+    at.number_input(key="Beam.L").set_value(8.0).run()
+    assert not at.exception
+    assert any("Le schéma suit la saisie" in c.value for c in at.caption)
+    _bouton(at, "Calculer").click().run()
+    assert not any("Le schéma suit la saisie" in c.value for c in at.caption)

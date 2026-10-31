@@ -30,8 +30,16 @@ def saisie(tab: str) -> dict:
 
 
 def set_result(tab: str, res: dict) -> None:
-    """Enregistre le dernier résultat de calcul de l'onglet `tab`."""
+    """Enregistre le dernier résultat de calcul de l'onglet `tab` et la saisie qui l'a donné (voir is_current)."""
     st.session_state["res"][tab] = res
+    st.session_state[f"saisie_calculee_{tab}"] = repr(st.session_state["saisie"].get(tab))
+
+
+def is_current(tab: str) -> bool:
+    """Vrai si l'onglet `tab` a un résultat calculé avec la saisie actuelle (sinon la saisie a changé depuis)."""
+    return result(tab) is not None and st.session_state.get(f"saisie_calculee_{tab}") == repr(
+        st.session_state["saisie"].get(tab)
+    )
 
 
 def result(tab: str) -> dict | None:

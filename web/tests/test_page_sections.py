@@ -65,3 +65,10 @@ def test_efforts_de_la_poutre():
     at.number_input(key="Sec.s0").set_value(99.0).run()
     _bouton(at, "Efforts en s").click().run()
     assert len(at.error) == 1  # abscisse hors de la poutre : message, pas d'exception
+
+
+def test_apercu_de_la_section_avant_le_calcul_puis_dessin_a_jour():
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    assert not at.exception
+    assert "Section" in [s.value for s in at.subheader]
+    assert any("Aperçu mis à jour" in c.value for c in at.caption)
