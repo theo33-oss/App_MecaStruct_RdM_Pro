@@ -235,15 +235,16 @@ def test_synthese_sous_le_bouton_calculer():
 
 
 def test_mode_compact_formulaire_derriere_un_bouton():
-    """Mode compact : plus de « Formulaire rapide » dans la barre latérale, un bouton « Formulaire » à la place."""
+    """Mode compact : un bouton « Formulaire » (tiroir). PC : panneau repliable « Formulaire rapide » à droite."""
     at = AppTest.from_file(PAGE, default_timeout=60)
     at.session_state["vue"] = "telephone"
     at.run()
     assert not at.exception
     assert "Formulaire" in [b.label for b in at.button]
-    assert "Formulaire rapide" not in [s.value for s in at.sidebar.subheader]
+    assert "Formulaire rapide" not in [e.label for e in at.expander]
     at = AppTest.from_file(PAGE, default_timeout=60).run()
-    assert "Formulaire rapide" in [s.value for s in at.sidebar.subheader]
+    assert "Formulaire rapide" in [e.label for e in at.expander]
+    assert "Formulaire rapide" not in [s.value for s in at.sidebar.subheader]
 
 
 def test_schema_suit_la_saisie_apres_un_calcul():
