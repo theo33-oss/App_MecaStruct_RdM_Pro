@@ -17,11 +17,9 @@ pages = {
     "🧮 Calcul": [
         st.Page("app_pages/poutres.py", title="Poutres", icon="📏"),
         st.Page("app_pages/treillis.py", title="Treillis", icon="🔺"),
+        st.Page("app_pages/sections.py", title="Sections", icon="🟦"),
         st.Page("app_pages/sollicitations.py", title="Sollicitations", icon="🔩"),
         st.Page("app_pages/flambage.py", title="Flambage", icon="📐"),
-    ],
-    "🧱 Matériau & section": [
-        st.Page("app_pages/sections.py", title="Sections", icon="🟦"),
         st.Page("app_pages/tenseurs.py", title="Tenseurs & critères", icon="⭕"),
         st.Page("app_pages/hooke_jauges.py", title="Hooke & jauges", icon="📈"),
     ],

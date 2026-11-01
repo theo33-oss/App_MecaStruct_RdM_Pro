@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from app_pages.exemples_3d import EXPLICATIONS, exemples
 from mecastruct.core import frame3d
 from mecastruct.core.errors import MecaStructError
 from mecastruct.ui import widgets
@@ -30,18 +31,6 @@ TABLES = ("noeuds", "pieces", "charges_nodales", "charges_reparties")
 C_STRUCTURE, C_DEFORMEE, C_APPUI, C_CHARGE = "#1E1B2E", "#6E56CF", "#009E73", "#E69F00"
 # repère global dessiné à l'origine : X rouge, Y vert, Z bleu (convention des logiciels de CAO)
 C_AXES = {"X": "#D55E00", "Y": "#009E73", "Z": "#0072B2"}
-EXPLICATIONS = {
-    "Console": "Poutre IPE 200 de 2 m encastrée à un bout, libre à l'autre, force de 10 kN vers le bas en bout : "
-    "le cas de base, flèche P·L³/(3·E·I).",
-    "Potence en L": "Poteau tube vertical de 3 m encastré au sol, bras horizontal de 1,5 m : la charge en bout fait "
-    "fléchir le bras et tordre le poteau.",
-    "Portique 3D": "Quatre poteaux HEB 200 encastrés et quatre poutres IPE 200 en cadre à 3 m, charge répartie sur "
-    "les poutres et poussée horizontale.",
-    "Table 4 pieds": "Plateau en cadre rectangulaire sur 4 pieds ronds posés sur rotules, charges sur les coins et "
-    "poussée latérale : les pieds travaillent en flexion.",
-    "Hangar contreventé": "Cas d'école complexe : 3 portiques à deux pentes reliés par des pannes, croix de "
-    "Saint-André (barres articulées) dans la première travée, neige et vent.",
-}
 
 
 def _nombre(label: str, **kw) -> st.column_config.NumberColumn:
@@ -98,54 +87,6 @@ def _colonnes(dm) -> dict[str, dict]:
 # ------------------------------------------------------------------ exemples → tableaux
 
 
-def _hangar() -> dict:
-    """Hangar 8 m × 10 m : 3 portiques à deux pentes (poteaux HEB 200, arbalétriers IPE 240), pannes IPE 160,
-    croix de Saint-André en ronds de 20 mm articulés dans les deux long-pans de la première travée."""
-    dm = st.session_state["dm"]
-    acier = dm.getMaterial("S235")
-    mat = {"E": acier["E"], "G": acier["G"], "rho": acier["rho"]}
-    poteau, arba, panne = (
-        frame3d._profil(dm, "HEB", 200),
-        frame3d._profil(dm, "IPE", 240),
-        frame3d._profil(dm, "IPE", 160),
-    )
-    croix = frame3d.sectionRond(0.02)
-    profil = [(0, 0), (0, 4), (4, 5.5), (8, 4), (8, 0)]  # pied gauche, rive, faîtage, rive, pied droit (x, z en m)
-    noeuds, elements = [], []
-    for k in range(3):
-        for i, (x, z) in enumerate(profil):
-            noeuds.append(
-                {"id": 10 * k + i + 1, "x": x, "y": 5.0 * k, "z": z, "appui": "encastrement" if z == 0 else "libre"}
-            )
-
-    def el(ni, nj, sec, **kw):
-        elements.append({"id": len(elements) + 1, "ni": ni, "nj": nj, **mat, **sec, **kw})
-
-    for k in range(3):
-        b = 10 * k
-        el(b + 1, b + 2, poteau), el(b + 5, b + 4, poteau)
-        el(b + 2, b + 3, arba), el(b + 3, b + 4, arba)
-    for k in range(2):  # pannes de rive et de faîtage entre portiques voisins
-        for i in (2, 3, 4):
-            el(10 * k + i, 10 * (k + 1) + i, panne)
-    art = {"liaison_i": "articulee", "liaison_j": "articulee"}
-    for pied, rive in ((1, 2), (5, 4)):  # croix de Saint-André dans les long-pans, première travée
-        el(pied, 10 + rive, croix, **art), el(10 + pied, rive, croix, **art)
-    arbas = [e["id"] for e in elements if e["Iy"] == arba["Iy"]]
-    return {
-        "noeuds": noeuds,
-        "elements": elements,
-        "charges_reparties": [{"element": i, "qz": -6e3} for i in arbas],  # neige : 6 kN/m sur les arbalétriers
-        "charges_nodales": [{"noeud": 10 * k + 2, "Fx": 5e3} for k in range(3)],  # vent sur le long-pan gauche
-        "poids_propre": True,
-    }
-
-
-def _exemples() -> dict[str, dict]:
-    """Exemples du moteur frame3d, plus le cas d'école complexe de la page."""
-    return {**frame3d.exemples(), "Hangar contreventé": _hangar()}
-
-
 def _perso(e: dict) -> str:
     """Section d'un exemple en saisie « perso » (mm², mm⁴, mm³)."""
     echelles = {"A": 1e6, "Iy": 1e12, "Iz": 1e12, "J": 1e12, "Wy": 1e9, "Wz": 1e9, "Wt": 1e9}
@@ -153,8 +94,8 @@ def _perso(e: dict) -> str:
 
 
 def _tables_exemple(nom: str, dm) -> dict[str, pd.DataFrame]:
-    """Les quatre tableaux de saisie remplis avec l'exemple `nom` (voir _exemples)."""
-    d = _exemples()[nom]
+    """Les quatre tableaux de saisie remplis avec l'exemple `nom` (voir exemples_3d.exemples)."""
+    d = exemples(dm)[nom]
     mat = dm.getMaterial("S235")["Name"]  # matériau des exemples de frame3d
     noeuds = [
         {
@@ -198,7 +139,7 @@ def _charge_exemple() -> None:
     for k, df in _tables_exemple(nom, st.session_state["dm"]).items():
         st.session_state[f"p3d.src.{k}"] = df
         st.session_state.pop(f"p3d.{k}", None)  # l'éditeur repart du nouveau tableau
-    st.session_state["p3d.pp"] = bool(_exemples()[nom].get("poids_propre", False))
+    st.session_state["p3d.pp"] = bool(exemples(st.session_state["dm"])[nom].get("poids_propre", False))
     st.session_state.pop("p3d.res", None)
 
 
@@ -559,7 +500,7 @@ def _materiaux(pieces: pd.DataFrame, dm) -> None:
 def page_ossature_3d() -> None:
     """Mode « Ossature 3D » : tableaux de saisie, bouton Calculer, vue 3D et onglets de résultats."""
     dm = st.session_state["dm"]
-    noms = list(_exemples())
+    noms = list(exemples(dm))
     if "p3d.src.noeuds" not in st.session_state:
         st.session_state["p3d.exemple"] = st.session_state.get("p3d.exemple", noms[0])
         _charge_exemple()
