@@ -64,6 +64,10 @@ def _materiaux() -> None:
         ),
         hide_index=True,
     )
+    st.caption(
+        "Les matériaux dont l'auteur est « Base complémentaire » viennent d'un rapport de synthèse (2026). "
+        "Ce sont des valeurs typiques, à vérifier sur la fiche matière du fournisseur avant un usage professionnel."
+    )
 
     with st.form("form_materiau"):
         st.subheader("Ajouter un matériau utilisateur")
