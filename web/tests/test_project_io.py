@@ -35,9 +35,9 @@ def test_aller_retour_probleme(tab):
 
 
 def test_numpy_et_dataframe_convertis():
-    saisie = {"v": np.array([1.0, 2.0]), "x": np.float64(3.5), "t": pd.DataFrame({"a": [1, 2]})}
+    saisie = {"v": np.array([1.0, 2.0]), "x": np.float64(3.5), "tableau": pd.DataFrame({"a": [1, 2]})}
     _, relu = project_io.problemFromJson(project_io.problemToJson("Sec", saisie))
-    assert relu == {"v": [1.0, 2.0], "x": 3.5, "t": [{"a": 1}, {"a": 2}]}
+    assert relu == {"v": [1.0, 2.0], "x": 3.5, "tableau": [{"a": 1}, {"a": 2}]}
 
 
 def test_aller_retour_projet():
