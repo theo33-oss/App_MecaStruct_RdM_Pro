@@ -93,7 +93,7 @@ def _efforts_poutre(mode: str) -> None:
     )
     r = state.result("Sec")
     beam = state.saisie("Beam")
-    if r is not None and beam["section"] != r["result"]["sec"]:
+    if r is not None:  # pas de != sur les sections : une section composée contient des tableaux NumPy
         iz_sec = r["result"]["P"]["Iz"] * 1e12
         if abs(beam["Iz"] - iz_sec) > 1e-3 * iz_sec:
             msg += (
