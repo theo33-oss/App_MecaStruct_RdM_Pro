@@ -155,6 +155,41 @@ def test_blocage_automatique_rotations():
     assert len(r["blocages_auto"]) == 2 and all(b["noeud"] == 2 for b in r["blocages_auto"])
     assert any("Blocage automatique" in ligne for ligne in r["rapport"])
     assert r["equilibre"]["ok"]
+    assert 2 not in r["reactions"]  # le nœud bloqué automatiquement n'est pas un appui
+
+
+def test_moment_sur_rotule_refuse():
+    """Un moment sur un nœud où toutes les pièces sont articulées n'est pas repris par un faux appui."""
+    d = {
+        "noeuds": [noeud(1, 0, appui="encastrement"), noeud(2, 2.0), noeud(3, 4.0, appui="encastrement")],
+        "elements": [element(1, 1, 2, liaison_j="articulee"), element(2, 2, 3, liaison_i="articulee")],
+        "charges_nodales": [{"noeud": 2, "My": 500.0}],
+    }
+    with pytest.raises(frame3d.FrameMechanismError, match="rotule au nœud 2"):
+        frame3d.solveFrame3D(d)
+
+
+def test_treillis_articule_aux_deux_bouts():
+    """Triangle de barres articulées aux deux bouts : stable (efforts normaux de la statique), pas un mécanisme."""
+    a, P = 1.0, 1e3
+    d = {
+        "noeuds": [
+            noeud(1, 0, appui="rotule"),
+            noeud(2, 2 * a, appui="rotule"),
+            noeud(3, a, z=a, appui="perso", ddl=[False, True, False, False, False, False]),
+        ],
+        "elements": [
+            element(k, i, j, liaison_i="articulee", liaison_j="articulee")
+            for k, (i, j) in enumerate([(1, 2), (2, 3), (3, 1)], start=1)
+        ],
+        "charges_nodales": [{"noeud": 3, "Fz": -P}],
+    }
+    r = frame3d.solveFrame3D(d)
+    assert r["equilibre"]["ok"]
+    for k in (2, 3):  # barres à 45° : compression P/√2
+        assert r["efforts"][k]["N"][0] == pytest.approx(-P / math.sqrt(2), rel=REL)
+        assert max(abs(x) for x in r["efforts"][k]["My"] + r["efforts"][k]["T"]) < 1e-9 * P
+    assert any("torsion non transmise" in ligne for ligne in r["rapport"])
 
 
 # ------------------------------------------------------------------ 8 : exemples

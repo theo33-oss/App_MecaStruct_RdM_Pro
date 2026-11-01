@@ -480,6 +480,7 @@ def page_ossature_3d() -> None:
             try:
                 data = _donnees(tables, pp, dm)
                 res = frame3d.solveFrame3D(data)
+                res.pop("K", None)  # 11 Mo pour 200 nœuds, inutile à la page : pas gardé en session
             except (ValueError, frame3d.FrameMechanismError) as err:
                 st.error(str(err))
             else:

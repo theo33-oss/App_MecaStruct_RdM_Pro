@@ -312,6 +312,8 @@ def _preparer(e: dict) -> None:
     T = np.kron(np.eye(4), R)
     e["qloc"] = R @ e["q"]
     rel = ([4, 5] if e["liaison_i"] == "articulee" else []) + ([10, 11] if e["liaison_j"] == "articulee" else [])
+    if len(rel) == 4:  # articulée aux deux bouts : sinon la barre tourne librement sur son axe (mécanisme)
+        rel.append(9)
     e["klc"], e["flc"] = _condense(_kLocal(e), _fLocal(e["qloc"], e["L"]), rel)
     e["T"], e["kg"], e["fg"] = T, T.T @ e["klc"] @ T, T.T @ e["flc"]
     e["dofs"] = np.r_[6 * e["i"] : 6 * e["i"] + 6, 6 * e["j"] : 6 * e["j"] + 6]
@@ -451,13 +453,17 @@ def solveFrame3D(data: dict) -> dict:
     for _, idx, vec in auto:
         u[idx] -= vec * (vec @ u[idx])
     R = K @ u - F
-    garde = bloque.copy()
-    for _, idx, _ in auto:
-        garde[idx] = True
-    R[~garde] = 0.0
+    echelle = max(float(np.abs(F).max()), 1.0)
+    for k, idx, vec in auto:  # un blocage automatique ne doit rien reprendre : sinon c'est un faux appui
+        if abs(vec @ R[idx]) > 1e-9 * echelle:
+            raise FrameMechanismError(
+                f"Moment appliqué sur une rotule au nœud {ids[k]!r} ({_direction(idx, vec)}) : aucune pièce ne peut "
+                "le reprendre (toutes y sont articulées). Rendez une liaison rigide ou déplacez le moment."
+            )
+    R[~bloque] = 0.0
 
     depl = {ids[k]: u[6 * k : 6 * k + 6].tolist() for k in range(n)}
-    appuis = [k for k in range(n) if garde[6 * k : 6 * k + 6].any()]
+    appuis = [k for k in range(n) if bloque[6 * k : 6 * k + 6].any()]
     reac = {ids[k]: R[6 * k : 6 * k + 6].tolist() for k in appuis}
     efforts, contr, fext = {}, {}, {}
     for e in m["elements"]:
@@ -525,7 +531,12 @@ def _rapport(m: dict, res: dict, auto: list) -> tuple[list[str], list[str]]:
             f"  {e['id']!r} : {ids[e['i']]!r} → {ids[e['j']]!r}, L = {_num(e['L'])} m, E = {_num(e['E'])} Pa, "
             f"G = {_num(e['G'])} Pa, A = {_num(e['A'])} m², Iy = {_num(e['Iy'])} m⁴, Iz = {_num(e['Iz'])} m⁴, "
             f"J = {_num(e['J'])} m⁴, q global = {_vec(e['q'])} N/m"
-            + (f", articulé ({', '.join(lib)}) : θy et θz relâchés, torsion transmise" if lib else "")
+            + (f", articulé ({', '.join(lib)}) : θy et θz relâchés, torsion transmise" if len(lib) == 1 else "")
+            + (
+                ", articulé aux deux bouts : θy, θz relâchés et torsion non transmise (barre de treillis)"
+                if len(lib) == 2
+                else ""
+            )
         )
     for k, idx, vec in auto:
         rep.append(
