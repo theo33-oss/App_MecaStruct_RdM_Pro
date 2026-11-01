@@ -679,6 +679,7 @@ def _resultats(res: dict | None) -> None:
     if texte:
         widgets.status(texte, ok)
     widgets.validation_button("Beam")
+    widgets.explanation_panel("Beam")
     if tables:
         widgets.tabs(tables)
 

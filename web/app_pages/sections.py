@@ -273,3 +273,4 @@ with droite:
     else:
         _resultats(r["result"], r["tables"], r["status"], state.is_current("Sec"))
     widgets.validation_button("Sec")
+    widgets.explanation_panel("Sec")

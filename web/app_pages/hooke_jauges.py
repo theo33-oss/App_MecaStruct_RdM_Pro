@@ -178,4 +178,5 @@ for onglet, (_, fiche, tab, saisie_fn, resultats_fn) in zip(onglets, ONGLETS, st
             widgets.synthese_resultat(tab, synthese)
         with droite:
             widgets.validation_button(tab)
+            widgets.explanation_panel(tab)
             resultats_fn()

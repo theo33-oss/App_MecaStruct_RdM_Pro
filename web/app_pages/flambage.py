@@ -121,5 +121,6 @@ with gauche:
 
 with droite:
     widgets.validation_button("Fla")
+    widgets.explanation_panel("Fla")
     if state.result("Fla") is not None:
         _resultats(state.result("Fla"))

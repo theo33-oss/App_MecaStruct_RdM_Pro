@@ -3540,3 +3540,18 @@ def fileName(key: str, now: datetime | None = None) -> str:
     now = now or datetime.now()
     titre = re.sub(r"[^A-Za-z0-9]+", "_", meta(key)["title"])
     return f"Validation_{titre}_{now:%Y%m%d_%H%M%S}.html"
+
+
+def explanationRows(key: str, saisie: dict, res: dict, dm) -> list[dict]:
+    """Lignes « équation avec valeurs » de l'onglet `key`, avec contrôle à la main (titres de groupe sans contrôle)."""
+    return _handRows(key, saisie, res, dm, withExtras=True)
+
+
+def explanationVerdict(row: dict) -> tuple[float, bool]:
+    """(écart absolu, concordance) d'une ligne renvoyée par explanationRows."""
+    return _verdict(row)
+
+
+def solverEquations(key: str, res: dict) -> list[tuple[str, list[str]]]:
+    """Équations écrites par le solveur pour l'onglet `key` : liste de (nom, formules LaTeX)."""
+    return _latexBlocks(key, res)

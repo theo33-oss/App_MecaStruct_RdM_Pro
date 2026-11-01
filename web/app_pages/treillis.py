@@ -137,5 +137,6 @@ with droite:
             "cliquez dessus pour les actualiser."
         )
     widgets.validation_button("Tr")
+    widgets.explanation_panel("Tr")
     if resultat is not None:
         _resultats(resultat)

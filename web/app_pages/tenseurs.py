@@ -113,5 +113,6 @@ with gauche:
 
 with droite:
     widgets.validation_button("Ten")
+    widgets.explanation_panel("Ten")
     if state.result("Ten") is not None:
         _resultats(state.result("Ten"))

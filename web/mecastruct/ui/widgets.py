@@ -4,6 +4,7 @@ Chaque champ est lié à saisie[onglet][champ] par sa clé de widget « onglet.c
 dans la saisie à chaque passage.
 """
 
+import copy
 import math
 import re
 from collections.abc import Callable
@@ -653,3 +654,49 @@ def validation_button(tab: str) -> None:
             f"Dossier généré à {heure} avec la saisie de ce moment. Formules affichées par MathJax (connexion "
             "Internet requise). Pour un PDF : ouvrir le fichier, Imprimer → Enregistrer en PDF."
         )
+
+
+def explanation_panel(tab: str) -> None:
+    """Panneau « Explications du calcul » : équations appliquées aux données de l'utilisateur, avec les valeurs."""
+    if not st.toggle("Explications du calcul", key=f"explication.{tab}.visible", value=not is_compact()):
+        return
+    res = state.result(tab)
+    if res is None:
+        st.info("Cliquez sur « Calculer » pour voir les équations appliquées à vos données.")
+        return
+    q = st.session_state
+    try:
+        cache = q.get(f"explication.{tab}.cache")
+        if cache is None or cache[0] != id(res):
+            saisie = copy.deepcopy(state.saisie(tab))  # copie : le panneau ne modifie pas la saisie de la page
+            # section de la page Sections, comme au calcul
+            if tab in ("Cis", "Fle") and state.result("Sec") is not None:
+                saisie["section"] = state.result("Sec")["result"]["sec"]
+            calc = validation_report.recompute(tab, saisie, q["dm"], _extras_precedents(tab))
+            rows = validation_report.explanationRows(tab, saisie, calc, q["dm"])
+            cache = (id(res), rows, validation_report.solverEquations(tab, calc))
+            q[f"explication.{tab}.cache"] = cache
+        _, rows, blocks = cache
+        cadre = st.expander("Explications du calcul", expanded=False) if is_compact() else st.container(border=True)
+        with cadre:
+            st.markdown("**Équations appliquées à vos données**")
+            for row in rows:
+                if row["hand"] is None:  # titre de groupe
+                    st.markdown(f"**{row['label']}**")
+                    continue
+                st.markdown(row["label"])
+                st.latex(row["latex"])
+                ecart, ok = validation_report.explanationVerdict(row)
+                if ok:
+                    legende = f"Concorde avec le solveur : {row['solver']:.6g} {row['unit']}"
+                else:
+                    legende = f"Écart avec le solveur : {ecart:.3g} {row['unit']} (solveur : {row['solver']:.6g})"
+                st.caption(legende)
+        # hors du cadre : un st.expander ne peut pas être imbriqué dans celui du mode compact
+        with st.expander("Équations écrites par le solveur", expanded=False):
+            for nom, formules in blocks:
+                st.markdown(f"**{nom}**")
+                for f in formules:
+                    st.latex(f.strip().strip("$"))
+    except Exception as err:
+        st.warning(f"Explications indisponibles pour ce calcul : {err}")
