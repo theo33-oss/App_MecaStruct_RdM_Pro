@@ -83,3 +83,8 @@ with st.expander("Auteur et sources"):
         "- Tables de profilés Eurocode 3 et fabricants : dimensions et caractéristiques des profilés.\n"
         "- MathJax (cdnjs) : affichage des formules."
     )
+
+st.caption(
+    "Outil pédagogique et d'aide au pré-dimensionnement. Les résultats ne remplacent ni une note de calcul certifiée "
+    "ni les normes en vigueur et doivent être vérifiés avant tout usage réel."
+)
