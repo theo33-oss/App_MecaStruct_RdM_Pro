@@ -4,3 +4,9 @@ userdata/
 *.autosave
 slprj/
 docs/.status/
+
+# secrets et clés : jamais dans le dépôt
+.env
+.streamlit/secrets.toml
+*.pem
+*.key
