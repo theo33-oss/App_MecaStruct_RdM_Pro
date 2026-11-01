@@ -17,6 +17,7 @@ from mecastruct.core import kt_mohr
 from mecastruct.core.errors import MecaStructError
 from mecastruct.plots.other_plots import ktChart
 from mecastruct.services import compute
+from mecastruct.services.limits import checkLimits
 from mecastruct.ui import state
 from mecastruct.ui.widgets import error_box, plot
 
@@ -250,13 +251,18 @@ def _donnees_utilisateur() -> None:
     fichier = st.file_uploader("Recharger mes ajouts", type="json", key="donnees_fichier")
     if fichier is not None and st.button("Importer ce fichier", key="donnees_importer"):
         try:
-            n = dm.importUserData(json.load(fichier))
+            donnees = json.load(fichier)
+            if isinstance(donnees, dict):
+                checkLimits(donnees)
+            n = dm.importUserData(donnees)
             _message_suivant(f"{n} ajout(s) importé(s).")
             st.rerun()
         except MecaStructError as err:
             error_box(err)
         except json.JSONDecodeError:
             st.error("Fichier illisible : ce n'est pas un fichier JSON valide.")
+        except (KeyError, TypeError, AttributeError):
+            st.error("Fichier invalide : la structure attendue (matériaux, profilés, matage) n'est pas respectée.")
 
 
 def _documents() -> None:
