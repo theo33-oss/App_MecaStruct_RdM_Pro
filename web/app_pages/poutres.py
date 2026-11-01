@@ -530,6 +530,7 @@ def _saisie_eurocode() -> None:
         format_func={"courant": "Dernier « Calculer »", "enveloppe": "Enveloppe des combinaisons"}.get,
     )
     st.caption(NON_VERIFIE)
+    st.caption("E du matériau choisi : 190 GPa pour les aciers du cours ; l'EN 1993-1-1 (§3.2.6) prend 210 GPa.")
     if st.button("Vérifier selon l'Eurocode 3", key="Beam_bec3"):
         source = "enveloppe" if saisie["ecsrc"] == "enveloppe" else "poutre"
         r = _essaie("BeamEC3", lambda: beam_design.checkEurocode(saisie, dm, source))

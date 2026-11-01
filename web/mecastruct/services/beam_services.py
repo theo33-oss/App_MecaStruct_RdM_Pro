@@ -694,32 +694,3 @@ def addQuickLoad(
     new = copy.deepcopy(saisie)
     new["dl"].append({"a": a, "b": b, "dir": direction, "type": type_, "vals": text, "name": "", "case": case})
     return new
-
-
-def effortSheets(sol: dict) -> dict[str, pd.DataFrame]:
-    """Feuilles « Enveloppe » (max et min de chaque effort) et « Efforts » (valeurs le long de la poutre).
-
-    Entrée : `sol` (sortie de solveBeam). Sortie : dict nom → DataFrame, en kN et kN·m.
-    """
-    comps = ["N", "Ty", "Tz", "Mt", "Mfy", "Mfz"]
-    unit = ["kN", "kN", "kN", "kN·m", "kN·m", "kN·m"]
-    rows = []
-    for c, u in zip(comps, unit, strict=True):
-        e = sol["extrema"][c]
-        rows.append(
-            {
-                "Effort": c,
-                "Unité": u,
-                "Max": e["max"] / 1e3,
-                "s du max (m)": e["sMax"],
-                "Min": e["min"] / 1e3,
-                "s du min (m)": e["sMin"],
-            }
-        )
-    env = pd.DataFrame(rows)
-    L = float(sol["N"].breaks[-1])
-    s = np.unique(np.concatenate([np.linspace(0.0, L, 201), np.asarray(sol["N"].breaks, dtype=float)]))
-    eff = pd.DataFrame({"s (m)": s})
-    for c, u in zip(comps, unit, strict=True):
-        eff[f"{c} ({u})"] = ppEval(sol[c], s) / 1e3
-    return {"Enveloppe": env, "Efforts": eff}

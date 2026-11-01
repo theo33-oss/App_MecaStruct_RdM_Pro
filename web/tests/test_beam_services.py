@@ -22,8 +22,8 @@ from mecastruct.services.beam_services import (
     computeCombinations,
     defaultBeamInput,
     distCoeffs,
-    effortSheets,
 )
+from mecastruct.services.project_io import beamEffortSheets
 
 
 @pytest.fixture(scope="module")
@@ -261,10 +261,10 @@ def test_beamCheck_point_et_rapport(dm):
     assert math.isfinite(chk["bend"]["sigmaMaxKt"])
 
 
-def test_effortSheets(dm):
+def test_beamEffortSheets(dm):
     s = defaultBeamInput()
     sol = computeBeam(s, dm)["sol"]
-    feuilles = effortSheets(sol)
+    feuilles = beamEffortSheets(sol)
     assert list(feuilles["Enveloppe"]["Effort"]) == ["N", "Ty", "Tz", "Mt", "Mfy", "Mfz"]
     assert feuilles["Efforts"]["s (m)"].iloc[-1] == pytest.approx(s["L"])
     assert "Mfz (kN·m)" in feuilles["Efforts"].columns

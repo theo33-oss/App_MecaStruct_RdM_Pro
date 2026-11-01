@@ -5,6 +5,7 @@ addProfileFromForm, computeKt). Unités d'affichage comme MATLAB : GPa, MPa, mm,
 Les ajouts de l'utilisateur ne sont pas conservés sur le serveur : il faut télécharger le fichier JSON.
 """
 
+import copy
 import json
 import math
 from pathlib import Path
@@ -254,12 +255,14 @@ def _donnees_utilisateur() -> None:
             donnees = json.load(fichier)
             if isinstance(donnees, dict):
                 checkLimits(donnees)
-            n = dm.importUserData(donnees)
+            copie = copy.deepcopy(dm)  # tout ou rien : une ligne refusée n'importe pas les précédentes
+            n = copie.importUserData(donnees)
+            st.session_state["dm"] = copie
             _message_suivant(f"{n} ajout(s) importé(s).")
             st.rerun()
         except MecaStructError as err:
             error_box(err)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             st.error("Fichier illisible : ce n'est pas un fichier JSON valide.")
         except (KeyError, TypeError, AttributeError):
             st.error("Fichier invalide : la structure attendue (matériaux, profilés, matage) n'est pas respectée.")

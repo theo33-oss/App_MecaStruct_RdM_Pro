@@ -687,17 +687,20 @@ def explanation_panel(tab: str) -> None:
     if res is None:
         st.info("Cliquez sur « Calculer » pour voir les équations appliquées à vos données.")
         return
+    if not state.is_current(tab):  # le recalcul partirait de la saisie modifiée, pas de celle du résultat
+        st.info("Saisie modifiée depuis le dernier calcul : cliquez sur « Calculer » pour mettre à jour les équations.")
+        return
     q = st.session_state
     try:
         cache = q.get(f"explication.{tab}.cache")
-        if cache is None or cache[0] != id(res):
+        if cache is None or cache[0] is not res:  # l'objet lui-même : un id() peut être réutilisé par Python
             saisie = copy.deepcopy(state.saisie(tab))  # copie : le panneau ne modifie pas la saisie de la page
             # section de la page Sections, comme au calcul
             if tab in ("Cis", "Fle") and state.result("Sec") is not None:
                 saisie["section"] = state.result("Sec")["result"]["sec"]
             calc = validation_report.recompute(tab, saisie, q["dm"], _extras_precedents(tab))
             rows = validation_report.explanationRows(tab, saisie, calc, q["dm"])
-            cache = (id(res), rows, validation_report.solverEquations(tab, calc))
+            cache = (res, rows, validation_report.solverEquations(tab, calc))
             q[f"explication.{tab}.cache"] = cache
         _, rows, blocks = cache
         cadre = st.expander("Explications du calcul", expanded=False) if is_compact() else st.container(border=True)

@@ -47,3 +47,14 @@ def test_equations_affichees_apres_calcul():
     at.toggle(key="explication.Beam.visible").set_value(True).run()
     assert not at.exception
     assert len(at.latex) > 0
+
+
+def test_saisie_modifiee_apres_calcul():
+    """Après un calcul, une saisie modifiée n'affiche pas d'équations calculées avec elle face à l'ancien résultat."""
+    at = AppTest.from_file(PAGE, default_timeout=60)
+    at.session_state["vue"] = "pc"
+    at.run()
+    next(b for b in at.button if b.label == "Calculer").click().run()
+    at.number_input(key="Beam.L").set_value(7.0).run()
+    assert not at.exception
+    assert any(i.value.startswith("Saisie modifiée") for i in at.info)

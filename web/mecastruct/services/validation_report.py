@@ -231,11 +231,6 @@ def _extras(res: dict) -> dict:
     return res.get("extras") or {}
 
 
-def _result(key: str, res: dict) -> dict:
-    """Résultat du moteur : res lui-même pour Poutres (sol, defl, check…), res["result"] ailleurs."""
-    return res if key == "Beam" else res["result"]
-
-
 def _sec(saisie: dict) -> dict | None:
     return saisie.get("section")
 
