@@ -17,6 +17,7 @@ import streamlit as st
 from mecastruct.core.errors import MecaStructError
 from mecastruct.services import compute, project_io, validation_report
 from mecastruct.services.examples import exampleNames, loadExample
+from mecastruct.services.limits import MAX_LIGNES
 from mecastruct.ui import state
 
 # Conseils de correction par fin d'identifiant d'erreur (port de errorHint de MecaStruct_App.m)
@@ -133,6 +134,9 @@ def _modifie_liste(tab: str, champ: str, columns: dict, supprime: int | None) ->
     """Callback : supprime la ligne `supprime`, ou ajoute une ligne par défaut si `supprime` est None."""
     lignes = _lignes_courantes(tab, champ, columns)
     if supprime is None:
+        if len(lignes) >= MAX_LIGNES:
+            st.toast(f"{MAX_LIGNES} lignes au plus par tableau.")
+            return
         lignes.append({col: _defaut(cfg) for col, cfg in columns.items()})
     else:
         del lignes[supprime]
@@ -394,6 +398,25 @@ def _css_visualisation(compact: bool) -> str:
     )
 
 
+def css_menu_gauche() -> str:
+    """Style du menu de gauche replié : bandeau étroit d'icônes qui s'agrandit en survol (au lieu de disparaître).
+
+    Le menu garde son bouton Replier / Déplier ; replié, seul le survol de la souris l'agrandit par-dessus la page.
+    """
+    fond, bord = ("#1A1626", "#6E6590") if _theme_sombre() else ("#E8E4F4", "#8E86AA")
+    s = 'section[data-testid="stSidebar"][data-collapsed="true"]'
+    c = f'{s} [data-testid="stSidebarContent"]'
+    return (
+        f"{s} {{ transform: none !important; width: 3.25rem !important; min-width: 3.25rem !important; "
+        "max-width: 3.25rem !important; } "
+        f"{c} {{ position: fixed; top: 3.75rem; left: 0; z-index: 40; width: 3.25rem; height: calc(100vh - 3.75rem); "
+        f"overflow: hidden; background: {fond}; border-right: 1px solid {bord}; transition: width 0.2s; }} "
+        f"{c}:hover {{ width: 300px; overflow-y: auto; box-shadow: 0 0 1rem rgba(0, 0, 0, 0.3); }} "
+        f'{c} [data-testid="stSidebarHeader"] {{ display: none; }} '
+        f'{c}:not(:hover) span[label], {c}:not(:hover) [data-testid="stNavSectionHeader"] {{ display: none; }}'
+    )
+
+
 def zones(nom: str) -> tuple[Any, Any]:
     """Zones (saisie, visualisation) d'une page de calcul ; `nom` distingue les pages ou onglets d'une même page.
 
@@ -587,7 +610,7 @@ def project_bar() -> None:
         for tab, saisie in saisies.items():
             _applique(tab, saisie)
         if echecs:
-            return "Onglets non restaurés (version différente) : " + ", ".join(echecs)
+            return "Onglets non restaurés (absents, version différente ou contenu invalide) : " + ", ".join(echecs)
         return "Projet ouvert."
 
     if _ouvre("projet", lecture):
