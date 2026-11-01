@@ -7,6 +7,7 @@ computeCombinations, checkEurocode, checkFatigue, findLightestProfile, computeMo
 import numpy as np
 import streamlit as st
 
+from app_pages.poutres_3d import page_ossature_3d
 from mecastruct.core import geometry
 from mecastruct.core.pp import asPP
 from mecastruct.plots import beam_plots
@@ -719,6 +720,9 @@ VOLETS = [
 
 st.title("Poutres")
 formula_panel("equilibre")
+if st.segmented_control("Mode", ["Poutre 2D", "Ossature 3D"], default="Poutre 2D", key="poutres.mode") == "Ossature 3D":
+    page_ossature_3d()
+    st.stop()
 
 gauche, droite = widgets.zones("Beam")
 with gauche:
