@@ -23,6 +23,7 @@ from mecastruct.core.units import toSI
 from mecastruct.services.limits import checkLimits
 
 _ID = "MecaStruct:App:invalidInput"
+MAX_COMBINAISONS = 30  # chaque combinaison est un calcul complet de la poutre
 logger = logging.getLogger(__name__)
 
 BEAM_INPUT_DOC = """Saisie de l'onglet Poutres : un dict dont les clés sont les noms des champs MATLAB (app.H.Beam).
@@ -612,6 +613,10 @@ def computeCombinations(saisie: dict, dm: DataManager) -> pd.DataFrame:
     combo = saisie["combo"]
     if not combo:
         raise MecaStructError(_ID, "Aucune combinaison : ajoutez une ligne au tableau Combinaisons.")
+    if len(combo) > MAX_COMBINAISONS:  # un calcul complet par ligne (≈ 0,2 s) : 200 lignes bloquaient 42 s
+        raise MecaStructError(
+            _ID, f"Trop de combinaisons : {len(combo)} ({MAX_COMBINAISONS} au plus, une dizaine suffit d'habitude)."
+        )
     n = len(combo)
     v = np.full((n, 9), math.nan)
     verdict = []

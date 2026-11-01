@@ -29,16 +29,19 @@ def saisie(tab: str) -> dict:
     return st.session_state["saisie"][tab]
 
 
-def set_result(tab: str, res: dict) -> None:
-    """Enregistre le dernier résultat de calcul de l'onglet `tab` et la saisie qui l'a donné (voir is_current)."""
+def set_result(tab: str, res: dict, source: str | None = None) -> None:
+    """Enregistre le dernier résultat `tab` et la saisie qui l'a donné (voir is_current).
+
+    `source` : onglet dont la saisie a servi, si ce n'est pas `tab` (résultats annexes : « BeamEC3 » vient de « Beam »).
+    """
     st.session_state["res"][tab] = res
-    st.session_state[f"saisie_calculee_{tab}"] = repr(st.session_state["saisie"].get(tab))
+    st.session_state[f"saisie_calculee_{tab}"] = repr(st.session_state["saisie"].get(source or tab))
 
 
-def is_current(tab: str) -> bool:
-    """Vrai si l'onglet `tab` a un résultat calculé avec la saisie actuelle (sinon la saisie a changé depuis)."""
+def is_current(tab: str, source: str | None = None) -> bool:
+    """Vrai si le résultat `tab` a été calculé avec la saisie actuelle de `source` (par défaut `tab`)."""
     return result(tab) is not None and st.session_state.get(f"saisie_calculee_{tab}") == repr(
-        st.session_state["saisie"].get(tab)
+        st.session_state["saisie"].get(source or tab)
     )
 
 

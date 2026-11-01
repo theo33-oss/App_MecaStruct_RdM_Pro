@@ -64,6 +64,10 @@ def test_combinaisons_avec_enveloppe():
     assert not at.exception  # la ligne d'état est rouge : l'ELU de l'exemple ne passe pas
     T = at.session_state["res"]["BeamCombo"]
     assert T["Combinaison"].iloc[-1] == "Enveloppe"
+    labels = [t.label for t in at.tabs]
+    assert "Combinaisons" in labels
+    at.number_input(key="Beam.L").set_value(9.0).run()  # saisie modifiée : l'onglet le signale
+    assert "Combinaisons (saisie modifiée depuis)" in [t.label for t in at.tabs]
 
 
 def test_eurocode_fatigue_et_profile_sur_exemple_ipe():

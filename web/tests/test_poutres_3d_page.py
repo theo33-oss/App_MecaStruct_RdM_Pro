@@ -47,6 +47,14 @@ def test_hangar_contrevente():
     assert not at.exception
 
 
+def test_saisie_modifiee_apres_calcul_signalee():
+    at = _mode_3d(AppTest.from_file(PAGE, default_timeout=60).run(), "Potence en L")
+    _bouton(at, "Calculer").click().run()
+    assert not any(w.value.startswith("Saisie modifiée") for w in at.warning)
+    at.checkbox(key="p3d.pp").set_value(not at.checkbox(key="p3d.pp").value).run()
+    assert any(w.value.startswith("Saisie modifiée") for w in at.warning)
+
+
 def test_mecanisme_affiche_une_erreur():
     at = _mode_3d(AppTest.from_file(PAGE, default_timeout=60).run(), "Potence en L")
     noeuds = at.session_state["p3d.src.noeuds"].copy()

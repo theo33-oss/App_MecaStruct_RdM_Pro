@@ -751,7 +751,9 @@ def explanation_panel(tab: str) -> None:
             # section de la page Sections, comme au calcul
             if tab in ("Cis", "Fle") and state.result("Sec") is not None:
                 saisie["section"] = state.result("Sec")["result"]["sec"]
-            calc = validation_report.recompute(tab, saisie, q["dm"], _extras_precedents(tab))
+            # calcul principal seul (0,2 s) : refaire combinaisons, Eurocode 3, profilés… coûtait 5 s et plus à
+            # chaque « Calculer » ; leurs contrôles restent dans le dossier de validation
+            calc = validation_report.recompute(tab, saisie, q["dm"], None)
             rows = validation_report.explanationRows(tab, saisie, calc, q["dm"])
             cache = (res, rows, validation_report.solverEquations(tab, calc))
             q[f"explication.{tab}.cache"] = cache

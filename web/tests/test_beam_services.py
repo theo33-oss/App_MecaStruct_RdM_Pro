@@ -208,6 +208,13 @@ def test_combinaisons_superposition_et_enveloppe(dm):
     assert enveloppe["Mfz max (kN·m)"] == pytest.approx(T["Mfz max (kN·m)"].iloc[:-1].max())
 
 
+def test_combinaisons_trop_nombreuses_refusees(dm):
+    s = _saisie_G_Q(dm)
+    s["combo"] = s["combo"] * (beam_services.MAX_COMBINAISONS // 2 + 1)
+    with pytest.raises(MecaStructError, match="Trop de combinaisons"):
+        computeCombinations(s, dm)
+
+
 def test_combinaisons_vide_refuse(dm):
     s = defaultBeamInput()
     s["combo"] = []

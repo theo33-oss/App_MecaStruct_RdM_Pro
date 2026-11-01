@@ -31,6 +31,7 @@ ANNEXES = {
     "FR": "France (NF EN 1993-1-1/NA)",
     "autre": "Autre : saisir γM0 et γM1",
 }
+ANNEXES_CLES = ("BeamCombo", "BeamMov", "BeamProf", "BeamEC3", "BeamFat")  # résultats des volets du bas
 NON_VERIFIE = (
     "Non vérifiés : voilement sous charges concentrées, flexion déviée, ELS, classe 4 ; annexe nationale : seules "
     "γM0 et γM1 sont paramétrables."
@@ -90,7 +91,7 @@ def _essaie(cle: str, travail):
         widgets.error_box(err)
         st.session_state["res"].pop(cle, None)
         return None
-    state.set_result(cle, valeur)
+    state.set_result(cle, valeur, source="Beam")
     return valeur
 
 
@@ -664,18 +665,27 @@ def _resultats(res: dict | None) -> None:
             ("Énergie", lambda: _table(t["Énergie"])),
             ("Contraintes", lambda: _table(t["Contraintes"])),
         ]
+
+    def titre(nom: str, cle: str) -> str:  # résultat annexe d'une saisie plus ancienne : signalé dans l'onglet
+        return nom if state.is_current(cle, source="Beam") else f"{nom} (saisie modifiée depuis)"
+
     if r("BeamCombo") is not None:
         graphes.append(("Combinaisons", lambda: widgets.plot(beam_plots.combinations(r("BeamCombo")))))
-        tables.append(("Combinaisons", lambda: _table(r("BeamCombo"))))
+        tables.append((titre("Combinaisons", "BeamCombo"), lambda: _table(r("BeamCombo"))))
     if r("BeamMov") is not None:
         graphes.append(("Charge mobile", lambda: widgets.plot(beam_plots.movingEnvelope(r("BeamMov")[1]))))
-        tables.append(("Charge mobile", lambda: _table(r("BeamMov")[0])))
+        tables.append((titre("Charge mobile", "BeamMov"), lambda: _table(r("BeamMov")[0])))
     if r("BeamProf") is not None:
-        tables.append(("Profilés", _affiche_profiles))
+        tables.append((titre("Profilés", "BeamProf"), _affiche_profiles))
     if r("BeamEC3") is not None:
-        tables.append(("Eurocode 3", lambda: _table(r("BeamEC3")[1])))
+        tables.append((titre("Eurocode 3", "BeamEC3"), lambda: _table(r("BeamEC3")[1])))
     if r("BeamFat") is not None:
-        tables.append(("Fatigue", lambda: _table(r("BeamFat")[1])))
+        tables.append((titre("Fatigue", "BeamFat"), lambda: _table(r("BeamFat")[1])))
+    if any(r(c) is not None and not state.is_current(c, source="Beam") for c in ANNEXES_CLES):
+        st.caption(
+            "Les onglets marqués « saisie modifiée depuis » datent d'une saisie précédente : relancez leur bouton "
+            "(Combinaisons, Eurocode 3…) pour les actualiser."
+        )
     tables = widgets.graphs("Beam_graphes_onglets", graphes, dessous=("Équations par tronçon",)) + tables
     texte, ok = st.session_state.get("Beam_etat", (None, None))
     if texte:

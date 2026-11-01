@@ -472,6 +472,11 @@ def _resultats(res: dict, data: dict) -> None:
     )
 
 
+def _empreinte(tables: dict[str, pd.DataFrame], poids_propre: bool) -> str:
+    """Empreinte de la saisie (4 tableaux + poids propre) : dit si un résultat date de la saisie actuelle."""
+    return "|".join(tables[k].to_json() for k in TABLES) + str(poids_propre)
+
+
 def _materiaux(pieces: pd.DataFrame, dm) -> None:
     """Caractéristiques des matériaux choisis dans le tableau des pièces (base de données du site)."""
     noms = sorted({str(m) for m in pieces.get("materiau", []) if isinstance(m, str) and m})
@@ -541,7 +546,7 @@ def page_ossature_3d() -> None:
             except (ValueError, frame3d.FrameMechanismError) as err:
                 st.error(str(err))
             else:
-                st.session_state["p3d.res"] = {"res": res, "data": data}
+                st.session_state["p3d.res"] = {"res": res, "data": data, "empreinte": _empreinte(tables, pp)}
                 st.session_state["p3d.ampli"] = _amplification_auto(res, data)
         st.caption(
             "Poutres d'Euler-Bernoulli (déformation d'effort tranchant négligée). Repère local : x de début vers fin, "
@@ -549,6 +554,12 @@ def page_ossature_3d() -> None:
         )
     with droite:
         if "p3d.res" in st.session_state:
-            _resultats(st.session_state["p3d.res"]["res"], st.session_state["p3d.res"]["data"])
+            calcul = st.session_state["p3d.res"]
+            if calcul["empreinte"] != _empreinte(tables, pp):
+                st.warning(
+                    "Saisie modifiée depuis le dernier calcul : la vue et les résultats ci-dessous sont ceux de "
+                    "l'ancienne saisie. Cliquez sur « Calculer » pour les mettre à jour."
+                )
+            _resultats(calcul["res"], calcul["data"])
         else:
             st.info("Choisissez un exemple ou remplissez les tableaux, puis cliquez sur « Calculer ».")
