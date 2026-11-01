@@ -16,6 +16,7 @@ st.write(
 )
 
 widgets.vue_selector()
+widgets.contraste_toggle()
 
 st.page_link(
     "app_pages/poutres.py",

@@ -340,9 +340,56 @@ def plot(fig: Any, **kw) -> None:
     else:
         config = {"displaylogo": False, "scrollZoom": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]}
     if _theme_sombre():  # figures dessinées pour un fond blanc : elles restent des cartes claires sur la page sombre
-        fig.update_layout(paper_bgcolor="white", font_color="#1E1B2E")
+        # le modèle Plotly de Streamlit colore aussi la zone de tracé en sombre : traits noirs invisibles sans ceci
+        fig.update_layout(paper_bgcolor="white", plot_bgcolor="white", font_color="#1E1B2E")
+        fig.update_xaxes(gridcolor="#E2DDF1", zerolinecolor="#8E86AA", linecolor="#8E86AA")
+        fig.update_yaxes(gridcolor="#E2DDF1", zerolinecolor="#8E86AA", linecolor="#8E86AA")
         kw.setdefault("theme", None)
+    if contraste_eleve():
+        _renforce(fig)
     st.plotly_chart(fig, config=config, **kw)
+
+
+def contraste_eleve() -> bool:
+    """Vrai si le visiteur a choisi « Contraste élevé » pour les graphiques."""
+    try:
+        return bool(st.session_state.get("contraste"))
+    except Exception:  # hors session
+        return False
+
+
+def _renforce(fig: Any) -> None:
+    """Contraste élevé : traits épaissis, aires colorées plus opaques, quadrillage et textes plus marqués."""
+    for t in fig.data:
+        ligne = getattr(t, "line", None)
+        if ligne is not None and getattr(ligne, "width", None):  # largeur 0 (bord d'une aire) : inchangée
+            ligne.width = max(2.5, ligne.width * 1.8)
+        fond = getattr(t, "fillcolor", None)
+        if isinstance(fond, str) and fond.startswith("rgba("):
+            *rvb, alpha = fond[5:-1].split(",")
+            t.fillcolor = f"rgba({','.join(rvb)},{min(1.0, 2 * float(alpha)):g})"
+    fig.update_layout(font_size=15)
+    for a in fig.layout.annotations:  # étiquettes d'extrema écrites en 9 pt : illisibles à côté du reste
+        if a.font.size is not None and a.font.size < 12:
+            a.font.size = 12
+    fig.update_xaxes(gridcolor="#8E86AA", linecolor="#1E1B2E", zerolinecolor="#1E1B2E", tickfont_size=14)
+    fig.update_yaxes(gridcolor="#8E86AA", linecolor="#1E1B2E", zerolinecolor="#1E1B2E", tickfont_size=14)
+
+
+def _change_contraste() -> None:
+    """Callback : garde le choix sous une clé qui survit au changement de page (comme la vue)."""
+    st.session_state["contraste"] = st.session_state.get("contraste_choix", False)
+
+
+def contraste_toggle(conteneur: Any = st) -> None:
+    """Interrupteur « Contraste élevé » des graphiques (traits épais, couleurs franches)."""
+    st.session_state["contraste_choix"] = contraste_eleve()
+    conteneur.toggle(
+        "Contraste élevé",
+        key="contraste_choix",
+        on_change=_change_contraste,
+        help="Graphiques plus lisibles : traits plus épais, aires plus colorées, quadrillage et textes plus marqués.",
+    )
 
 
 def synthese(valeurs: list[dict]) -> None:

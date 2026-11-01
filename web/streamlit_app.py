@@ -34,4 +34,6 @@ pages = {
 pg = st.navigation(pages, position="sidebar" if widgets.vue() == "pc" else "top")
 if widgets.vue() == "pc":
     st.sidebar.html("<style>" + widgets.css_menu_gauche() + "</style>")
+if pg.title != "Accueil":  # l'accueil a déjà l'interrupteur, à côté du choix d'affichage
+    widgets.contraste_toggle(st.sidebar)
 pg.run()
