@@ -474,9 +474,15 @@ def zones(nom: str) -> tuple[Any, Any]:
     if is_compact():
         visu = st.container(key=f"visu_{nom}")
         return st.container(), visu
-    gauche, droite = st.columns([1, 2], gap="large")
+    large = bool(st.session_state.get(f"zones.{nom}.large"))  # valeur du clic précédent : décide des colonnes
+    gauche, droite = st.columns([1, 5] if large else [1, 2], gap="large")
     with droite:
         visu = st.container(key=f"visu_{nom}")
+        visu.toggle(
+            "Agrandir la visualisation",
+            key=f"zones.{nom}.large",
+            help="Élargit cette zone vers la gauche ; la saisie reste accessible dans la colonne étroite.",
+        )
     return gauche, visu
 
 

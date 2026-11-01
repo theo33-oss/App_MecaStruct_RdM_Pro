@@ -34,6 +34,19 @@ def test_potence_en_L_calcul():
     assert at.session_state["p3d.res"]["res"]["equilibre"]["ok"]
 
 
+def test_hangar_contrevente():
+    """Cas d'école complexe : il se calcule, s'équilibre, et la page montre exemple expliqué et matériaux."""
+    at = _mode_3d(AppTest.from_file(PAGE, default_timeout=60).run(), "Hangar contreventé")
+    assert any("Saint-André" in c.value for c in at.caption)
+    assert any(e.label.startswith("Matériaux utilisés (1)") for e in at.expander)
+    _bouton(at, "Calculer").click().run()
+    assert not at.exception and not at.error
+    res = at.session_state["p3d.res"]["res"]
+    assert res["equilibre"]["ok"] and len(res["deplacements"]) == 15
+    at.toggle(key="zones.p3d.large").set_value(True).run()  # zone de droite élargie
+    assert not at.exception
+
+
 def test_mecanisme_affiche_une_erreur():
     at = _mode_3d(AppTest.from_file(PAGE, default_timeout=60).run(), "Potence en L")
     noeuds = at.session_state["p3d.src.noeuds"].copy()
