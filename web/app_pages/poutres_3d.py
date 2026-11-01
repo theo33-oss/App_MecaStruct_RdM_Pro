@@ -302,12 +302,12 @@ def _vue_3d(res: dict, data: dict, ampli: float) -> go.Figure:
                 name="Appuis",
             )
         )
+    dim = float(np.max(np.ptp(xyz, axis=0))) or 1000.0
     charges = [c for c in data["charges_nodales"] if any(c[f] for f in ("Fx", "Fy", "Fz"))]
     if charges:
-        dim = float(np.max(np.ptp(xyz, axis=0))) or 1000.0
         pos = np.array([P[c["noeud"]] for c in charges])
         f = np.array([[c["Fx"], c["Fy"], c["Fz"]] for c in charges])
-        f = f / np.linalg.norm(f, axis=1)[:, None]
+        f = 0.12 * dim * f / np.linalg.norm(f, axis=1)[:, None]  # flèche de 12 % de la structure, en mm
         fig.add_trace(
             go.Cone(
                 x=pos[:, 0],
@@ -317,22 +317,25 @@ def _vue_3d(res: dict, data: dict, ampli: float) -> go.Figure:
                 v=f[:, 1],
                 w=f[:, 2],
                 anchor="tip",
-                sizemode="absolute",
-                sizeref=0.08 * dim,
+                sizemode="raw",  # « absolute » gonflait les cônes à des millions de mm et écrasait la structure
                 colorscale=[[0, C_CHARGE], [1, C_CHARGE]],
                 showscale=False,
                 name="Charges nodales",
                 hovertext=[f"F = ({c['Fx']:g} ; {c['Fy']:g} ; {c['Fz']:g}) N" for c in charges],
             )
         )
+    # cube de même échelle sur les trois axes : « aspectmode=data » écrase un axe vide (console plane, treillis plan)
+    tout = np.vstack([xyz, *D.values()])
+    centre, demi = (tout.min(axis=0) + tout.max(axis=0)) / 2, 0.65 * max(float(np.max(np.ptp(tout, axis=0))), dim)
     fig.update_layout(
         height=400 if widgets.is_compact() else 550,
         margin={"l": 0, "r": 0, "t": 10, "b": 0},
         scene={
-            "aspectmode": "data",
-            "xaxis": {"title": {"text": "X (mm)"}},
-            "yaxis": {"title": {"text": "Y (mm)"}},
-            "zaxis": {"title": {"text": "Z (mm)"}},
+            "aspectmode": "cube",
+            **{
+                f"{a}axis": {"title": {"text": f"{a.upper()} (mm)"}, "range": [c - demi, c + demi]}
+                for a, c in zip("xyz", centre, strict=True)
+            },
         },
         legend={"orientation": "h", "y": 1.02, "x": 0},
     )
