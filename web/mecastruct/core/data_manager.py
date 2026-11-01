@@ -52,8 +52,12 @@ class DataManager:
     """
 
     def __init__(self) -> None:
-        """Charge la base par défaut depuis web/data : matériaux, profilés par famille, pressions de matage."""
-        self._defaultMaterials = pd.DataFrame(as_list(load_json("materials.json")), columns=MATERIAL_VARS)
+        """Charge la base par défaut depuis web/data : matériaux, profilés par famille, pressions de matage.
+
+        Les matériaux viennent de materials.json, suivi de materials_extra.json (même format).
+        """
+        materiaux = as_list(load_json("materials.json")) + as_list(load_json("materials_extra.json"))
+        self._defaultMaterials = pd.DataFrame(materiaux, columns=MATERIAL_VARS)
         profiles = load_json("profiles.json")
         self._defaultProfiles = {fam: pd.DataFrame(as_list(profiles[fam]), columns=PROFILE_VARS) for fam in FAMILIES}
         self.Materials = self._defaultMaterials.copy()
