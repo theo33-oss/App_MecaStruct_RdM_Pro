@@ -23,6 +23,7 @@ from mecastruct.core.errors import MecaStructError
 from mecastruct.core.units import fromSI, toSI
 from mecastruct.services.beam_design import _kvTable
 from mecastruct.services.beam_services import _okText
+from mecastruct.services.limits import checkLimits
 
 _ID = "MecaStruct:App:invalidInput"
 _ID_EXPR = "MecaStruct:App:invalidExpression"
@@ -304,6 +305,7 @@ def defaultTrussInput() -> dict:
 
 def _readTruss(T: dict) -> dict:
     """readTruss : saisie du treillis → modèle SI (numéros de nœuds à partir de 1, noms de nœuds)."""
+    checkLimits(T)
     nd = T["nodes"]
     n = len(nd)
     if n < 2:
@@ -418,7 +420,7 @@ def _evalExpr(noeud, x):
     if isinstance(noeud, ast.Expression):
         return _evalExpr(noeud.body, x)
     if isinstance(noeud, ast.Constant) and isinstance(noeud.value, (int, float)) and not isinstance(noeud.value, bool):
-        return noeud.value
+        return float(noeud.value)  # réel et non entier : 9^9^9 en entiers Python ne rend jamais la main
     if isinstance(noeud, ast.Name) and noeud.id == "x":
         return x
     if isinstance(noeud, ast.Name) and noeud.id == "pi":
@@ -459,7 +461,12 @@ def parseFunction(expr: str):
     if interdits:
         raise MecaStructError(_ID_EXPR, f"Identificateur non autorisé : « {', '.join(sorted(interdits))} ».")
     with np.errstate(all="ignore"):
-        _evalExpr(arbre, np.linspace(0.0, 1.0, 3))  # rejette ici les constructions interdites
+        try:
+            _evalExpr(arbre, np.linspace(0.0, 1.0, 3))  # rejette ici les constructions interdites
+        except (OverflowError, ZeroDivisionError) as err:
+            raise MecaStructError(
+                _ID_EXPR, f"Expression non calculable « {e} » (nombre trop grand, division par 0)."
+            ) from err
     return lambda x: _evalExpr(arbre, np.asarray(x, dtype=float)) + np.zeros(np.shape(x))
 
 
