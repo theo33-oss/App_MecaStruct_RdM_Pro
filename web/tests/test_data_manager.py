@@ -77,12 +77,12 @@ def test_materiaux_valeurs_du_cours():
     # Aciers d'usage général
     for nom, re_mpa, rm_mpa in [("S185", 185, 290), ("S235", 235, 340), ("S275", 275, 410), ("S355", 355, 490)]:
         m = dm.getMaterial(nom)
-        assert m["E"] == 190e9
+        assert m["E"] == 210e9
         assert m["nu"] == 0.3
         assert m["Re"] == re_mpa * 1e6
         assert m["Rm"] == rm_mpa * 1e6
         assert m["alpha"] == pytest.approx(12e-6, rel=1e-12)
-        assert m["G"] == pytest.approx(190e9 / 2.6, rel=1e-12)
+        assert m["G"] == pytest.approx(210e9 / 2.6, rel=1e-12)
     # Aciers de construction mécanique
     for nom in ("XC 38", "XC 42", "XC 48"):
         m = dm.getMaterial(nom)
@@ -185,7 +185,7 @@ def test_ajout_suppression_materiau():
     dm.addMaterial({"Name": "S235", "E": 200e9, "nu": 0.3, "Re": 240e6, "Rm": 360e6})
     assert dm.getMaterial("S235")["E"] == 200e9
     dm.removeMaterial("S235")
-    assert dm.getMaterial("S235")["E"] == 190e9
+    assert dm.getMaterial("S235")["E"] == 210e9
     assert dm.getMaterial("S235")["IsUser"] is False
     dm.removeMaterial("Mon acier")
     assert len(dm.Materials) == n0

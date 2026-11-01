@@ -35,6 +35,7 @@ def set_result(tab: str, res: dict, source: str | None = None) -> None:
     `source` : onglet dont la saisie a servi, si ce n'est pas `tab` (résultats annexes : « BeamEC3 » vient de « Beam »).
     """
     st.session_state["res"][tab] = res
+    st.session_state.pop(f"validation.{tab}", None)  # un dossier généré pour l'ancien résultat n'est plus à jour
     st.session_state[f"saisie_calculee_{tab}"] = repr(st.session_state["saisie"].get(source or tab))
 
 

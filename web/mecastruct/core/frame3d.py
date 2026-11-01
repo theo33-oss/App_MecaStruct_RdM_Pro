@@ -422,6 +422,57 @@ def _equilibre(m: dict, R: np.ndarray) -> dict:
     return {"forces": sF.tolist(), "moments": sM.tolist(), "ok": ok}
 
 
+def verificationAMain(data: dict, res: dict) -> dict:
+    """Contrôles refaits à la main sur un résultat de solveFrame3D, sans la matrice de rigidité.
+
+    Entrées : `data` (celles de solveFrame3D) ; `res` (sa sortie).
+    Sortie : dict `bilan` ({catégorie: {F (3, N), M (3, N·m par rapport à l'origine)}} pour « charges nodales »,
+    « charges réparties » (poids propre compris) et « réactions », plus « somme ») et `contraintes` (une ligne par
+    élément : id, N, My, Mz maximaux en valeur absolue, A, Wy, Wz, sigma refait sur les 21 points d'efforts, sigma du
+    solveur ; Pa, None si un module manque). Le bilan est indépendant du solveur ; sigma reprend ses efforts internes.
+    """
+    m = _lire(data)
+    xyz, els, ids = m["xyz"], m["elements"], m["ids"]
+    nod = m["F"].reshape(-1, 6)
+    R = np.zeros_like(nod)
+    for i, v in res["reactions"].items():
+        R[ids.index(i)] = v
+    qF = np.array([e["q"] * e["L"] for e in els])  # résultante de chaque charge répartie, au milieu de l'élément
+    qP = np.array([(xyz[e["i"]] + xyz[e["j"]]) / 2 for e in els])
+
+    def bilan(F: np.ndarray, P: np.ndarray, M: np.ndarray) -> dict:
+        return {"F": F.sum(axis=0), "M": np.cross(P, F).sum(axis=0) + M.sum(axis=0)}
+
+    cats = {
+        "charges nodales": bilan(nod[:, :3], xyz, nod[:, 3:]),
+        "charges réparties": bilan(qF, qP, np.zeros(3)),
+        "réactions": bilan(R[:, :3], xyz, R[:, 3:]),
+    }
+    cats["somme"] = {k: sum(c[k] for c in cats.values()) for k in ("F", "M")}
+    contraintes = []
+    for e in els:
+        ef = res["efforts"][e["id"]]
+        mx = {k: max(abs(x) for x in ef[k]) for k in ("N", "My", "Mz")}
+        sig = None
+        if e["Wy"] is not None and e["Wz"] is not None:
+            sig = max(
+                abs(n) / e["A"] + abs(a) / e["Wy"] + abs(b) / e["Wz"]
+                for n, a, b in zip(ef["N"], ef["My"], ef["Mz"], strict=True)
+            )
+        contraintes.append(
+            {
+                "id": e["id"],
+                **mx,
+                "A": e["A"],
+                "Wy": e["Wy"],
+                "Wz": e["Wz"],
+                "sigma": sig,
+                "solveur": res["contraintes"][e["id"]]["sigma_max"],
+            }
+        )
+    return {"bilan": {n: {k: v.tolist() for k, v in c.items()} for n, c in cats.items()}, "contraintes": contraintes}
+
+
 def solveFrame3D(data: dict) -> dict:
     """Résout une ossature de poutres 3D par la méthode des déplacements (Euler-Bernoulli, tranchant négligé).
 
@@ -530,7 +581,9 @@ def _rapport(m: dict, res: dict, auto: list) -> tuple[list[str], list[str]]:
         rep.append(
             f"  {e['id']!r} : {ids[e['i']]!r} → {ids[e['j']]!r}, L = {_num(e['L'])} m, E = {_num(e['E'])} Pa, "
             f"G = {_num(e['G'])} Pa, A = {_num(e['A'])} m², Iy = {_num(e['Iy'])} m⁴, Iz = {_num(e['Iz'])} m⁴, "
-            f"J = {_num(e['J'])} m⁴, q global = {_vec(e['q'])} N/m"
+            f"J = {_num(e['J'])} m⁴, Wy = {_num(e['Wy']) if e['Wy'] is not None else '-'} m³, "
+            f"Wz = {_num(e['Wz']) if e['Wz'] is not None else '-'} m³, β = {_num(math.degrees(e['beta']))}°, "
+            f"q global = {_vec(e['q'])} N/m"
             + (f", articulé ({', '.join(lib)}) : θy et θz relâchés, torsion transmise" if len(lib) == 1 else "")
             + (
                 ", articulé aux deux bouts : θy, θz relâchés et torsion non transmise (barre de treillis)"
@@ -538,6 +591,10 @@ def _rapport(m: dict, res: dict, auto: list) -> tuple[list[str], list[str]]:
                 else ""
             )
         )
+    charges = [(i, m["F"][6 * k : 6 * k + 6]) for k, i in enumerate(ids) if m["F"][6 * k : 6 * k + 6].any()]
+    if charges:
+        rep.append("Charges nodales (N et N·m, repère global) :")
+        rep.extend(f"  {i!r} : F = {_vec(v[:3])}, M = {_vec(v[3:])}" for i, v in charges)
     for k, idx, vec in auto:
         rep.append(
             f"  Blocage automatique : nœud {ids[k]!r}, {_direction(idx, vec)} (aucune raideur : toutes les pièces y "
@@ -565,7 +622,10 @@ def _rapport(m: dict, res: dict, auto: list) -> tuple[list[str], list[str]]:
         f"Équilibre global (réactions + charges) : ΣF = {_vec(eq['forces'])} N, ΣM/O = {_vec(eq['moments'])} N·m "
         f"→ {'vérifié' if eq['ok'] else 'NON VÉRIFIÉ'} (tolérance 1e-6 de l'échelle)."
     )
-    rep.append("σmax est une borne conservative (les trois maximums sont supposés au même point de la section).")
+    rep.append(
+        "σmax = maximum, sur les 21 points de chaque élément, de |N|/A + |My|/Wy + |Mz|/Wz (fibre la plus chargée de "
+        "la section, flexions supposées maximales au même point de la section)."
+    )
 
     tex = [
         r"$[K]\,\{u\} = \{F\},\quad [K] = \sum_{e} [T_e]^{T}\,[k_e]\,[T_e],\quad "

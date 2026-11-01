@@ -95,7 +95,7 @@ def test_sections_envoie_la_section_a_flambage():
     fla, beam = at.session_state["saisie"]["Fla"], at.session_state["saisie"]["Beam"]
     assert fla["S"] == pytest.approx(beam["S"]) and fla["Iz"] == pytest.approx(beam["Iz"])
     assert fla["Iy"] == pytest.approx(beam["Iy"]) and fla["mat"] == "S235"
-    assert fla["E"] == pytest.approx(190.0)
+    assert fla["E"] == pytest.approx(210.0)
 
 
 def test_sections_cornière_envoie_les_moments_principaux():

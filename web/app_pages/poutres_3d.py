@@ -231,6 +231,7 @@ def _donnees(tables: dict[str, pd.DataFrame], poids_propre: bool, dm) -> dict:
                 "E": mat["E"],
                 "G": mat["G"],
                 "rho": mat["rho"] if math.isfinite(mat["rho"]) else 0.0,
+                "Re": mat["Re"],  # pour comparer σ à la limite élastique ; ignorée par le solveur
                 **_proprietes(p, dm),
                 "beta_deg": _f(p.get("beta")),
                 "liaison_i": p.get("liaison_debut") or "rigide",
@@ -448,6 +449,61 @@ def _equations(res: dict) -> None:
     widgets.report(res["rapport"])
 
 
+def _terme(v: float) -> str:
+    """Valeur en kN ou kN·m d'un terme de somme LaTeX, entre parenthèses si négative."""
+    x = 0.0 if abs(v) < 1e-9 else v / 1e3  # résidu d'arrondi : écrit 0
+    return f"({x:.5g})" if x < 0 else f"{x:.5g}"
+
+
+def _verification(res: dict, data: dict) -> None:
+    """Vérification à la main : bilan des actions avec valeurs, puis contraintes comparées à Re."""
+    v = frame3d.verificationAMain(data, res)
+    b = v["bilan"]
+    st.markdown(
+        "**Équilibre global, refait à partir de vos données** : charges nodales + charges réparties (poids propre "
+        "compris) + réactions du solveur = 0. Moments pris par rapport à l'origine (0, 0, 0)."
+    )
+    termes = (("charges nodales", "nodales"), ("charges réparties", r"r\'eparties"), ("réactions", r"r\'eactions"))
+    for grandeur, cle, unite in (("F", "F", r"\mathrm{kN}"), ("M", "M", r"\mathrm{kN\cdot m}")):
+        for i, axe in enumerate("xyz"):
+            somme = " + ".join(
+                r"\underbrace{" + _terme(b[nom][cle][i]) + r"}_{\text{" + leg + "}}" for nom, leg in termes
+            )
+            st.latex(rf"\sum {grandeur}_{axe}=" + somme + "=" + _terme(b["somme"][cle][i]) + rf"\ {unite}")
+    st.caption(
+        "Les sommes doivent être nulles (écart admis : 1e-6 de l'échelle des actions). "
+        + ("Équilibre vérifié." if res["equilibre"]["ok"] else "ÉQUILIBRE NON VÉRIFIÉ : voir l'onglet Synthèse.")
+    )
+    st.markdown(
+        "**Contraintes** : σ = |N|/A + |My|/Wy + |Mz|/Wz, maximum sur les 21 points de chaque pièce, comparée à la "
+        "limite élastique Re du matériau (sans coefficient de sécurité). Les efforts viennent du solveur "
+        "(onglet Efforts internes)."
+    )
+    re = {e["id"]: e.get("Re") for e in data["elements"]}
+    lignes = []
+    for c in v["contraintes"]:
+        r = re.get(c["id"])
+        ok = c["sigma"] is not None and r is not None and math.isfinite(r)
+        lignes.append(
+            {
+                "Pièce": c["id"],
+                "N max (kN)": c["N"] / 1e3,
+                "My max (kN·m)": c["My"] / 1e3,
+                "Mz max (kN·m)": c["Mz"] / 1e3,
+                "A (mm²)": c["A"] * 1e6,
+                "Wy (cm³)": None if c["Wy"] is None else c["Wy"] * 1e6,
+                "Wz (cm³)": None if c["Wz"] is None else c["Wz"] * 1e6,
+                "σ refait (MPa)": None if c["sigma"] is None else c["sigma"] / 1e6,
+                "σ solveur (MPa)": None if c["solveur"] is None else c["solveur"] / 1e6,
+                "Re (MPa)": r / 1e6 if ok else None,
+                "σ/Re": c["sigma"] / r if ok else None,
+            }
+        )
+    st.dataframe(pd.DataFrame(lignes), hide_index=True)
+    if any(c["sigma"] is None for c in v["contraintes"]):
+        st.caption("σ non calculée pour une pièce sans module de flexion Wy ou Wz : saisissez-les (section « perso »).")
+
+
 def _resultats(res: dict, data: dict) -> None:
     if "p3d.ampli" not in st.session_state:
         st.session_state["p3d.ampli"] = _amplification_auto(res, data)
@@ -460,6 +516,7 @@ def _resultats(res: dict, data: dict) -> None:
             ("Réactions", lambda: st.dataframe(_table_reactions(res), hide_index=True)),
             ("Efforts internes", lambda: _efforts(res)),
             ("Contraintes", lambda: st.dataframe(_table_contraintes(res), hide_index=True)),
+            ("Vérification à la main", lambda: _verification(res, data)),
             ("Équations", lambda: _equations(res)),
         ]
     )

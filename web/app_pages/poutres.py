@@ -656,6 +656,7 @@ def _resultats(res: dict | None) -> None:
             ("Diagrammes", lambda: widgets.plot(beam_plots.internalForces(sol, comps))),
             ("Déformée α(s), v(s)", lambda: widgets.plot(beam_plots.deflection(res["model"], d))),
             ("Équations par tronçon", lambda: _equations_par_troncon(sol, comps)),
+            ("Explications du calcul", lambda: widgets.explanation_panel("Beam")),
         ]
         tables += [
             ("Rapport", lambda: widgets.report(res["rapport"])),
@@ -691,7 +692,8 @@ def _resultats(res: dict | None) -> None:
     if texte:
         widgets.status(texte, ok)
     widgets.validation_button("Beam")
-    widgets.explanation_panel("Beam")
+    if res is None:  # avant le premier calcul : le panneau dit où trouver les équations
+        widgets.explanation_panel("Beam")
     if tables:
         widgets.tabs(tables)
 

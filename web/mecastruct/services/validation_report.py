@@ -2201,7 +2201,7 @@ def _beamPlaneRows(sol: dict, plane: str) -> list[dict]:
     """Équilibre global et torseur de cohésion (par la gauche) d'un plan de flexion.
 
     Plan 'y' : plan (x, y), Mfz et Ty ; plan 'z' : plan (x, z) équivalent (F' = Fz, C' = −My, p' = pz), avec
-    Mfy = −M' et Tz = T'. Chaque formule est écrite avec les valeurs de la saisie (kN, kN·m) pour être refaite à la main.
+    Mfy = −M' et Tz = T'. Chaque formule porte les valeurs de la saisie (kN, kN·m) pour être refaite à la main.
     """
     n = _num
     mo = sol["model"]
@@ -2228,7 +2228,10 @@ def _beamPlaneRows(sol: dict, plane: str) -> list[dict]:
     sumM += sum(rM) + sum(qM)
     fsc = max([1.0, *map(abs, F), *map(abs, rR)])
     tolE = 1e-6 * fsc * max(1.0, L)
-    kN = lambda v: _t(v / 1e3)  # noqa: E731
+
+    def kN(v: float) -> str:
+        return _t(v / 1e3)
+
     termesF = _termes(
         [
             ("forces", [kN(f) for f in F if f]),
@@ -2238,12 +2241,12 @@ def _beamPlaneRows(sol: dict, plane: str) -> list[dict]:
     )
     termesM = _termes(
         [
-            ("forces", [f"{n(x)}\\times{kN(f)}" for x, f in zip(px, F, strict=True) if f]),
+            ("forces", [f"{n(x)}\\times{kN(f)}" for x, f in zip(px, F, strict=True) if x and f]),
             (r"r\'eparties", [kN(q) for q in qM if q]),
             ("couples", [kN(c) for c in C if c]),
             (
                 r"r\'eactions",
-                [f"{n(x)}\\times{kN(r)}" for x, r in zip(rp, rR, strict=True) if r] + [kN(m) for m in rM if m],
+                [f"{n(x)}\\times{kN(r)}" for x, r in zip(rp, rR, strict=True) if x and r] + [kN(m) for m in rM if m],
             ),
         ]
     )
@@ -2255,61 +2258,86 @@ def _beamPlaneRows(sol: dict, plane: str) -> list[dict]:
         _hc(
             f"Équilibre des forces en {nF}",
             r"\sum F_%s=%s=%s\ \mathrm{kN}" % (nF, termesF, n(sumF / 1e3)),
-            sumF,
+            sumF / 1e3,
             0.0,
-            "N",
-            tolE,
+            "kN",
+            tolE / 1e3,
         ),
         _hc(
             f"Équilibre des moments du plan {lab}, pris en s = 0",
             r"\sum M(0)=%s=%s\ \mathrm{kN\cdot m}" % (termesM, n(sumM / 1e3)),
-            sumM,
+            sumM / 1e3,
             0.0,
-            "N·m",
-            tolE * max(1.0, L),
+            "kN·m",
+            tolE * max(1.0, L) / 1e3,
         ),
     ]
-    # coupes : abscisses types et extremum, décalées si elles tombent sur une charge ou un appui
-    s0 = [L * x for x in (0.1, 0.25, 0.5, 0.75, 0.9)] + [float(sol["extrema"][nM]["sMax"])]
+    # coupes : extrémités, abscisses types, extrema de M et de T ; décalées si elles tombent sur une charge ou un appui
+    ex, exT = sol["extrema"][nM], sol["extrema"][nT]
+    s0 = [0.0, *(L * x for x in (0.1, 0.25, 0.5, 0.75, 0.9)), L]
+    s0 += [float(ex["sMax"]), float(ex["sMin"]), float(exT["sMax"]), float(exT["sMin"])]
+    s0 = sorted({round(s, 9) for s in s0})
     posAll = px + cx + rp
+    apres: dict[float, str] = {}  # coupe décalée : « juste après / avant » la charge, dit dans l'étiquette
     for k, s in enumerate(s0):
         if any(abs(p - s) < 1e-9 for p in posAll):
             # charge en s = L : couper juste avant, sinon la somme à gauche l'inclut
-            s0[k] = s - 1e-6 * L if s + 1e-6 * L > L else s + 1e-6 * L
+            avant = s + 1e-6 * L > L
+            s0[k] = s - 1e-6 * L if avant else s + 1e-6 * L
+            apres[s0[k]] = " (juste avant la charge ou l'appui)" if avant else " (juste après la charge ou l'appui)"
     rows.append(
         _grp(
             f"Plan {lab} : {nM} et {nT} recalculés en sommant les actions à GAUCHE de la coupure "
-            "(le solveur somme à droite)"
+            "(le solveur somme à droite) : M(s) = Σ[(s − xᵢ)·Fᵢ − Cᵢ] + ∫(s − x)·p dx ; T(s) = −ΣF − ∫p dx. "
+            "Coupes aux extrémités, à 10-25-50-75-90 % de L et aux extrema"
         )
     )
     for s in s0:
         Mh = Th = 0.0
+        tM: list[str] = []  # termes de M(s) et de T(s), en kN et kN·m, pour les refaire à la main
+        tT: list[str] = []
         for x, f in zip(px, F, strict=True):
             if x < s:
                 Mh += (s - x) * f
                 Th -= f
+                if f:
+                    tM.append(f"{kN(f)}\\times({n(s)}-{n(x)})")
+                    tT.append(kN(-f))
         for x, c in zip(cx, C, strict=True):
             if x < s:
                 Mh -= c
+                if c:
+                    tM.append(kN(-c))
         for x, r, m in zip(rp, rR, rM, strict=True):
             if x < s:
                 Mh += (s - x) * r - m
                 Th -= r
+                if r:
+                    tM.append(f"{kN(r)}\\times({n(s)}-{n(x)})")
+                    tT.append(kN(-r))
+                if m:
+                    tM.append(kN(-m))
         for a, b, c in dist:
             if s > a:
                 bb = min(b, s)
-                Mh += _qint(c, a, bb, lambda x, s=s: s - x)
-                Th -= _qint(c, a, bb, lambda x: 1.0)
+                dM, dT = _qint(c, a, bb, lambda x, s=s: s - x), -_qint(c, a, bb, lambda x: 1.0)
+                Mh += dM
+                Th += dT
+                tM.append(kN(dM))
+                tT.append(kN(dT))
         Mh *= sM
+        enM = " + ".join(tM) or "0"
+        enT = " + ".join(tT) or "0"
+        if sM < 0:  # plan (x, z) : Mfy = −M' (convention du solveur)
+            enM = r"-\left(%s\right)" % enM
         Ms = ppEval(Mpp, s)
         Ts = ppEval(Tpp, s)
         tolM = 1e-6 * max(1.0, abs(Ms)) + 1e-6
         tolT = 1e-6 * max(1.0, abs(Ts)) + 1e-6
         rows.append(
             _hc(
-                f"{nM} en s = {s:.4g} m",
-                r"M(s)=\sum_{gauche}\left[(s-x_i)F_{i}-C_{i}\right]+\int(s-x)p\,dx=%s\,\mathrm{kN\cdot m}"
-                % n(Mh / 1e3),
+                f"{nM} en s = {s:.4g} m{apres.get(s, '')}",
+                r"M(s)=%s=%s\,\mathrm{kN\cdot m}" % (enM, n(Mh / 1e3)),
                 Mh / 1e3,
                 Ms / 1e3,
                 "kN·m",
@@ -2318,8 +2346,8 @@ def _beamPlaneRows(sol: dict, plane: str) -> list[dict]:
         )
         rows.append(
             _hc(
-                f"{nT} en s = {s:.4g} m",
-                r"T(s)=-\sum_{gauche}F-\int p\,dx=%s\,\mathrm{kN}" % n(Th / 1e3),
+                f"{nT} en s = {s:.4g} m{apres.get(s, '')}",
+                r"T(s)=%s=%s\,\mathrm{kN}" % (enT, n(Th / 1e3)),
                 Th / 1e3,
                 Ts / 1e3,
                 "kN",
@@ -2473,13 +2501,39 @@ def _handBeam(saisie: dict, res: dict) -> list[dict]:
         rows += [
             _grp("Contrainte maximale au point le plus sollicité (N en N, M en N·mm)"),
             _hc("|σ| max (loi de Navier, sans le solveur)", ftxt, sh, bd["sigmaMaxAbs"] / 1e6, "MPa"),
+            _hc(
+                "Kt·|σ| max (concentration de contraintes)",
+                r"K_t|\sigma|_{max}=%s\times%s" % (n(saisie["Kt"]), n(sh)),
+                saisie["Kt"] * sh,
+                bd["sigmaMaxKt"] / 1e6,
+                "MPa",
+            ),
         ]
+    adm = saisie["Re"] / saisie["s"]
+    rows.append(
+        _hc(
+            "σadm (limite élastique / coefficient de sécurité)",
+            r"\sigma_{adm}=\frac{R_e}{s}=\frac{%s}{%s}" % (n(saisie["Re"]), n(saisie["s"])),
+            adm,
+            bd["sigmaAdm"] / 1e6,
+            "MPa",
+        )
+    )
+    okTxt = "vérifié" if bd["ok"] else "NON VÉRIFIÉ"
+    rows.append(
+        _grp(
+            f"Verdict de résistance : Kt·|σ|max = {bd['sigmaMaxKt'] / 1e6:.6g} MPa "
+            f"{'≤' if bd['ok'] else '>'} σadm = {bd['sigmaAdm'] / 1e6:.6g} MPa → {okTxt}"
+        )
+    )
     cmp = B["defl"]["comparison"]
     flexion = ~cmp["Methode"].astype(str).str.contains("tranchant")  # la ligne « flexion + tranchant » est à part
     ecart = float(np.max(np.abs(cmp["Ecart_pct"].to_numpy(dtype=float)[flexion.to_numpy()])))
     rows.append(
         _grp(
-            f"Flèche (flexion seule) : écart maximal entre les méthodes = {ecart:.3g} % "
+            f"Flèche maximale {B['defl']['integration']['fmax'] * 1e3:.5g} mm en s = "
+            f"{B['defl']['integration']['sAtFmax']:.4g} m (E·I = E·Iz ou E·Iy selon le plan, double intégration de "
+            f"M/(E·I)) ; écart maximal entre les 4 méthodes = {ecart:.3g} % "
             "(la ligne « flexion + tranchant » de Castigliano est à part ; voir §4)"
         )
     )

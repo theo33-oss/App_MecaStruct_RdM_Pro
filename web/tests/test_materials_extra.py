@@ -53,4 +53,4 @@ def test_getMaterial_acier_inoxydable_316L():
 
 
 def test_s235_inchange_dans_la_base_matlab():
-    assert DataManager().getMaterial("S235")["E"] == 190e9
+    assert DataManager().getMaterial("S235")["E"] == 210e9

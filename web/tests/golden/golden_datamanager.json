@@ -226,14 +226,14 @@
   "sortie": {
     "Name": "S235",
     "Category": "Acier d'usage général",
-    "E": 1.9E+11,
-    "G": 7.307692307692308E+10,
+    "E": 2.1E+11,
+    "G": 8.076923076923077E+10,
     "nu": 0.3,
     "Re": 2.35E+8,
     "Rm": 3.4E+8,
     "alpha": 1.2E-5,
     "rho": 7850,
-    "Note": "Cours : E = 190 GPa, ν = 0,3, α = 12e-6 /°C, Re = 235 MPa, Rm = 340 MPa (plage du cours : Re = 185 à 355 MPa, Rm = 290 à 490 MPa). ρ : valeur usuelle. G calculé par G = E/(2(1+ν)).",
+    "Note": "Eurocode 3 : E = 210 GPa, ν = 0,3, α = 12e-6 /°C, Re = 235 MPa, Rm = 340 MPa (plage du cours : Re = 185 à 355 MPa, Rm = 290 à 490 MPa). ρ : valeur usuelle. G calculé par G = E/(2(1+ν)).",
     "IsUser": false,
     "Author": "Base fournie"
   },

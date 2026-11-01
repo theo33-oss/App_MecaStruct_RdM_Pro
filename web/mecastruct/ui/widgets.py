@@ -684,9 +684,7 @@ def _extras_precedents(tab: str) -> dict | None:
 def _genere_validation(tab: str) -> None:
     """Recalcule la page `tab` avec la saisie actuelle et garde le dossier de validation HTML (callback du bouton)."""
     q = st.session_state
-    saisie = state.saisie(tab)
-    if tab in ("Cis", "Fle") and state.result("Sec") is not None:  # section de la page Sections, comme au calcul
-        saisie["section"] = state.result("Sec")["result"]["sec"]
+    saisie = state.saisie(tab)  # pour Cis et Fle, la section du calcul y est déjà (écrite au clic sur Calculer)
     try:
         res = validation_report.recompute(tab, saisie, q["dm"], _extras_precedents(tab))
         html = validation_report.generate(tab, saisie, res, q["dm"])
@@ -704,13 +702,24 @@ def validation_button(tab: str) -> None:
     Actif seulement s'il y a un résultat pour l'onglet `tab`. Le PDF s'obtient par Imprimer → Enregistrer en PDF.
     """
     res = state.result(tab)
+    if res is not None and not state.is_current(tab):  # signal commun à toutes les pages de calcul
+        st.warning(
+            "Saisie modifiée depuis le dernier calcul : les résultats affichés datent de l'ancienne saisie. "
+            "Cliquez sur « Calculer » pour les actualiser."
+        )
     st.button(
         "Dossier de validation de ce problème",
         key=f"validation.{tab}.bouton",
         on_click=_genere_validation,
         args=(tab,),
-        disabled=res is None,
-        help=None if res else "Cliquez d'abord sur « Calculer ».",
+        disabled=res is None or not state.is_current(tab),
+        help=(
+            "Cliquez d'abord sur « Calculer »."
+            if res is None
+            else None
+            if state.is_current(tab)
+            else "Saisie modifiée depuis le dernier calcul : cliquez sur « Calculer » pour que le dossier la reprenne."
+        ),
     )
     err = st.session_state.get(f"validation.{tab}.erreur")
     if err is not None:
@@ -747,10 +756,8 @@ def explanation_panel(tab: str) -> None:
     try:
         cache = q.get(f"explication.{tab}.cache")
         if cache is None or cache[0] is not res:  # l'objet lui-même : un id() peut être réutilisé par Python
-            saisie = copy.deepcopy(state.saisie(tab))  # copie : le panneau ne modifie pas la saisie de la page
-            # section de la page Sections, comme au calcul
-            if tab in ("Cis", "Fle") and state.result("Sec") is not None:
-                saisie["section"] = state.result("Sec")["result"]["sec"]
+            # copie : le panneau ne modifie pas la saisie de la page ; la section de Cis et Fle est celle du calcul
+            saisie = copy.deepcopy(state.saisie(tab))
             # calcul principal seul (0,2 s) : refaire combinaisons, Eurocode 3, profilés… coûtait 5 s et plus à
             # chaque « Calculer » ; leurs contrôles restent dans le dossier de validation
             calc = validation_report.recompute(tab, saisie, q["dm"], None)
