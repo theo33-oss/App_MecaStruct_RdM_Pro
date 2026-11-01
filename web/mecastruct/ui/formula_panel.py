@@ -1,4 +1,4 @@
-"""Panneau « Formulaire rapide » de la barre latérale : fiche de formules de la page (port de buildFormulaPanel)."""
+"""Panneau « Formulaire rapide » (à droite, repliable) : fiche de formules de la page (port de buildFormulaPanel)."""
 
 import streamlit as st
 
@@ -30,7 +30,7 @@ _LIBELLES = {
 
 
 def _fiche(key: str, titre: bool = True) -> None:
-    """Sélecteur de fiche et formules de la clé `key` (là où l'appelant se trouve : barre latérale ou tiroir)."""
+    """Sélecteur de fiche et formules de la clé `key` (là où l'appelant se trouve : panneau ou tiroir)."""
     cles = data_manager.formulaKeys()
     if titre:
         st.subheader("Formulaire rapide")
@@ -53,10 +53,28 @@ def _tiroir(key: str) -> None:
     _fiche(key, titre=False)
 
 
-def formula_panel(key: str | None) -> None:
-    """Formules de la clé `key` : dans la barre latérale, ou en mode compact derrière un bouton (tiroir à droite).
+def _css_panneau() -> str:
+    """Style du panneau à droite : fixé sous l'en-tête, replié = simple barre ; déplié, il repousse la page à gauche.
 
-    Rien si `key` vaut None. La barre latérale est repliée sur téléphone : le tiroir évite d'aller l'ouvrir.
+    La page n'est repoussée que sur un écran large (1400 px et plus) ; sur un écran étroit, le panneau passe dessus.
+    """
+    fond, bord = ("#0E0B16", "#6E6590") if widgets._theme_sombre() else ("#FFFFFF", "#8E86AA")
+    return (
+        '[class*="st-key-formulaire_droite"] { position: fixed; top: 4rem; right: 1rem; z-index: 30; '
+        f"width: 13rem; max-height: calc(100vh - 5rem); overflow-y: auto; background: {fond}; "
+        f"border: 1px solid {bord}; border-radius: 0.5rem; }} "
+        '[class*="st-key-formulaire_droite"]:has(details[open]) { width: 26rem; max-width: 92vw; } '
+        "@media (min-width: 1400px) { "
+        '[data-testid="stMain"]:has([class*="st-key-formulaire_droite"] details[open]) '
+        '[data-testid="stMainBlockContainer"] { padding-right: 28rem; } }'
+    )
+
+
+def formula_panel(key: str | None) -> None:
+    """Formules de la clé `key` : panneau repliable fixé à droite, ou en mode compact derrière un bouton (tiroir).
+
+    Rien si `key` vaut None. Replié, le panneau est une barre « Formulaire rapide » ; déplié, il garde la fiche
+    visible à droite pendant qu'on saisit, et la page se décale pour ne rien cacher.
     """
     if key is None:
         return
@@ -64,5 +82,7 @@ def formula_panel(key: str | None) -> None:
         if st.button("Formulaire", key=f"formule.{key}.ouvrir", icon=":material/function:"):
             _tiroir(key)
         return
-    with st.sidebar:
-        _fiche(key)
+    st.sidebar.html("<style>" + _css_panneau() + "</style>")
+    with st.container(key="formulaire_droite"):
+        with st.expander("Formulaire rapide", expanded=False, icon=":material/function:"):
+            _fiche(key, titre=False)
