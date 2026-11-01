@@ -32,4 +32,6 @@ pages = {
     ],
 }
 pg = st.navigation(pages, position="sidebar" if widgets.vue() == "pc" else "top")
+if widgets.vue() == "pc":
+    st.sidebar.html("<style>" + widgets.css_menu_gauche() + "</style>")
 pg.run()
