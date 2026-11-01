@@ -20,6 +20,7 @@ from mecastruct.core.errors import MecaStructError
 from mecastruct.core.pp import ppEval
 from mecastruct.core.solicitations import bendingStress
 from mecastruct.core.units import toSI
+from mecastruct.services.limits import checkLimits
 
 _ID = "MecaStruct:App:invalidInput"
 logger = logging.getLogger(__name__)
@@ -204,6 +205,7 @@ def buildBeamModel(saisie: dict, dm: DataManager, fac: dict | None = None) -> di
     pointMoments, distLoads en N, N·m, N/m).
     Erreur : MecaStruct:App:invalidInput (longueur, Iyz, valeurs, masse volumique, cas inconnu).
     """
+    checkLimits(saisie)
     if fac is None:
         fac = {"G": 1.0, "Q": 1.0, "W": 1.0, "S": 1.0}
     L = float(saisie["L"])
@@ -606,6 +608,7 @@ def computeCombinations(saisie: dict, dm: DataManager) -> pd.DataFrame:
     Kt·σ max (MPa), σadm (MPa), Résistance.
     Erreur : MecaStruct:App:invalidInput si aucune combinaison.
     """
+    checkLimits(saisie)
     combo = saisie["combo"]
     if not combo:
         raise MecaStructError(_ID, "Aucune combinaison : ajoutez une ligne au tableau Combinaisons.")
