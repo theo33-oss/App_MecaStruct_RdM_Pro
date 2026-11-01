@@ -6,6 +6,8 @@ toolbarMode = "minimal"
 
 [server]
 headless = true
+# Fichiers .json de projet : quelques dizaines de ko ; 5 Mo suffisent (défaut Streamlit : 200 Mo)
+maxUploadSize = 5
 
 [browser]
 gatherUsageStats = false
