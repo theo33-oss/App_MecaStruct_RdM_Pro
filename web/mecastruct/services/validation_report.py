@@ -2187,11 +2187,21 @@ def _qint(c, a: float, b: float, f) -> float:
     return float(quad(lambda x: np.polyval(c, x - a) * f(x), a, b, epsabs=0, epsrel=1e-12)[0])
 
 
+def _t(v: float) -> str:
+    """Nombre LaTeX d'un terme de somme : entre parenthèses s'il est négatif."""
+    return f"({_num(v)})" if v < 0 else _num(v)
+
+
+def _termes(groupes: list[tuple[str, list[str]]]) -> str:
+    """Somme LaTeX de termes déjà formatés, chaque groupe légendé sous une accolade ; « 0 » si tout est vide."""
+    return " + ".join(r"\underbrace{%s}_{\text{%s}}" % (" + ".join(t), leg) for leg, t in groupes if t) or "0"
+
+
 def _beamPlaneRows(sol: dict, plane: str) -> list[dict]:
     """Équilibre global et torseur de cohésion (par la gauche) d'un plan de flexion.
 
     Plan 'y' : plan (x, y), Mfz et Ty ; plan 'z' : plan (x, z) équivalent (F' = Fz, C' = −My, p' = pz), avec
-    Mfy = −M' et Tz = T'.
+    Mfy = −M' et Tz = T'. Chaque formule est écrite avec les valeurs de la saisie (kN, kN·m) pour être refaite à la main.
     """
     n = _num
     mo = sol["model"]
@@ -2211,29 +2221,48 @@ def _beamPlaneRows(sol: dict, plane: str) -> list[dict]:
     rR = [r[fR] for r in rea]
     rM = [sC * r[fC] for r in rea]
     dist = [(d["a"], d["b"], np.asarray(d["coeffs"], dtype=float)) for d in dl if d["dir"] == nF]
-    sumF = sum(F) + sum(rR) + sum(_qint(c, a, b, lambda x: 1.0) for a, b, c in dist)
-    sumM = (
-        sum(x * f for x, f in zip(px, F, strict=True))
-        + sum(C)
-        + sum(x * r for x, r in zip(rp, rR, strict=True))
-        + sum(rM)
-        + sum(_qint(c, a, b, lambda x: x) for a, b, c in dist)
-    )
+    qF = [_qint(c, a, b, lambda x: 1.0) for a, b, c in dist]  # résultantes des charges réparties
+    qM = [_qint(c, a, b, lambda x: x) for a, b, c in dist]  # leurs moments par rapport à s = 0
+    sumF = sum(F) + sum(rR) + sum(qF)
+    sumM = sum(x * f for x, f in zip(px, F, strict=True)) + sum(C) + sum(x * r for x, r in zip(rp, rR, strict=True))
+    sumM += sum(rM) + sum(qM)
     fsc = max([1.0, *map(abs, F), *map(abs, rR)])
     tolE = 1e-6 * fsc * max(1.0, L)
+    kN = lambda v: _t(v / 1e3)  # noqa: E731
+    termesF = _termes(
+        [
+            ("forces", [kN(f) for f in F if f]),
+            (r"r\'eparties", [kN(q) for q in qF if q]),
+            (r"r\'eactions", [kN(r) for r in rR if r]),
+        ]
+    )
+    termesM = _termes(
+        [
+            ("forces", [f"{n(x)}\\times{kN(f)}" for x, f in zip(px, F, strict=True) if f]),
+            (r"r\'eparties", [kN(q) for q in qM if q]),
+            ("couples", [kN(c) for c in C if c]),
+            (
+                r"r\'eactions",
+                [f"{n(x)}\\times{kN(r)}" for x, r in zip(rp, rR, strict=True) if r] + [kN(m) for m in rM if m],
+            ),
+        ]
+    )
     rows = [
-        _grp(f"Équilibre global de la poutre, plan {lab}, recalculé à partir du modèle et des réactions du solveur"),
+        _grp(
+            f"Équilibre global de la poutre, plan {lab} : la somme des forces et des moments (charges + réactions du "
+            "solveur) doit être nulle"
+        ),
         _hc(
-            f"Équilibre des forces en {nF} (N)",
-            r"\sum F_%s=\sum F_{ext}+\sum R=%s\ \text{(attendu 0)}" % (nF, n(sumF)),
+            f"Équilibre des forces en {nF}",
+            r"\sum F_%s=%s=%s\ \mathrm{kN}" % (nF, termesF, n(sumF / 1e3)),
             sumF,
             0.0,
             "N",
             tolE,
         ),
         _hc(
-            f"Équilibre des moments du plan {lab}, en s = 0 (N·m)",
-            r"\sum M(0)=\sum x_iF_i+\int x\,p\,dx+\sum C+\sum(x_RR+M_R)=%s\ \text{(attendu 0)}" % n(sumM),
+            f"Équilibre des moments du plan {lab}, pris en s = 0",
+            r"\sum M(0)=%s=%s\ \mathrm{kN\cdot m}" % (termesM, n(sumM / 1e3)),
             sumM,
             0.0,
             "N·m",
