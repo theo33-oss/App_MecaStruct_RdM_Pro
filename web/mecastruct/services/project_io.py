@@ -15,6 +15,8 @@ import pandas as pd
 
 from mecastruct.core.errors import MecaStructError
 from mecastruct.core.pp import ppEval
+from mecastruct.services.examples import loadExample
+from mecastruct.services.limits import checkLimits
 
 APP = "MecaStruct RdM Pro"
 FORMAT_VERSION = 1
@@ -52,6 +54,29 @@ def _lit(text: str, nature: str) -> dict:
     return d
 
 
+def _genre(v) -> str:
+    """Genre d'une valeur de saisie : bool, nombre, texte, liste, dict ou vide (None)."""
+    if isinstance(v, bool):
+        return "un booléen"
+    if isinstance(v, (int, float)):
+        return "un nombre"
+    return {str: "un texte", list: "une liste", dict: "un dictionnaire"}.get(type(v), "vide")
+
+
+def _controle(tab: str, saisie: dict) -> None:
+    """Refuse une saisie importée trop grosse, ou dont un champ connu n'a pas le genre de l'exemple (nombre, texte…).
+
+    Erreur : MecaStruct:App:badProblemFile (genre inattendu) ou MecaStruct:App:invalidInput (taille).
+    """
+    checkLimits(saisie)
+    ref = loadExample(tab)
+    for cle, v in saisie.items():
+        if ref.get(cle) is not None and _genre(v) != _genre(ref[cle]):
+            raise MecaStructError(
+                _ID, f"Champ « {cle} » invalide dans l'onglet « {tab} » : {_genre(ref[cle])} attendu."
+            )
+
+
 def problemToJson(tab: str, saisie: dict) -> str:
     """JSON d'un problème : la saisie de l'onglet `tab` (unités d'affichage), avec l'application et la version."""
     return _json({"app": APP, "version": FORMAT_VERSION, "onglet": tab, "saisie": saisie})
@@ -70,6 +95,7 @@ def problemFromJson(text: str, tab: str | None = None) -> tuple[str, dict]:
             _ID,
             f"Ce fichier n'est pas un problème enregistré depuis cet onglet (il vient de l'onglet « {d['onglet']} »).",
         )
+    _controle(d["onglet"], d["saisie"])
     return d["onglet"], d["saisie"]
 
 
@@ -84,7 +110,14 @@ def projectFromJson(text: str) -> tuple[dict[str, dict], list[str]]:
     projet = d.get("projet")
     if not isinstance(projet, dict):
         raise MecaStructError(_ID, "Ce fichier n'est pas un projet MecaStruct.")
-    saisies = {k: projet[k] for k in PROJECT_KEYS if isinstance(projet.get(k), dict)}
+    saisies = {}
+    for k in PROJECT_KEYS:
+        if isinstance(projet.get(k), dict):
+            try:
+                _controle(k, projet[k])
+            except MecaStructError:  # onglet invalide : signalé comme non relu, les autres sont ouverts
+                continue
+            saisies[k] = projet[k]
     return saisies, [k for k in PROJECT_KEYS if k not in saisies]
 
 
@@ -134,23 +167,49 @@ def resultSheets(tab: str, res: dict) -> dict[str, pd.DataFrame]:
     return sheets
 
 
+def _neutre(v):
+    """Texte que Excel ne peut pas lire comme une formule : une apostrophe précède = @ + - (sauf un nombre écrit)."""
+    if not isinstance(v, str) or not v:
+        return v
+    if v[0] in "=@\t\r":
+        return "'" + v
+    if v[0] in "+-" and len(v) > 1:  # « - » seul (case vide) n'est pas une formule
+        try:
+            float(v.replace(",", "."))
+        except ValueError:
+            return "'" + v
+    return v
+
+
+def _sansFormule(t: pd.DataFrame) -> pd.DataFrame:
+    """Copie du tableau où aucun texte (cellule ou titre de colonne) ne peut devenir une formule Excel."""
+    return t.map(_neutre).rename(columns=_neutre)
+
+
 def toXlsx(sheets: dict[str, pd.DataFrame]) -> bytes:
-    """Classeur Excel (.xlsx) : une feuille par tableau. Erreur : MecaStruct:App:noResults si `sheets` est vide."""
+    """Classeur Excel (.xlsx) : une feuille par tableau. Erreur : MecaStruct:App:noResults si `sheets` est vide.
+
+    Les textes qui commencent par = @ + - sont précédés d'une apostrophe (injection de formule).
+    """
     _nonVide(sheets)
     tampon = io.BytesIO()
     with pd.ExcelWriter(tampon, engine="openpyxl") as writer:
         for nom, t in sheets.items():
-            t.to_excel(writer, sheet_name=nom, index=False)
+            _sansFormule(t).to_excel(writer, sheet_name=nom, index=False)
     return tampon.getvalue()
 
 
 def toCsvZip(sheets: dict[str, pd.DataFrame]) -> bytes:
-    """Archive .zip d'un CSV par tableau (séparateur « ; », décimale « , », UTF-8 avec BOM pour Excel)."""
+    """Archive .zip d'un CSV par tableau (séparateur « ; », décimale « , », UTF-8 avec BOM pour Excel).
+
+    Les textes qui commencent par = @ + - sont précédés d'une apostrophe (injection de formule).
+    """
     _nonVide(sheets)
     tampon = io.BytesIO()
     with zipfile.ZipFile(tampon, "w", zipfile.ZIP_DEFLATED) as z:
         for nom, t in sheets.items():
-            z.writestr(f"{nom}.csv", t.to_csv(sep=";", decimal=",", index=False, encoding="utf-8-sig"))
+            csv = _sansFormule(t).to_csv(sep=";", decimal=",", index=False, encoding="utf-8-sig")
+            z.writestr(f"{nom}.csv", csv)
     return tampon.getvalue()
 
 
