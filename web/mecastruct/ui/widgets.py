@@ -465,12 +465,21 @@ def synthese_statut(status: str) -> None:
         synthese(valeurs)
 
 
+SAISIE_MODIFIEE = "(saisie modifiée : cliquez sur Calculer)"
+
+
 def synthese_resultat(tab: str, conteneur: Any) -> None:
-    """Remplit `conteneur` (réservé sous « Calculer ») avec les valeurs clés du résultat de l'onglet `tab`."""
+    """Remplit `conteneur` (réservé sous « Calculer ») avec les valeurs clés du résultat de l'onglet `tab`.
+
+    Saisie modifiée depuis le calcul : texte neutre au lieu du verdict coloré, qui ne vaut plus pour la saisie affichée.
+    """
     res = state.result(tab)
     if isinstance(res, dict) and res.get("status"):
         with conteneur:
-            synthese_statut(res["status"])
+            if state.is_current(tab):
+                synthese_statut(res["status"])
+            else:
+                st.caption(SAISIE_MODIFIEE)
 
 
 def _css_visualisation(compact: bool) -> str:
@@ -684,8 +693,9 @@ def file_bar(tab: str) -> None:
         )
 
         def lecture(texte: str) -> str:
-            _applique(tab, project_io.problemFromJson(texte, tab)[1])
-            return "Problème ouvert."
+            saisie = project_io.problemFromJson(texte, tab)[1]
+            _applique(tab, saisie)
+            return _alerte_materiaux({tab: saisie}) or "Problème ouvert."
 
         if _ouvre(f"{tab}.problème", lecture):
             st.rerun()
@@ -703,9 +713,7 @@ def file_bar(tab: str) -> None:
             help=None if feuilles else "Aucun résultat à exporter : cliquez d'abord sur « Calculer ».",
             width="stretch",
         )
-    msg = st.session_state.pop(f"fichier.{tab}.problème.msg", None)
-    if msg:
-        st.success(msg)
+    _message_ouverture(st.session_state.pop(f"fichier.{tab}.problème.msg", None), "Problème ouvert.")
 
 
 def project_bar() -> None:
@@ -724,15 +732,35 @@ def project_bar() -> None:
         saisies, echecs = project_io.projectFromJson(texte)
         for tab, saisie in saisies.items():
             _applique(tab, saisie)
-        if echecs:
-            return "Onglets non restaurés (absents, version différente ou contenu invalide) : " + ", ".join(echecs)
-        return "Projet ouvert."
+        non_lus = ", ".join(echecs)
+        alertes = [
+            non_lus and f"Onglets non restaurés (absents, version différente ou contenu invalide) : {non_lus}",
+            _alerte_materiaux(saisies),
+        ]
+        return "\n\n".join(a for a in alertes if a) or "Projet ouvert."
 
     if _ouvre("projet", lecture):
         st.rerun()
-    msg = st.session_state.pop("fichier.projet.msg", None)
+    _message_ouverture(st.session_state.pop("fichier.projet.msg", None), "Projet ouvert.")
+
+
+def _alerte_materiaux(saisies: dict[str, dict]) -> str:
+    """Message pour les matériaux des saisies ouvertes absents de la base (matériaux utilisateur non importés)."""
+    manquants = project_io.missingMaterials(saisies, st.session_state["dm"].listMaterials())
+    if not manquants:
+        return ""
+    liste = " ; ".join(f"« {nom} » (onglets {', '.join(tabs)})" for nom, tabs in manquants.items())
+    return (
+        f"Matériau introuvable dans la base : {liste}. Le fichier ne contient que son nom : importez d'abord vos "
+        "données utilisateur (page « Base de données », onglet « Mes données », « Recharger mes ajouts »), "
+        "puis rouvrez ce fichier."
+    )
+
+
+def _message_ouverture(msg: str | None, succes: str) -> None:
+    """Affiche le message d'ouverture d'un fichier : vert s'il vaut `succes`, avertissement sinon."""
     if msg:
-        (st.warning if msg.startswith("Onglets") else st.success)(msg)
+        (st.success if msg == succes else st.warning)(msg)
 
 
 def _extras_precedents(tab: str) -> dict | None:

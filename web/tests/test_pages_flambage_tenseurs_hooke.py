@@ -63,6 +63,19 @@ def test_flambage_regime_et_verdict_lisibles():
     assert not at.exception and not at.success
 
 
+def test_flambage_alerte_pres_du_seuil_et_libelle_de_p():
+    """λ à ±10 % de λlim : avertissement visible ; le libellé de P précise le signe (compression > 0)."""
+    at = _page("flambage")
+    assert "compression > 0" in at.number_input(key="Fla.P").label
+    at.button(key="Fla.calc").click().run()
+    assert not any("λlim" in e.value for e in at.warning)
+    b = at.session_state["res"]["Fla"]["result"]["analysis"]
+    at.number_input(key="Fla.L").set_value(at.number_input(key="Fla.L").value * b["lambdaLim"] / b["lambda"]).run()
+    at.button(key="Fla.calc").click().run()
+    assert not at.exception
+    assert any("λlim" in e.value for e in at.warning)
+
+
 @pytest.mark.parametrize("cond", ["encastre-libre", "encastre-articule", "encastre-encastre"])
 def test_flambage_conditions_aux_limites(cond):
     at = _page("flambage")

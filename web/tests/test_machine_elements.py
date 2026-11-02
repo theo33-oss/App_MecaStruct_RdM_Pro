@@ -95,6 +95,19 @@ def test_frettage_geometrie_invalide():
         shrink_fit.shrinkFit({"d": 100, "D": 90, "L": 50, "f": 0.1, "s": 1})
 
 
+def test_frettage_norme_hors_table():
+    """Au-delà de 630 mm, la table ne donne rien : la page avertit sans remplir les champs."""
+    assert shrink_fit.normValues(630)["d"] == 630
+    assert shrink_fit.normValues(631) is None
+    at = AppTest.from_file(str(PAGES / "frettage.py"), default_timeout=60).run()
+    at.number_input(key="fre.d").set_value(700.0).run()
+    qa, jeu = at.session_state["fre.qa"], at.session_state["fre.jeu"]
+    next(b for b in at.button if b.label.startswith("Valeurs conseillées")).click().run()
+    assert not at.exception
+    assert any("hors table" in w.value for w in at.warning)
+    assert (at.session_state["fre.qa"], at.session_state["fre.jeu"]) == (qa, jeu)
+
+
 def test_palier_lisse_retrouve_le_classeur():
     """Valeurs enregistrées dans « CALCULS PALIERS LISSES.xlsm » (bronze roulé, 403 N, 350 tr/min)."""
     m = plain_bearing.material("Bronze roulé")
@@ -126,6 +139,16 @@ def test_clavette_normalisee_formules():
     assert r["pArbre"] == pytest.approx(2 * C / (30 - 4) / (32 * 4))
     assert r["pMoyeu"] == pytest.approx(2 * C / (30 - 4 + 7) / (32 * 3))
     assert r["tau"] == pytest.approx(2 * C / 30 / (32 * 8))
+
+
+def test_clavette_normalisee_dimensionnement_si_longueur_nulle():
+    p = {"C": 500, "d": 30, "L": 0, "forme": "A", "Padm": 100, "tauAdm": 100}
+    r = key_pin.keyStandard(p)
+    Lmin = max(r["LminMatage"], r["LminCis"])
+    assert r["dimensionne"] and Lmin < r["Lp"] <= Lmin + 0.01
+    assert r["L"] == pytest.approx(r["Lp"] + 8)  # forme A : L = Lp + b
+    assert all(c[3] for c in r["checks"][:3])  # matage et cisaillement juste vérifiés
+    assert key_pin.keyStandard({**p, "L": r["L"]})["pArbre"] == pytest.approx(r["pArbre"])
 
 
 def test_goupille_sous_couple_formules():

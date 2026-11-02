@@ -279,3 +279,31 @@ def test_telephone_schema_au_dessus_de_la_saisie_pc_a_cote():
     assert not at.exception
     ordre = _ordre(at)
     assert ordre.index("Calculer") < ordre.index("Schéma")
+
+
+def test_verdict_efface_apres_erreur_et_changement_d_exemple():
+    """La ligne d'état (verdict) disparaît quand le calcul échoue ou quand un autre exemple est chargé."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    _bouton(at, "Calculer").click().run()
+    assert at.session_state["Beam_etat"][1] is True
+    at.number_input(key="Beam.vy").set_value(0.0).run()  # fibre extrême nulle : calcul impossible
+    _bouton(at, "Calculer").click().run()
+    assert "Beam_etat" not in at.session_state and "Beam" not in at.session_state["res"]
+    assert not at.success
+    _charge(at, "isostatique")
+    _bouton(at, "Calculer").click().run()
+    assert "Beam_etat" in at.session_state
+    _charge(at, "console")
+    assert "Beam_etat" not in at.session_state and not at.success
+
+
+def test_eurocode_non_pondere_jamais_vert():
+    """Efforts « Dernier Calculer » (tous les cas à 1) : la ligne d'état n'affiche pas « vérifié » en vert."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    assert at.selectbox(key="Beam.ecsrc").value == "enveloppe"
+    at.selectbox(key="Beam.ecsrc").set_value("courant").run()
+    at.number_input(key="Beam.Lcr").set_value(1.0).run()
+    _bouton(at, "Vérifier selon l'Eurocode 3").click().run()
+    assert not at.exception
+    texte, ok, cle = at.session_state["Beam_etat"]
+    assert cle == "BeamEC3" and ok is not True and "(vérifié)" not in texte

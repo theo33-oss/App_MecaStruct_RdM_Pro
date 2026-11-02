@@ -16,13 +16,15 @@ _ID = "MecaStruct:ShrinkFit:invalidInput"
 LETTRES_SERRAGE = ("k", "m", "n", "p", "r", "s", "t", "u", "v", "x", "y", "z", "za", "zb", "zc")
 
 
-def normValues(d: float) -> dict:
-    """Valeurs conseillées par la norme pour le diamètre d (mm) : qualités, Ra, lissage (µm), jeu de montage (mm)."""
-    lignes = load_json("shrink_fit_norm.json")["Lignes"]
-    for li in lignes:
+def normValues(d: float) -> dict | None:
+    """Valeurs conseillées par la norme pour le diamètre d (mm) : qualités, Ra, lissage (µm), jeu de montage (mm).
+
+    Renvoie None au-delà de la dernière ligne de la table (630 mm) : la norme ne donne alors aucune valeur.
+    """
+    for li in load_json("shrink_fit_norm.json")["Lignes"]:
         if d <= li["d"]:
             return li
-    return lignes[-1]
+    return None
 
 
 def _pos(p: dict, k: str, quoi: str) -> float:

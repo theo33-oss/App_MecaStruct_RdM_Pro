@@ -25,26 +25,36 @@ def keyDimensions(d: float) -> dict:
 def keyStandard(p: dict) -> dict:
     """Clavette parallèle normalisée : matage arbre et moyeu, cisaillement, torsion de l'arbre.
 
-    Entrées (dict) : C (N·m), d (mm, arbre), L (mm, longueur totale de la clavette), forme (« A », « B », « C »),
-    Padm (MPa), tauAdm (MPa, cisaillement admissible de la clavette et de l'arbre).
-    Sortie : dict dims (b, h, t1, t2), Lp (mm, longueur portante), pArbre, pMoyeu, tau, tauArbre (MPa), checks
-    (liste de (nom, valeur, limite, ok)), LminMatage, LminCis (mm, longueur portante minimale), report, latex.
+    Entrées (dict) : C (N·m), d (mm, arbre), L (mm, longueur totale de la clavette ; 0 = dimensionner : L prend la
+    longueur minimale imposée par le matage et le cisaillement), forme (« A », « B », « C »), Padm (MPa), tauAdm (MPa,
+    cisaillement admissible de la clavette et de l'arbre).
+    Sortie : dict dims (b, h, t1, t2), L (mm, longueur totale retenue), dimensionne (bool), Lp (mm, longueur
+    portante), pArbre, pMoyeu, tau, tauArbre (MPa), checks (liste de (nom, valeur, limite, ok)), LminMatage, LminCis
+    (mm, longueur portante minimale), report, latex.
     """
     d, L = float(p["d"]), float(p["L"])
     forme = p.get("forme", "A")
     if forme not in FORMES:
         raise MecaStructError(_ID, f"Forme de clavette inconnue : {forme!r} (A, B ou C).")
+    Padm, tauAdm = float(p["Padm"]), float(p["tauAdm"])
+    if Padm <= 0 or tauAdm <= 0:
+        raise MecaStructError(_ID, f"Padm et τadm doivent être positifs (Padm = {Padm:g}, τadm = {tauAdm:g} MPa).")
     k = keyDimensions(d)
     b, h, t1 = k["b"], k["h"], k["t1"]
+    C = abs(float(p["C"])) * 1e3  # N·mm
+    Farbre = 2 * C / (d - t1)  # effort au rayon moyen de la partie dans l'arbre
+    Fmoyeu = 2 * C / (d - t1 + h)
+    LminMatage = max(Farbre / (t1 * Padm), Fmoyeu / ((h - t1) * Padm))
+    LminCis = 2 * C / d / (b * tauAdm)
+    dimensionne = L <= 0
+    if dimensionne:
+        # Lp arrondie au 1/100 mm strictement supérieur : à Lp = Lmin exacte, l'arrondi flottant donnerait p > Padm.
+        L = math.floor(max(LminMatage, LminCis) * 100) / 100 + 0.01 + FORMES[forme] * b
     Lp = L - FORMES[forme] * b
     if Lp <= 0:
         raise MecaStructError(
             _ID, f"Longueur de clavette trop courte : L = {L:g} mm pour b = {b:g} mm (forme {forme})."
         )
-    C = abs(float(p["C"])) * 1e3  # N·mm
-    Padm, tauAdm = float(p["Padm"]), float(p["tauAdm"])
-    Farbre = 2 * C / (d - t1)  # effort au rayon moyen de la partie dans l'arbre
-    Fmoyeu = 2 * C / (d - t1 + h)
     pArbre = Farbre / (Lp * t1)
     pMoyeu = Fmoyeu / (Lp * (h - t1))
     tau = 2 * C / d / (Lp * b)
@@ -55,8 +65,6 @@ def keyStandard(p: dict) -> dict:
         ("Cisaillement clavette (MPa)", tau, tauAdm, tau <= tauAdm),
         ("Torsion arbre plein (MPa)", tauArbre, tauAdm, tauArbre <= tauAdm),
     ]
-    LminMatage = max(Farbre / (t1 * Padm), Fmoyeu / ((h - t1) * Padm))
-    LminCis = 2 * C / d / (b * tauAdm)
     report = [
         f"Clavette {b:g} × {h:g} (arbre d {k['dMin']:g} < d ≤ {k['dMax']:g} mm), rainure arbre t1 = {t1:g} mm, "
         f"moyeu t2 = {k['t2']:g} mm ; forme {forme} : longueur portante Lp = {Lp:g} mm",
@@ -66,6 +74,11 @@ def keyStandard(p: dict) -> dict:
         f"{tauArbre:.4g} MPa",
         f"Longueur portante minimale : matage {LminMatage:.4g} mm, cisaillement {LminCis:.4g} mm",
     ]
+    if dimensionne:
+        report.append(
+            f"Dimensionnement (L = 0) : Lp = {Lp:.4g} mm (minimum arrondi au 1/100 mm supérieur), "
+            f"longueur totale L = Lp + {FORMES[forme]:g}·b = {L:.4g} mm"
+        )
     latex = [
         rf"p_{{arbre}} = \frac{{2C}}{{(d-t_1)\,L_p\,t_1}}"
         rf" = \frac{{2\times{C:g}}}{{({d:g}-{t1:g})\times{Lp:g}\times{t1:g}}} = {pArbre:.4g}\ \mathrm{{MPa}}",
@@ -73,7 +86,8 @@ def keyStandard(p: dict) -> dict:
         rf"\tau = \frac{{2C}}{{d\,L_p\,b}} = \frac{{2\times{C:g}}}{{{d:g}\times{Lp:g}\times{b:g}}}"
         rf" = {tau:.4g}\ \mathrm{{MPa}}",
     ]
-    return {"dims": k, "Lp": Lp, "pArbre": pArbre, "pMoyeu": pMoyeu, "tau": tau, "tauArbre": tauArbre,
+    return {"dims": k, "L": L, "dimensionne": dimensionne, "Lp": Lp, "pArbre": pArbre, "pMoyeu": pMoyeu,
+            "tau": tau, "tauArbre": tauArbre,
             "checks": checks, "LminMatage": LminMatage, "LminCis": LminCis,
             "report": report, "latex": latex}  # fmt: skip
 

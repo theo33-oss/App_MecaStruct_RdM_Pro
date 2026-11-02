@@ -207,6 +207,14 @@ def test_butee_et_charge_radiale_nulle():
     assert r["result"]["L10"] == pytest.approx((35800 / 4000) ** 3)
 
 
+def test_table_cochee_sans_charge_combinee():
+    # la table (e, Y) n'est consultée que si Fr > 0 et Fa > 0 : pas d'erreur Fa/C0 hors tableau
+    radiale = mc.computeBearingLife({**mc.defaultBearingInput(), "Fa": 0.0})
+    assert radiale["result"]["P"] == pytest.approx(10000)  # P = Fr
+    butee = mc.computeBearingLife({**mc.defaultBearingInput(), "Fr": 0.0, "Fa": 12000.0})  # Fa/C0 hors tableau
+    assert butee["result"]["P"] == pytest.approx(12000)  # P = Fa
+
+
 @pytest.mark.parametrize(
     "page", ["roulements", "engrenages", "epicycloidaux", "freins_embrayages", "dimensionnement_moteur"]
 )

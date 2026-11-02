@@ -54,13 +54,15 @@ def resultats(page: str, s: dict, graphique: Callable[[dict], Any] | None = None
     if calc is None:
         st.info("Renseignez les données, puis cliquez sur « Calculer ».")
         return
-    if calc["empreinte"] != repr(s):
+    res = calc["res"]
+    if calc["empreinte"] == repr(s):  # empreinte propre à ces pages (elles n'utilisent pas state.set_result)
+        widgets.status(res["status"], res["ok"])
+    else:  # verdict coloré retiré : il ne vaut plus pour la saisie affichée
         st.warning(
             "Saisie modifiée depuis le dernier calcul : les résultats affichés datent de l'ancienne saisie. "
             "Cliquez sur « Calculer » pour les actualiser."
         )
-    res = calc["res"]
-    widgets.status(res["status"], res["ok"])
+        st.caption(f"{widgets.SAISIE_MODIFIEE} {res['status']}")
     onglets = [("Synthèse", lambda: st.dataframe(res["tables"]["Synthèse"], hide_index=True))]
     if graphique is not None:
         onglets.insert(0, ("Graphique", lambda: widgets.plot(graphique(res["result"]))))

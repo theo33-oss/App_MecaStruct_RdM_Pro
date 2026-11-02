@@ -56,6 +56,21 @@ def test_efforts_de_la_poutre_section_composee_envoyee():
     assert not at.exception
 
 
+def test_profile_catalogue_transfere_sans_fausse_alerte():
+    """IPE 200 envoyé à la poutre : la section est la même, pas d'alerte « section différente » (Iz tabulé)."""
+    at = AppTest.from_file(PAGE, default_timeout=60).run()
+    at.selectbox(key="Sec.type").set_value("profile").run()
+    at.selectbox(key="Sec.fam").set_value("IPE").run()
+    at.selectbox(key="Sec.prof").set_value("IPE 200").run()
+    _bouton(at, "Calculer").click().run()
+    _bouton(at, "Utiliser cette section pour une poutre").click().run()
+    _bouton(at, "Efforts en s").click().run()
+    assert not at.exception and not at.error
+    messages = [i.value for i in at.info]
+    assert any("Efforts lus sur la poutre" in m for m in messages)
+    assert not any("diffère" in m for m in messages)
+
+
 def test_efforts_de_la_poutre():
     """« Efforts en s » et « Efforts au point critique » reprennent les efforts de la poutre (IPE 300, 6 m)."""
     at = AppTest.from_file(PAGE, default_timeout=60).run()

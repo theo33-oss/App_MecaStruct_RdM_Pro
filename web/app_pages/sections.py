@@ -94,7 +94,9 @@ def _efforts_poutre(mode: str) -> None:
     r = state.result("Sec")
     beam = state.saisie("Beam")
     if r is not None:  # pas de != sur les sections : une section composée contient des tableaux NumPy
-        iz_sec = r["result"]["P"]["Iz"] * 1e12
+        sec = r["result"]["sec"]
+        # profilé du catalogue : le transfert envoie l'Iz tabulé (sectionToBeamInput), on compare à la même source
+        iz_sec = (geometry.tabulated(sec) if sec["type"] == TYPE_PROFILE else r["result"]["P"])["Iz"] * 1e12
         if abs(beam["Iz"] - iz_sec) > 1e-3 * iz_sec:
             msg += (
                 f"  ⚠ Attention : la section de la page Sections (Iz = {iz_sec:.4g} mm⁴) diffère de celle de la poutre "

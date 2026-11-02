@@ -92,6 +92,33 @@ def test_profile_le_plus_leger_readme(dm):
     assert T.iloc[i - 1]["Kt·σ max (MPa)"] > T.iloc[i - 1]["σadm (MPa)"], "Le profilé précédent ne vérifie pas."
 
 
+def test_profile_le_plus_leger_verifie_le_tranchant(dm):
+    """F = 400 kN près d'un appui sur 1 m : la flexion seule retiendrait l'IPE 220, le tranchant l'écarte."""
+    s = _beam(dm, "IPE 220", 1.0)
+    s.update(dl=[], pl=[{"pos": 0.1, "Fx": 0.0, "Fy": -400.0, "Fz": 0.0, "name": "F", "case": "Q"}])
+    T, best = findLightestProfile(s, dm, "IPE", None)
+    ligne = T[T["Profilé"] == "IPE 220"].iloc[0]
+    assert ligne["Kt·σ max (MPa)"] <= ligne["σadm (MPa)"]
+    assert ligne["Résistance"] == "NON vérifié (tranchant : VEd/Vpl,Rd = 1.67)"
+    assert best["S"] > dm.getProfile("IPE", "IPE 220")["S"]
+    T, _ = findLightestProfile(_readme(dm), dm, "UPN", None)
+    assert T["Résistance"].str.contains("flexion seule, tranchant non vérifié").all()
+
+
+def test_eurocode_par_defaut_enveloppe_et_non_pondere_indicatif(dm):
+    s = _beam(dm)
+    _, T = checkEurocode(s, dm)
+    assert T.set_index("Grandeur").loc["Efforts utilisés", "Valeur"] == "enveloppe des combinaisons"
+    s["Lcr"] = 1.0  # tout passe avec les efforts non pondérés
+    r, T = checkEurocode(s, dm, "poutre")
+    assert r["okAll"] and not r["pondere"]
+    final = T.set_index("Grandeur").loc["Eurocode 3 (sections, voilement, déversement, N + M, flambement)", "Valeur"]
+    assert final.startswith("indicatif")
+    s["combo"] = []
+    r, _ = checkEurocode(s, dm)
+    assert not r["pondere"], "Sans combinaison : efforts de la poutre."
+
+
 def test_fleche_limitee_impose_un_profil_plus_gros(dm):
     s = _readme(dm)
     before = copy.deepcopy(s)

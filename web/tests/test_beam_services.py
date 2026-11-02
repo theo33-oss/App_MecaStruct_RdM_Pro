@@ -175,6 +175,64 @@ def test_distCoeffs_erreurs():
         distCoeffs("inconnue", "1", 0.0, 1.0)
 
 
+def test_distCoeffs_refuse_trop_de_valeurs():
+    """Uniforme : une valeur ; linéaire : deux. Une valeur en trop n'est plus ignorée sans message."""
+    with pytest.raises(MecaStructError, match="une seule valeur") as err:
+        distCoeffs("uniforme", "-10 -20", 0.0, 1.0)
+    assert err.value.identifier == "MecaStruct:App:invalidInput"
+    with pytest.raises(MecaStructError, match="deux valeurs"):
+        distCoeffs("linéaire", "0 -10 -20", 0.0, 1.0)
+    assert distCoeffs("polynomiale", "1 2 3 4", 0.0, 1.0).size == 4  # degré 3 : 4 coefficients
+
+
+# ---------------------------------------------------------------------------------------------
+# Tranchant dans le verdict (VEd/Vpl,Rd, même formule que checkEurocode)
+# ---------------------------------------------------------------------------------------------
+
+
+def _ipe220_console_courte(dm):
+    """IPE 220 du catalogue, L = 1 m sur deux appuis, F = 400 kN en x = 0,1 m : flexion admise, tranchant non."""
+    from mecastruct.services.beam_design import sectionToBeamInput
+
+    sec = geometry.fromProfile(dm.getProfile("IPE", "IPE 220"))
+    s = sectionToBeamInput(defaultBeamInput(), sec, geometry.analytical(sec), dm.getMaterial("S235"))
+    s.update(L=1.0, dl=[], pl=[{"pos": 0.1, "Fx": 0.0, "Fy": -400.0, "Fz": 0.0, "name": "F", "case": "Q"}])
+    s["sup"][1]["pos"] = 1.0
+    return s
+
+
+def test_verdict_non_verifie_par_le_tranchant(dm):
+    from mecastruct.services.beam_design import checkEurocode
+
+    s = _ipe220_console_courte(dm)
+    r = computeBeam(s, dm)
+    sh = r["check"]["shear"]
+    assert r["check"]["bend"]["ok"], "La flexion seule passe."
+    assert sh["VEd"] == pytest.approx(360e3, rel=1e-9)
+    assert sh["ratio"] == pytest.approx(1.67, abs=5e-3)
+    assert not r["check"]["ok"]
+    assert "NON vérifié" in r["status"] and "VEd/Vpl,Rd = 1.67" in r["status"]
+    assert "NE résiste PAS au tranchant" in r["rapport"][0]
+    assert r["tables"]["Contraintes"]["Valeur"].iloc[-1] == "NON vérifié"
+    ec3, _ = checkEurocode(s, dm, "poutre")
+    assert sh["Vpl"] == pytest.approx(ec3["Vpl"], rel=1e-12), "Même Vpl,Rd que l'Eurocode 3."
+    s["combo"] = [{"name": "ELU", "gG": 1.0, "gQ": 1.0, "gW": 0.0, "gS": 0.0}]
+    assert computeCombinations(s, dm)["Résistance"].iloc[0] == "NON vérifié"
+
+
+def test_section_saisie_a_la_main_flexion_seule(dm):
+    s = _ipe200_readme(dm)
+    s["section"] = None
+    r = computeBeam(s, dm)
+    assert r["check"]["shear"] is None
+    assert r["check"]["ok"] == r["check"]["bend"]["ok"]
+    assert "flexion seule, tranchant non vérifié" in r["status"]
+
+
+def test_eurocode_par_defaut_sur_l_enveloppe():
+    assert defaultBeamInput()["ecsrc"] == "enveloppe"
+
+
 # ---------------------------------------------------------------------------------------------
 # Combinaisons
 # ---------------------------------------------------------------------------------------------

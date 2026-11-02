@@ -494,6 +494,12 @@ def _buildReport(r: dict, info: dict, hasP: bool, pNegative: bool) -> list[str]:
         f"σadm = {r['sigmaAdm'] / 1e6:.5g} MPa",
         "8) Vérification :",
     ]
+    if alerteSeuilLambdaLim(r["lambda"], r["lambdaLim"]):
+        rep.append(
+            f"   ATTENTION : λ = {r['lambda']:.4g} est à moins de 10 % de λlim = {r['lambdaLim']:.4g} ; "
+            "Pcrit change de modèle (Rankine/Euler) au seuil et saute de Re·S/2 à PE = Re·S : "
+            "le verdict est sensible à une petite variation de L, de la section ou du matériau."
+        )
     if hasP:
         if pNegative:
             rep.append("   P < 0 interprété comme un effort normal N < 0 (compression) : |P| retenu.")
@@ -904,6 +910,15 @@ def listConditions() -> list[dict]:
             }
         )
     return lignes
+
+
+def alerteSeuilLambdaLim(lam: float, lambdaLim: float) -> bool:
+    """Indique si l'élancement est proche du seuil d'Euler (|λ − λlim| ≤ 10 % de λlim).
+
+    Entrées : `lam` (élancement λ) et `lambdaLim` (élancement limite λlim = π·√(E/Re)). Sortie : True quand
+    λ est dans la bande ±10 % autour de λlim, où Pcrit saute (PR = Re·S/2 juste avant, PE = Re·S au seuil).
+    """
+    return abs(lam - lambdaLim) <= 0.1 * lambdaLim
 
 
 def effectiveLengthCoefficient(condition: str) -> float:

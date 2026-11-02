@@ -50,6 +50,15 @@ def _materiau(dm: DataManager, nom: str, champs: list[str]) -> dict:
     return {c: fromSI(m[c], _MAT_UNITS[c]) for c in champs}
 
 
+def _refuserBeton(saisie: dict, dm: DataManager) -> None:
+    """Béton : résistance en traction négligeable, la vérification Re/s (fck pris comme Re) n'a pas de sens."""
+    if saisie.get("mat") in dm.listMaterials() and dm.getMaterial(saisie["mat"])["Category"].casefold() == "béton":
+        raise MecaStructError(
+            "MecaStruct:App:concreteNotApplicable",
+            "Béton : résistance en traction négligeable, vérification non applicable.",
+        )
+
+
 def _rapport(entete: list[str], blocs: list[tuple[str, list[str]]]) -> list[str]:
     """setReport : synthèse, puis un bloc par titre « === … === » (texte de la zone de résultats)."""
     lignes = list(entete)
@@ -494,11 +503,14 @@ def defaultTractionInput() -> dict:
 def computeTraction(saisie: dict, dm: DataManager) -> dict:
     """Traction/compression : σ(x), ΔL par 3 méthodes, rigidité ; section variable S(x) si demandée.
 
-    Entrées : `saisie` (defaultTractionInput) ; `dm` (non utilisé, le matériau est déjà dans E, nu, alpha, Re).
+    Entrées : `saisie` (defaultTractionInput) ; `dm` (catégorie du matériau ; E, nu, alpha, Re sont dans la saisie).
+    Erreur MecaStruct:App:concreteNotApplicable pour un béton en traction (N > 0).
     Sortie : result (moteur + x, Sx pour le tracé de σ(x), en m et m², + rapport), tables « Synthèse », status
     (σmax, ΔL intégrale).
     """
     T = saisie
+    if T["N"] > 0:
+        _refuserBeton(T, dm)
     p = {
         "N": toSI(T["N"], "kN"),
         "S0": toSI(T["S0"], "mm^2"),
@@ -800,7 +812,10 @@ def defaultBendingInput() -> dict:
 
 
 def computeBending(saisie: dict, dm: DataManager) -> dict:
-    """Contraintes normales de flexion composée dans la section de Sections : σmax, axe neutre (rapport)."""
+    """Contraintes normales de flexion composée dans la section de Sections : σmax, axe neutre (rapport).
+
+    Erreur MecaStruct:App:concreteNotApplicable pour un béton dont une fibre est tendue.
+    """
     F = saisie
     sec = F["section"]
     P = geometry.analytical(sec)
@@ -822,6 +837,8 @@ def computeBending(saisie: dict, dm: DataManager) -> dict:
         f"Kt·|σ|max = {bend['sigmaMaxKt'] / 1e6:.5g} MPa ≤ {bend['sigmaAdm'] / 1e6:.5g} MPa : "
         f"{_okText(bend['ok'])}"
     )
+    if bend["sigmaMaxTraction"] > 0:
+        _refuserBeton(F, dm)
     rows = [
         ("σ traction max", bend["sigmaMaxTraction"] / 1e6, "MPa"),
         ("σ compression max", bend["sigmaMaxCompression"] / 1e6, "MPa"),

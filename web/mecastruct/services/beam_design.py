@@ -104,13 +104,15 @@ def sectionToBeamInput(saisie: dict, sec: dict, P: dict, material: dict | None) 
     return out
 
 
-def checkEurocode(saisie: dict, dm: DataManager, source: str = "poutre") -> tuple[dict, pd.DataFrame]:
-    """Vérification Eurocode 3 simplifiée (ec3Bending) de la poutre, avec efforts « poutre » ou « enveloppe ».
+def checkEurocode(saisie: dict, dm: DataManager, source: str | None = None) -> tuple[dict, pd.DataFrame]:
+    """Vérification Eurocode 3 simplifiée (ec3Bending) de la poutre, avec efforts « enveloppe » ou « poutre ».
 
-    Entrées : `saisie` (BEAM_INPUT_DOC, section importée obligatoire) ; `dm` ; `source` : 'poutre' (tous les cas à 1)
-    ou 'enveloppe' (enveloppe des combinaisons, ligne Enveloppe de computeCombinations).
-    Sortie : (r, T) : r dict des vérifications (class, W, ltb, axial, buck, inter, web, okAll, MEd, VEd, ratioM…),
-    T tableau Grandeur / Valeur / Unité.
+    Entrées : `saisie` (BEAM_INPUT_DOC, section importée obligatoire) ; `dm` ; `source` : 'enveloppe' (enveloppe des
+    combinaisons, ligne Enveloppe de computeCombinations) ou 'poutre' (tous les cas à 1 : efforts non pondérés) ;
+    None (défaut) : 'enveloppe' si le tableau combo a une ligne, sinon 'poutre'.
+    Sortie : (r, T) : r dict des vérifications (class, W, ltb, axial, buck, inter, web, okAll, pondere, MEd, VEd,
+    ratioM…), T tableau Grandeur / Valeur / Unité. Efforts non pondérés (pondere faux) : le verdict du tableau est
+    « indicatif » au lieu de « vérifié ».
     Erreur : MecaStruct:App:invalidInput si la section n'est pas un profilé ou un profil en I, ou source inconnue.
     """
     sec = saisie.get("section")
@@ -121,6 +123,8 @@ def checkEurocode(saisie: dict, dm: DataManager, source: str = "poutre") -> tupl
             "exemple), pas de valeurs saisies à la main.",
         )
     d = design_checks.ibeamDims(sec)
+    if source is None:
+        source = "enveloppe" if saisie.get("combo") else "poutre"
     if source == "enveloppe":
         c = computeCombinations(saisie, dm).iloc[-1]
         MEd = _maxAbs(c["Mfz max (kN·m)"], c["Mfz min (kN·m)"]) * 1e3
@@ -133,7 +137,7 @@ def checkEurocode(saisie: dict, dm: DataManager, source: str = "poutre") -> tupl
         MEd = _maxAbs(e["Mfz"]["max"], e["Mfz"]["min"])
         VEd = _maxAbs(e["Ty"]["max"], e["Ty"]["min"])
         Nmax, Nmin = e["N"]["max"], e["N"]["min"]
-        src = "poutre recalculée avec la saisie actuelle (tous les cas à 1)"
+        src = "poutre recalculée avec la saisie actuelle (tous les cas à 1 : efforts NON pondérés)"
         My = _maxAbs(e["Mfy"]["max"], e["Mfy"]["min"]) / 1e3
         ignored = f"Mfy max = {My:.4g} kN·m (flexion déviée non prise en compte)" if My > 1e-6 else ""
     else:
@@ -176,6 +180,7 @@ def checkEurocode(saisie: dict, dm: DataManager, source: str = "poutre") -> tupl
         and (r["inter"] is None or r["inter"]["ok"])
         and r["web"]["ok"]
     )
+    r["pondere"] = source == "enveloppe"
     rows = _ec3Rows(r, d, src, fy, saisie, Lcr, LcrF, NEd)
     sol = solveBeam(buildBeamModel(saisie, dm))
     if not sol["isostatic"] and sol["model"]["Iyz"] != 0:
@@ -311,8 +316,11 @@ def _ec3Rows(r: dict, d: dict, src: str, fy: float, saisie: dict, Lcr: float, Lc
         )
     else:
         naTxt = "valeurs recommandées de l'EN (γM0 = γM1 = 1,0)"
+    verdict = r["okAll"]
+    if verdict and not r["pondere"]:
+        verdict = "indicatif : vérifié avec des efforts non pondérés, à refaire avec l'enveloppe ELU des combinaisons"
     rows += [
-        ("Eurocode 3 (sections, voilement, déversement, N + M, flambement)", r["okAll"], ""),
+        ("Eurocode 3 (sections, voilement, déversement, N + M, flambement)", verdict, ""),
         (
             "Non vérifié",
             "voilement local sous charges concentrées (EN 1993-1-5 §6), flexion déviée, ELS, assemblages, classe 4",
@@ -366,7 +374,8 @@ def findLightestProfile(
     UAP) ; `deflRatio` : flèche limitée à L/deflRatio (None ou 0 = ignorée).
     Sortie : (T, best) : T trié par aire croissante (colonnes Profilé, S (mm²), Masse (kg/m), Kt·σ max (MPa),
     σadm (MPa), f max (mm), L/f (-), Résistance) ; best = profilé du catalogue (getProfile) qui vérifie
-    (résistance et, si demandé, flèche), None sinon.
+    (flexion Kt·σ ≤ Re/s, tranchant VEd/Vpl,Rd ≤ 1 pour IPE, HEA, HEB, IPN et, si demandée, flèche), None sinon.
+    UPN et UAP : flexion seule, tranchant non vérifié (écrit dans la colonne Résistance).
     """
     if deflRatio is None:
         deflRatio = 0.0
@@ -390,8 +399,8 @@ def findLightestProfile(
                 "Iyz": 0.0,
                 "vy": p["h"] / 2 * 1e3,
                 "vz": p["b"] / 2 * 1e3,
-                "section": None,
-                "secTabulated": False,
+                "section": sec,  # forme du profilé pour le tranchant ; la flexion garde les valeurs du catalogue
+                "secTabulated": True,
             }
         )
         try:
@@ -399,8 +408,9 @@ def findLightestProfile(
             L = beam["sol"]["model"]["L"]
             f = beam["defl"]["integration"]["fmax"] * 1e3
             chk = beam["check"]["bend"]
+            sh = beam["check"]["shear"]
             okF = deflRatio <= 0 or f <= L * 1e3 / deflRatio
-            ok = bool(chk["ok"]) and okF
+            ok = bool(beam["check"]["ok"]) and okF
             vals = [
                 p["S"] * 1e6,
                 rho * p["S"],
@@ -410,6 +420,10 @@ def findLightestProfile(
                 L * 1e3 / max(f, _EPS),
             ]
             verdict = _okText(ok)
+            if sh is None:
+                verdict += " (flexion seule, tranchant non vérifié)"
+            elif not sh["ok"]:
+                verdict += f" (tranchant : VEd/Vpl,Rd = {sh['ratio']:.3g})"
         except Exception as err:  # comme MATLAB : un profilé en erreur ne bloque pas les autres
             ok = False
             vals = [math.nan] * 6

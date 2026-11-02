@@ -12,7 +12,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from mecastruct.core import geometry
+from mecastruct.core import design_checks, geometry
 from mecastruct.core.beam_solver import solveBeam
 from mecastruct.core.data_manager import DataManager
 from mecastruct.core.deflection import deflection, strainEnergy
@@ -36,7 +36,8 @@ tranchant à la flèche de Castigliano : une IPE 200 de 4 m sous 10 kN/m passe d
 Les trois autres méthodes (intégration, aires, Mohr) ne tiennent pas compte du tranchant et ne changent pas.
 secTabulated (bool) : vrai si la section vient d'un profilé du catalogue (valeurs de la saisie, pas le contour).
 Champs E19 : na (« EN », « FR » ou « autre »), gM0, gM1, Cmy, CmLT (-), Lcr, LcrF (m, 0 = L), C1 (-),
-ecsrc (« courant » ou « enveloppe »), fR (-), fka, fkb (-), mvP (texte, kN), mvE (texte, m), mvN (positions),
+ecsrc (« enveloppe », défaut : efforts pondérés des combinaisons ; « courant » : tous les cas à 1, verdict
+indicatif), fR (-), fka, fkb (-), mvP (texte, kN), mvE (texte, m), mvN (positions),
 mvFixed (bool : garder les charges fixes avec le convoi), pfam (famille de profilés), pdef (flèche L/n, 0 = ignorée).
 Tableaux (listes de dicts) :
   sup    : {pos (m), type, name}
@@ -100,7 +101,7 @@ def defaultBeamInput() -> dict:
         "Lcr": 0.0,
         "LcrF": 0.0,
         "C1": 1.0,
-        "ecsrc": "courant",
+        "ecsrc": "enveloppe",  # MATLAB : « courant » (efforts non pondérés) ; ici l'ELU des combinaisons
         "fR": 0.0,
         "fka": 1.0,
         "fkb": 1.0,
@@ -152,7 +153,9 @@ def distCoeffs(type_: str, vals: str, a: float, b: float) -> np.ndarray:
 
     Entrées : `type_` ('uniforme', 'linéaire' ou 'polynomiale', sans accent accepté) ; `vals` (texte, nombres
     séparés par espaces, virgules ou points-virgules) ; `a`, `b` (m). Sortie : np.ndarray (kN/m, kN/m², …).
-    Erreur : MecaStruct:App:invalidInput si une valeur est invalide ou le type inconnu.
+    Nombre de valeurs : 1 (uniforme), 2 (linéaire), degré + 1 (polynomiale : le degré se déduit du nombre de valeurs).
+    Erreur : MecaStruct:App:invalidInput si une valeur est invalide, si leur nombre ne convient pas au type ou si le
+    type est inconnu.
     """
     s = re.sub(r"[;]", " ", str(vals)).strip()
     v = np.array([float(t) for t in re.findall(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?", s.replace(",", "."))])
@@ -160,10 +163,16 @@ def distCoeffs(type_: str, vals: str, a: float, b: float) -> np.ndarray:
         raise MecaStructError(_ID, f"Charge répartie : valeurs « {s} » invalides.")
     t = str(type_).lower().replace("é", "e").replace("è", "e")
     if t == "uniforme":
-        return v[:1]
+        if v.size != 1:
+            raise MecaStructError(
+                _ID, f"Charge uniforme : une seule valeur « p0 » attendue ({v.size} saisies : « {s} »)."
+            )
+        return v
     if t == "lineaire":
-        if v.size < 2:
-            raise MecaStructError(_ID, "Charge linéaire : deux valeurs « p1 p2 » attendues.")
+        if v.size != 2:
+            raise MecaStructError(
+                _ID, f"Charge linéaire : deux valeurs « p1 p2 » attendues ({v.size} saisie(s) : « {s} »)."
+            )
         return np.array([(v[1] - v[0]) / (b - a), v[0]])
     if t == "polynomiale":
         return v
@@ -342,12 +351,56 @@ def _sectionProps(saisie: dict) -> dict:
     }
 
 
-def beamCheck(saisie: dict, sol: dict, dm: DataManager) -> dict:
-    """Vérification de résistance au point le plus sollicité (flexion composée et déviée).
+def _shearCheck(saisie: dict, Ty: np.ndarray) -> dict | None:
+    """Tranchant de l'axe fort, VEd/Vpl,Rd ≤ 1 (EN 1993-1-1 §6.2.6), avec l'Av et le Vpl,Rd de checkEurocode.
 
-    Entrées : `saisie` (Kt, Re, s, vy, vz, S…, section) ; `sol` (sortie de solveBeam) ; `dm` (non utilisé, gardé
+    Entrées : `saisie` (section, S en mm², Re en MPa, gM0) ; `Ty` (N, le long de la poutre).
+    Sortie : dict VEd (N), Av (m²), Vpl (N), ratio, ok ; None si la section n'est pas un profilé IPE, HEA, HEB, IPN
+    ou un profil en I (tranchant non vérifié, flexion seule).
+    Erreur : MecaStruct:App:invalidInput si Re ou γM0 n'est pas > 0.
+    """
+    sec = saisie.get("section")
+    if sec is None:
+        return None
+    try:
+        d = design_checks.ibeamDims(sec)
+    except MecaStructError:
+        return None
+    fy = toSI(saisie["Re"], "MPa")
+    gM0 = float(saisie.get("gM0", 1.0))
+    if not (fy > 0 and gM0 > 0):
+        raise MecaStructError(_ID, "Tranchant : Re et γM0 doivent être strictement positifs.")
+    # mêmes lignes que design_checks.ec3Bending : Av de l'§6.2.6(3), η = 1,2 jusqu'à S460
+    hw = d["h"] - 2 * d["tf"]
+    eta = 1.0 if fy > 460e6 else 1.2
+    S = toSI(saisie["S"], "mm^2")
+    Av = max(S - 2 * d["b"] * d["tf"] + (d["tw"] + 2 * d["r"]) * d["tf"], eta * hw * d["tw"])
+    Vpl = Av * (fy / math.sqrt(3)) / gM0
+    VEd = float(np.max(np.abs(Ty)))
+    return {"VEd": VEd, "Av": Av, "Vpl": Vpl, "ratio": VEd / Vpl, "ok": bool(VEd / Vpl <= 1)}
+
+
+def _shearText(chk: dict) -> str:
+    """Ligne du tranchant : rapport VEd/Vpl,Rd, ou « flexion seule, tranchant non vérifié »."""
+    sh = chk["shear"]
+    if sh is None:
+        return (
+            "Tranchant : flexion seule, tranchant non vérifié (Vpl,Rd demande un profilé IPE, HEA, HEB, IPN ou une "
+            "section en I)."
+        )
+    return (
+        f"Tranchant [EN 1993-1-1 §6.2.6] : VEd = max|Ty| = {sh['VEd'] / 1e3:.5g} kN, Av = {sh['Av'] * 1e6:.5g} mm², "
+        f"Vpl,Rd = Av·(Re/√3)/γM0 = {sh['Vpl'] / 1e3:.5g} kN, VEd/Vpl,Rd = {sh['ratio']:.3g} → {_okText(sh['ok'])}"
+    )
+
+
+def beamCheck(saisie: dict, sol: dict, dm: DataManager) -> dict:
+    """Vérification de résistance : flexion composée et déviée au point le plus sollicité, puis tranchant.
+
+    Entrées : `saisie` (Kt, Re, s, vy, vz, S…, section, gM0) ; `sol` (sortie de solveBeam) ; `dm` (non utilisé, gardé
     pour la signature commune des services).
-    Sortie : dict s (m), N, Ty, Tz, Mfz, Mfy (SI au point), bend (bendingStress), sigma, loc, ok, report (list[str]).
+    Sortie : dict s (m), N, Ty, Tz, Mfz, Mfy (SI au point), bend (bendingStress), sigma, loc, shear (_shearCheck ;
+    None si la section n'est pas en I), ok (flexion et, s'il est vérifié, tranchant), report (list[str]).
     """
     L = sol["model"]["L"]
     s = np.unique(np.concatenate([np.linspace(0.0, L, 1201), np.asarray(sol["breaks"], dtype=float).ravel()]))
@@ -407,7 +460,8 @@ def beamCheck(saisie: dict, sol: dict, dm: DataManager) -> dict:
         f"Point le plus sollicité : s = {ss[i]:.4g} m (N = {N[i] / 1e3:.5g} kN, Mfz = {Mfz[i] / 1e3:.5g} kN·m, "
         f"Mfy = {Mfy[i] / 1e3:.5g} kN·m) ; {srcTxt}."
     )
-    return {
+    shear = _shearCheck(saisie, Ty)
+    chk = {
         "s": float(ss[i]),
         "N": float(N[i]),
         "Ty": float(Ty[i]),
@@ -417,9 +471,12 @@ def beamCheck(saisie: dict, sol: dict, dm: DataManager) -> dict:
         "bend": bend,
         "sigma": sig,
         "loc": loc,
-        "ok": bend["ok"],
+        "shear": shear,
+        "ok": bool(bend["ok"]) and (shear is None or shear["ok"]),
         "report": [text, *bend["report"]],
     }
+    chk["report"].append(_shearText(chk))
+    return chk
 
 
 def computeBeam(saisie: dict, dm: DataManager) -> dict:
@@ -437,10 +494,11 @@ def computeBeam(saisie: dict, dm: DataManager) -> dict:
     chk = beamCheck(saisie, sol, dm)
     h = sol["h"]
     hTxt = "isostatique" if sol["isostatic"] else "hyperstatique"
-    bd = chk["bend"]
+    bd, sh = chk["bend"], chk["shear"]
+    shTxt = "flexion seule, tranchant non vérifié" if sh is None else f"VEd/Vpl,Rd = {sh['ratio']:.3g}"
     status = (
         f"h = {h['total']} ({hTxt}) — f max = {d['integration']['fmax'] * 1e3:.4g} mm — "
-        f"Kt·|σ|max = {bd['sigmaMaxKt'] / 1e6:.4g} MPa ({_okText(bd['ok'])})"
+        f"Kt·|σ|max = {bd['sigmaMaxKt'] / 1e6:.4g} MPa, {shTxt} ({_okText(chk['ok'])})"
     )
     unreliable = (not sol["isostatic"]) and sol["model"]["Iyz"] != 0
     if unreliable:
@@ -469,15 +527,26 @@ def beamReport(res: dict) -> list[str]:
     hTxt = "isostatique" if sol["isostatic"] else "hyperstatique"
     sig, adm = bd["sigmaMaxKt"] / 1e6, bd["sigmaAdm"] / 1e6
     marge = (adm - sig) / adm * 100
-    if bd["ok"]:
+    sh = chk["shear"]
+    shTxt = (
+        " Flexion seule, tranchant non vérifié."
+        if sh is None
+        else f" Tranchant : VEd/Vpl,Rd = {sh['ratio']:.3g} ({sh['VEd'] / 1e3:.1f} kN pour {sh['Vpl'] / 1e3:.1f} kN)."
+    )
+    if chk["ok"]:
         verdict = (
             f"Verdict : la poutre résiste. Contrainte {sig:.1f} MPa pour {adm:.1f} MPa admissibles, "
-            f"marge {marge:.0f} %."
+            f"marge {marge:.0f} %.{shTxt}"
+        )
+    elif bd["ok"]:
+        verdict = (
+            f"Verdict : la poutre NE résiste PAS au tranchant.{shTxt} Contrainte de flexion {sig:.1f} MPa pour "
+            f"{adm:.1f} MPa admissibles. Augmentez la section ou réduisez la charge."
         )
     else:
         verdict = (
             f"Verdict : la poutre NE résiste PAS. Contrainte {sig:.1f} MPa pour {adm:.1f} MPa admissibles "
-            f"(dépassement {-marge:.0f} %). Augmentez la section ou réduisez la charge."
+            f"(dépassement {-marge:.0f} %).{shTxt} Augmentez la section ou réduisez la charge."
         )
     lines = [
         verdict,
@@ -501,6 +570,7 @@ def beamReport(res: dict) -> list[str]:
         f"rotation max |α| = {np.max(np.abs(di['alpha'])) * 1e3:.5g} mrad",
         f"Énergie de déformation totale U = {U['total']:.5g} J",
         f"Vérification : Kt·|σ|max = {sig:.5g} MPa en s = {chk['s']:.4g} m, σadm = {adm:.5g} MPa → {_okText(bd['ok'])}",
+        _shearText(chk),
         "Étape suivante : « Envoyer au tenseur » pour les contraintes principales et les critères, "
         "ou la page Flambage si la poutre est comprimée.",
     ]
@@ -577,7 +647,12 @@ def beamTables(res: dict) -> dict[str, pd.DataFrame]:
         ("σ compression max", bd["sigmaMaxCompression"] / 1e6, "MPa"),
         ("Kt·|σ|max", bd["sigmaMaxKt"] / 1e6, "MPa"),
         ("σadm = Re/s", bd["sigmaAdm"] / 1e6, "MPa"),
-        ("Résistance", _okText(bd["ok"]), ""),
+        (
+            "VEd/Vpl,Rd (tranchant, EN 1993-1-1 §6.2.6)",
+            "flexion seule, tranchant non vérifié" if chk["shear"] is None else chk["shear"]["ratio"],
+            "-",
+        ),
+        ("Résistance (flexion et tranchant)", _okText(chk["ok"]), ""),
     ]
     verif = pd.DataFrame(
         [(nom, v if isinstance(v, str) else f"{v:.6g}", u) for nom, v, u in lignes],
@@ -645,7 +720,7 @@ def computeCombinations(saisie: dict, dm: DataManager) -> pd.DataFrame:
         v[i, :6] = [e["Mfz"]["max"], e["Mfz"]["min"], e["Ty"]["max"], e["Ty"]["min"], e["N"]["max"], e["N"]["min"]]
         v[i, :6] /= 1e3
         v[i, 6:9] = [d["integration"]["fmax"] * 1e3, chk["bend"]["sigmaMaxKt"] / 1e6, chk["bend"]["sigmaAdm"] / 1e6]
-        ok[i] = bool(chk["bend"]["ok"])
+        ok[i] = bool(chk["ok"])
         verdict.append(_okText(ok[i]))
 
     ok &= ~np.isnan(v[:, 0])

@@ -44,9 +44,13 @@ def computeBearingLife(s: dict) -> dict:
         )
     faC0 = s["Fa"] / s["C0"]
     fafr = s["Fa"] / s["Fr"] if s["Fr"] > 0 else math.inf
-    if s["tableau"]:
+    combinee = s["Fr"] > 0 and s["Fa"] > 0
+    if s["tableau"] and combinee:
         e, Y = bearings.eYInterpolated(faC0)
         X = bearings.xyTable()["X"]
+    elif s["tableau"]:
+        # charge purement radiale (P = Fr) ou butée (P = Fa) : la table (e, Y) est sans objet
+        e, X, Y = math.inf, bearings.xyTable()["X"], math.nan
     else:
         e, X, Y = s["e"], s["X"], s["Y"]
     P = bearings.dynamicLoad(s["Fr"], s["Fa"], e, X, Y)
@@ -70,7 +74,9 @@ def computeBearingLife(s: dict) -> dict:
             rf"P = X F_r + Y F_a = {X:g} \times {s['Fr']:g} + {Y:.4g} \times {s['Fa']:g} = {P:.5g}\ \mathrm{{N}}"
         )
     latex = [
-        rf"Fa/C_0 = {faC0:.4g} \quad e = {e:.4g} \quad Y = {Y:.4g}",
+        rf"Fa/C_0 = {faC0:.4g} \quad e = {e:.4g} \quad Y = {Y:.4g}"
+        if math.isfinite(e)
+        else rf"Fa/C_0 = {faC0:.4g} \quad \text{{table (e, Y) sans objet}}",
         equivalente,
         rf"L_{{10}} = \left(\frac{{C}}{{P}}\right)^{{{n:.4g}}} = {L10:.4g}\ \mathrm{{millions\ de\ tours}}",
         rf"L_{{10h}} = \frac{{10^6\, L_{{10}}}}{{60\, N}} = {L10h:.5g}\ \mathrm{{h}}",
@@ -79,6 +85,8 @@ def computeBearingLife(s: dict) -> dict:
     rapport = [
         "Charge équivalente : butée, P = Fa"
         if s["Fr"] == 0
+        else "Charge équivalente : charge purement radiale, P = Fr"
+        if s["Fa"] == 0
         else f"Charge équivalente : Fa/Fr = {fafr:.4g} comparé à e = {e:.4g}",
         f"Durée L10 : (C/P)^{n:.4g} = ({s['C']:g}/{P:.5g})^{n:.4g} = {L10:.4g} millions de tours",
         f"Fiabilité {s['F']:g} % : a1 = (ln(1/F)/ln(1/0,9))^(1/1,5) = {a1:.4g}",

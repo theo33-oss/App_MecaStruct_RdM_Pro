@@ -53,6 +53,23 @@ def test_sollicitations_chaque_exemple_se_calcule(cle, resultat):
     assert resultat in at.session_state["res"]
 
 
+def test_goupille_sous_couple_largeur_nulle_donne_un_message():
+    """a = 0 : τadm ne se calcule pas ; l'erreur passe par la boîte d'erreur, la page ne plante pas."""
+    at = _page("sollicitations")
+    at.number_input(key="Cis.ak").set_value(0.0).run()
+    at.button(key="Cis.pintorque").click().run()
+    assert not at.exception and at.error and "CisPinT" not in at.session_state["res"]
+
+
+def test_clavette_normalisee_longueur_nulle_dimensionne():
+    at = _page("sollicitations")
+    at.number_input(key="Cis.Lk").set_value(0.0).run()
+    at.button(key="Cis.keystd").click().run()
+    assert not at.exception and not at.error
+    r = at.session_state["res"]["CisKeyStd"]
+    assert r["result"]["dimensionne"] and r["ok"] and "longueur minimale" in r["status"]
+
+
 def test_traction_section_variable_et_expression_interdite():
     at = _page("sollicitations")
     at.button(key="Tra.charger").click().run()

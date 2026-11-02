@@ -178,8 +178,8 @@ def _cisaillement_saisie(calcule: bool) -> None:
                 st.number_input(label, key=f"Cis_gc_{cle}", min_value=0.0, format="%.6g")
         if st.button("Vérifier la goupille sous couple", key="Cis.pintorque"):
             p = {cle: q.get(f"Cis_gc_{cle}", defaut) for cle, _, defaut in GOUPILLE_COUPLE}
-            p.update(montage=q["Cis_gc_montage"], Padm=saisie["Padm"], tauAdm=_tau_adm(saisie))
-            _calcule("CisPinT", lambda: machine.computePinTorque(p))
+            p.update(montage=q["Cis_gc_montage"], Padm=saisie["Padm"])
+            _calcule("CisPinT", lambda: machine.computePinTorque({**p, "tauAdm": _tau_adm(saisie)}))
 
     widgets.panels(
         "Cis",

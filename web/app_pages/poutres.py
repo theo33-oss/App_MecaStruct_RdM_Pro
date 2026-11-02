@@ -78,18 +78,22 @@ def _importe_section() -> None:
     state.reset_widgets("Beam")
 
 
-def _etat(texte: str, ok: bool | None = None) -> None:
-    """Ligne d'état de la page : texte, et verdict (True vert, False rouge, None orange)."""
-    st.session_state["Beam_etat"] = (texte, ok)
+def _etat(texte: str, ok: bool | None = None, cle: str = "Beam") -> None:
+    """Ligne d'état de la page : texte, verdict (True vert, False rouge, None orange) et clé du résultat qui l'a donné.
+
+    La ligne n'est affichée que tant que le résultat `cle` existe et date de la saisie actuelle (voir _resultats).
+    """
+    st.session_state["Beam_etat"] = (texte, ok, cle)
 
 
 def _essaie(cle: str, travail):
-    """Résultat de `travail()` gardé sous `cle` ; en cas d'erreur, message affiché et résultat effacé (None)."""
+    """Résultat de `travail()` gardé sous `cle` ; en cas d'erreur, message affiché, résultat et ligne d'état effacés."""
     try:
         valeur = travail()
     except Exception as err:  # MecaStructError : message et conseil ; autre erreur : trace complète
         widgets.error_box(err)
         st.session_state["res"].pop(cle, None)
+        st.session_state.pop("Beam_etat", None)  # un verdict précédent ne doit pas survivre à un calcul en erreur
         return None
     state.set_result(cle, valeur, source="Beam")
     return valeur
@@ -99,7 +103,7 @@ def _calcule() -> None:
     """Calcul de la poutre avec la saisie courante ; le résultat est gardé pour l'affichage."""
     res = _essaie("Beam", lambda: beam_services.computeBeam(saisie, dm))
     if res is not None:
-        _etat(res["status"], None if res["unreliable"] else res["check"]["bend"]["ok"])
+        _etat(res["status"], None if res["unreliable"] else res["check"]["ok"])
         state.push_beam_history()
 
 
@@ -432,6 +436,7 @@ def _saisie_combinaisons() -> None:
                 f"Combinaisons : {len(T) - 1} calculée(s), enveloppe Kt·σ max = {env['Kt·σ max (MPa)']:.4g} MPa "
                 f"({env['Résistance']})",
                 env["Résistance"] == "vérifié",
+                "BeamCombo",
             )
 
 
@@ -450,7 +455,9 @@ def _saisie_charge_mobile() -> None:
             e = r[1]["extrema"]
             _etat(
                 f"Charge mobile ({r[1]['positions']} positions) : Mfz de {e['Mmin'] / 1e3:.4g} à "
-                f"{e['Mmax'] / 1e3:.4g} kN·m, Ty de {e['Tmin'] / 1e3:.4g} à {e['Tmax'] / 1e3:.4g} kN"
+                f"{e['Mmax'] / 1e3:.4g} kN·m, Ty de {e['Tmin'] / 1e3:.4g} à {e['Tmax'] / 1e3:.4g} kN",
+                None,
+                "BeamMov",
             )
 
 
@@ -469,12 +476,17 @@ def _saisie_profile() -> None:
         if r is not None:
             best = r[1]
             if best is None:
-                _etat(f"Aucun profilé {saisie['pfam']} ne vérifie ce chargement : essayer une autre famille.", False)
+                _etat(
+                    f"Aucun profilé {saisie['pfam']} ne vérifie ce chargement : essayer une autre famille.",
+                    False,
+                    "BeamProf",
+                )
             else:
                 _etat(
                     f"Profilé {saisie['pfam']} le plus léger qui vérifie : {best['Name']}. "
                     "La saisie de la section est inchangée.",
                     True,
+                    "BeamProf",
                 )
 
 
@@ -482,7 +494,8 @@ def _saisie_eurocode() -> None:
     st.caption(
         "Profilés IPE, HEA, HEB, IPN et sections en I, classes 1 à 3, fy = Re : flexion, tranchant, voilement de l'âme "
         "par cisaillement, déversement, flambement et interaction N + M (6.3.3, flexion autour de l'axe fort). "
-        "Utiliser l'enveloppe d'une combinaison ELU (γG = 1,35, γQ = 1,5)."
+        "Efforts par défaut : enveloppe des combinaisons (ELU γG = 1,35, γQ = 1,5 dans l'exemple). « Dernier "
+        "Calculer » additionne les cas avec le coefficient 1 : efforts non pondérés, verdict seulement indicatif."
     )
     widgets.choice(
         "Beam",
@@ -528,8 +541,11 @@ def _saisie_eurocode() -> None:
         "Beam",
         "ecsrc",
         "Efforts de calcul",
-        ["courant", "enveloppe"],
-        format_func={"courant": "Dernier « Calculer »", "enveloppe": "Enveloppe des combinaisons"}.get,
+        ["enveloppe", "courant"],
+        format_func={
+            "enveloppe": "Enveloppe des combinaisons (ELU)",
+            "courant": "Dernier « Calculer » (non pondéré, indicatif)",
+        }.get,
     )
     st.caption(NON_VERIFIE)
     st.caption("E du matériau choisi : 190 GPa pour les aciers du cours ; l'EN 1993-1-1 (§3.2.6) prend 210 GPa.")
@@ -538,14 +554,19 @@ def _saisie_eurocode() -> None:
         r = _essaie("BeamEC3", lambda: beam_design.checkEurocode(saisie, dm, source))
         if r is not None:
             e = r[0]
+            if not e["okAll"]:
+                verdict = "NON vérifié"
+            elif e["pondere"]:
+                verdict = "vérifié"
+            else:  # efforts non pondérés : pas de verdict « vérifié »
+                verdict = "indicatif, efforts non pondérés : refaire avec l'enveloppe ELU"
             texte = (
                 f"Eurocode 3 : classe {e['class']['class']}, MEd/MRd = {e['ratioM']:.3f}, "
-                f"VEd/Vpl,Rd = {e['ratioV']:.3f}, MEd/Mb,Rd = {e['ltb']['ratio']:.3f} "
-                f"({'vérifié' if e['okAll'] else 'NON vérifié'})"
+                f"VEd/Vpl,Rd = {e['ratioV']:.3f}, MEd/Mb,Rd = {e['ltb']['ratio']:.3f} ({verdict})"
             )
             if e["inter"]:
                 texte += f", N + M (6.61/6.62) = {e['inter']['ratio']:.3f}"
-            _etat(texte, bool(e["okAll"]))
+            _etat(texte, None if e["okAll"] and not e["pondere"] else bool(e["okAll"]), "BeamEC3")
 
 
 def _saisie_fatigue() -> None:
@@ -570,7 +591,7 @@ def _saisie_fatigue() -> None:
             n = r[0]["n"]
             ok = n >= saisie["s"]
             verdict = "vérifié" if ok else "NON vérifié"
-            _etat(f"Fatigue (Goodman) : n = {n:.3g} pour s = {saisie['s']:.3g} ({verdict})", ok)
+            _etat(f"Fatigue (Goodman) : n = {n:.3g} pour s = {saisie['s']:.3g} ({verdict})", ok, "BeamFat")
 
 
 def _schema(res: dict | None) -> None:
@@ -619,9 +640,10 @@ def _affiche_profiles() -> None:
 
 def _synthese(res: dict) -> list[dict]:
     """Valeurs clés du dernier calcul (kN, kN·m, mm, MPa) pour les st.metric affichés sous « Calculer »."""
-    e, bd = res["sol"]["extrema"], res["check"]["bend"]
+    e, bd, sh = res["sol"]["extrema"], res["check"]["bend"], res["check"]["shear"]
     reaction = max((float(np.linalg.norm([r["Rx"], r["Ry"], r["Rz"]])) for r in res["sol"]["reactions"]), default=0.0)
-    ok = bool(bd["ok"])
+    ok = bool(res["check"]["ok"])
+    tranchant = "tranchant non vérifié" if sh is None else f"VEd/Vpl,Rd {sh['ratio']:.3g}"
     return [
         {"label": "Réaction max", "value": f"{reaction / 1e3:.4g} kN"},
         {
@@ -636,7 +658,7 @@ def _synthese(res: dict) -> list[dict]:
         {
             "label": "Kt·σ max",
             "value": f"{bd['sigmaMaxKt'] / 1e6:.4g} MPa",
-            "delta": f"{'vérifié' if ok else 'NON vérifié'} (σadm {bd['sigmaAdm'] / 1e6:.4g})",
+            "delta": f"{'vérifié' if ok else 'NON vérifié'} (σadm {bd['sigmaAdm'] / 1e6:.4g} ; {tranchant})",
             "delta_color": "green" if ok else "red",
         },
     ]
@@ -645,6 +667,10 @@ def _synthese(res: dict) -> list[dict]:
 def _resultats(res: dict | None) -> None:
     """Graphiques (schéma en premier), ligne d'état, dossier de validation, onglets de résultats."""
     r = state.result
+    etat = st.session_state.get("Beam_etat")
+    if etat is not None and not state.is_current(etat[2], source="Beam"):
+        # résultat effacé ou saisie changée (exemple, import, annulation…) : le verdict ne vaut plus
+        del st.session_state["Beam_etat"]
     graphes = [("Schéma", lambda: _schema(res))]
     tables = []
     if res is not None:
@@ -688,7 +714,7 @@ def _resultats(res: dict | None) -> None:
             "(Combinaisons, Eurocode 3…) pour les actualiser."
         )
     tables = widgets.graphs("Beam_graphes_onglets", graphes, dessous=("Équations par tronçon",)) + tables
-    texte, ok = st.session_state.get("Beam_etat", (None, None))
+    texte, ok, _ = st.session_state.get("Beam_etat", (None, None, None))
     if texte:
         widgets.status(texte, ok)
     widgets.validation_button("Beam")

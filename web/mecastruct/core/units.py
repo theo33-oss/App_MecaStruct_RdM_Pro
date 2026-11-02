@@ -175,8 +175,9 @@ def unitFactor(unit: str) -> float:
     u = _normalizeUnit(unit)
     if u in _UNIT_MAP:
         return _UNIT_MAP[u]
-    # sans tenir compte de la casse, seulement si la correspondance est unique (comme strcmpi)
-    hits = [k for k in _UNIT_MAP if k.lower() == u.lower()]
+    # sans tenir compte de la casse, seulement si la correspondance est unique (comme strcmpi),
+    # mais jamais en confondant les préfixes m (milli) et M (méga) : « mN » n'est pas « MN »
+    hits = [k for k in _UNIT_MAP if k.lower() == u.lower() and not (k[0] in "mM" and k[0] != u[0])]
     if len(hits) == 1:
         return _UNIT_MAP[hits[0]]
     raise MecaStructError("MecaStruct:DataManager:unknownUnit", f"Unité inconnue : « {unit} ».")

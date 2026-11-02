@@ -111,7 +111,10 @@ def computeBearing(s: dict) -> dict:
 
 
 def computeKeyStandard(saisie: dict, forme: str, tauAdm: float) -> dict:
-    """Clavette normalisée à partir de la saisie Cisaillement (C kN·m, Dk mm, Lk mm, Padm MPa) ; tauAdm en MPa."""
+    """Clavette normalisée à partir de la saisie Cisaillement (C kN·m, Dk mm, Lk mm, 0 = dimensionner, Padm MPa).
+
+    tauAdm en MPa ; si Lk = 0, la longueur retenue est la longueur minimale (matage et cisaillement).
+    """
     r = key_pin.keyStandard(
         {
             "C": saisie["C"] * 1e3,
@@ -124,7 +127,13 @@ def computeKeyStandard(saisie: dict, forme: str, tauAdm: float) -> dict:
     )
     ok = all(c[3] for c in r["checks"])
     k = r["dims"]
-    head = f"Clavette normalisée {k['b']:g} × {k['h']:g} forme {forme}, Lp = {r['Lp']:g} mm : {_verdict(ok)}"
+    if r["dimensionne"]:
+        head = (
+            f"Clavette normalisée {k['b']:g} × {k['h']:g} forme {forme} : longueur minimale L = {r['L']:.4g} mm "
+            f"(Lp = {r['Lp']:.4g} mm), {_verdict(ok)}"
+        )
+    else:
+        head = f"Clavette normalisée {k['b']:g} × {k['h']:g} forme {forme}, Lp = {r['Lp']:g} mm : {_verdict(ok)}"
     return {"result": {**r, "rapport": [head, *r["report"]]}, "tables": {"Synthèse": _checks(r["checks"])},
             "status": head, "ok": ok}  # fmt: skip
 

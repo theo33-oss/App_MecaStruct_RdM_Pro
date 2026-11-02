@@ -69,6 +69,15 @@ def test_synthese_statut_texte_libre_sans_metrique(metriques):
     assert [v["label"] for v in metriques] == []
 
 
+def test_alerte_materiau_absent_renvoie_a_l_import(monkeypatch):
+    from mecastruct.core.data_manager import DataManager
+
+    monkeypatch.setattr(widgets.st, "session_state", {"dm": DataManager()})
+    assert widgets._alerte_materiaux({"Fla": {"mat": "S235"}}) == ""
+    msg = widgets._alerte_materiaux({"Fla": {"mat": "Acier maison"}, "Tor": {"mat": "Acier maison"}})
+    assert "« Acier maison » (onglets Fla, Tor)" in msg and "Recharger mes ajouts" in msg
+
+
 def test_vue_choisie_prime_sur_le_user_agent(monkeypatch):
     monkeypatch.setattr(widgets, "vue_detectee", lambda: "telephone")
     monkeypatch.setattr(widgets.st, "session_state", {"vue": "pc"})

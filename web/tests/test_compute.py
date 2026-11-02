@@ -177,6 +177,17 @@ def test_parse_function_refuse(expr):
     assert err.value.identifier == "MecaStruct:App:invalidExpression"
 
 
+def test_beton_refuse_en_traction_et_flexion(dm):
+    """Béton : vérification en traction et en flexion refusée (fck n'est pas une limite en traction)."""
+    beton = "Béton C25/30 (EN 1992-1-1)"
+    tra = {**examples.loadExample("Tra"), "mat": beton}
+    with pytest.raises(MecaStructError, match="Béton : résistance en traction négligeable"):
+        compute.computeTraction(tra, dm)
+    compute.computeTraction({**tra, "N": -50.0}, dm)  # compression : calcul conservé
+    with pytest.raises(MecaStructError, match="Béton : résistance en traction négligeable"):
+        compute.computeBending({**examples.loadExample("Fle"), "mat": beton}, dm)
+
+
 def test_section_variable_hors_domaine_refusee(dm):
     """S(x) négative sur [0, L0] : erreur invalidExpression, pas de calcul."""
     ex = examples.loadExample("Tra", "variable")

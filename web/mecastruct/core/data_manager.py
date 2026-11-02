@@ -93,6 +93,7 @@ class DataManager:
         Entrée : `m` dict avec Name (requis) et, en SI, E, G, nu, Re, Rm (Pa), alpha (1/°C), rho (kg/m³),
         Category, Note, Author. Les champs absents valent NaN ; la constante élastique manquante est
         complétée par completeIsotropic. Le matériau est marqué IsUser = True.
+        Bornes de plausibilité (SI) : E dans [1e10 ; 5e11] Pa, Re et Rm dans [1e6 ; 3e9] Pa, Re ≤ Rm.
         Erreurs : MecaStruct:DataManager:invalidMaterial, invalidNu, invalidModulus.
         """
         if not isinstance(m, dict) or _isBlank(m.get("Name")):
@@ -101,6 +102,7 @@ class DataManager:
                 "Le matériau doit être un dictionnaire avec un champ Name non vide.",
             )
         m = completeIsotropic(_prepareMaterial(m, "Utilisateur", "Matériau utilisateur."))
+        _checkUserBounds(m)
         row = {**m, "IsUser": True, "Author": _authorOf(m, True)}
         T = self.Materials
         self.Materials = _replaceOrAppend(T, _exactIndex(T["Name"], m["Name"]), row, MATERIAL_VARS)
@@ -319,7 +321,8 @@ def completeIsotropic(m: dict) -> dict:
     Entrée : `m` dict avec E, G (Pa) et nu, éventuellement absents ou NaN ; Note optionnelle.
     Sortie : copie de `m` avec E, G, nu et Note complétés. Si E, G et ν sont connus, un écart relatif
     supérieur à 5 % entre G et E/(2(1+ν)) est signalé dans Note.
-    Erreurs : MecaStruct:DataManager:invalidMaterial, invalidNu (ν hors de ]−1 ; 0,5[), invalidModulus (E ou G ≤ 0).
+    Erreurs : MecaStruct:DataManager:invalidMaterial, invalidNu (ν hors de ]−1 ; 0,5[), invalidModulus (E ou G ≤ 0,
+    ou E et G tous deux absents).
     """
     if not isinstance(m, dict):
         raise MecaStructError(
@@ -334,6 +337,13 @@ def completeIsotropic(m: dict) -> dict:
             "MecaStruct:DataManager:invalidModulus",
             "Les modules E et G doivent être strictement positifs.",
         )
+    if not (math.isfinite(E) or math.isfinite(G)):
+        raise MecaStructError(
+            "MecaStruct:DataManager:invalidModulus",
+            "Au moins un des modules E ou G (Pa) doit être renseigné.",
+        )
+    if math.isfinite(nu):
+        _checkNu(nu)
     known = [math.isfinite(E), math.isfinite(G), math.isfinite(nu)]
     if all(known):
         _checkNu(nu)
@@ -593,6 +603,18 @@ def _checkNu(nu: float) -> None:
         )
 
 
+def _checkUserBounds(m: dict) -> None:
+    """Bornes de plausibilité d'un matériau utilisateur (SI) ; NaN = non renseigné, 0 et ±inf refusés."""
+    for k, lo, hi in (("E", 1e10, 5e11), ("Re", 1e6, 3e9), ("Rm", 1e6, 3e9)):
+        v = m[k]
+        if not math.isnan(v) and not (lo <= v <= hi):
+            raise MecaStructError(
+                "MecaStruct:DataManager:invalidMaterial",
+                f"{k} = {v:g} Pa est hors de la plage plausible [{lo:g} ; {hi:g}] Pa : "
+                f"la valeur doit être saisie en Pa (SI).",
+            )
+
+
 def _appendNote(note: str, txt: str) -> str:
     """Ajoute une phrase à une note, sans doublon."""
     if txt in note:
@@ -626,6 +648,11 @@ def _prepareMaterial(m: dict, def_category: str, def_note: str) -> dict:
         out[k] = float(v)
     if out["Re"] < 0 or out["Rm"] < 0:
         raise MecaStructError("MecaStruct:DataManager:invalidMaterial", "Re et Rm doivent être positifs (Pa).")
+    if out["Re"] > out["Rm"]:
+        raise MecaStructError(
+            "MecaStruct:DataManager:invalidMaterial",
+            f"Re ({out['Re']:g} Pa) ne peut pas dépasser Rm ({out['Rm']:g} Pa).",
+        )
     if out["rho"] <= 0:
         raise MecaStructError(
             "MecaStruct:DataManager:invalidMaterial",

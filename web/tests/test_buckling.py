@@ -266,6 +266,22 @@ def test_verification_d_un_effort_applique():
     assert buckling.analyze(base(s=2, P=Padm))["ok"] is True
 
 
+def test_alerte_pres_du_seuil_lambda_lim():
+    """Autour de λlim (±10 %), Pcrit saute de Re·S/2 à Re·S : alerte dans le rapport, valeurs inchangées."""
+    lambdaLim = math.pi * math.sqrt(210e9 / 235e6)
+    rmin = math.sqrt(5e-7 / 1e-3)
+    juste_avant = buckling.analyze(base(L=0.999 * lambdaLim * rmin))
+    au_seuil = buckling.analyze(base(L=lambdaLim * rmin))
+    assert juste_avant["regime"] == "rankine" and au_seuil["regime"] == "euler"
+    assert au_seuil["Pcrit"] / juste_avant["Pcrit"] == pytest.approx(2, rel=1e-2)
+    for r in (juste_avant, au_seuil):
+        assert any("ATTENTION" in ligne and "λlim" in ligne for ligne in r["report"])
+    loin = buckling.analyze(base(L=1.5 * lambdaLim * rmin))
+    assert not any("ATTENTION" in ligne for ligne in loin["report"])
+    assert buckling.alerteSeuilLambdaLim(1.09 * lambdaLim, lambdaLim)
+    assert not buckling.alerteSeuilLambdaLim(1.11 * lambdaLim, lambdaLim)
+
+
 def test_effort_absent_nul_ou_vide():
     for P in [math.nan, []]:
         r = buckling.analyze(base(P=P))

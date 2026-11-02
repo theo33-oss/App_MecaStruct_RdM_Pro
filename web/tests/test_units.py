@@ -118,6 +118,9 @@ def test_exemples_unites():
         (lambda: unitFactor("furlong"), "MecaStruct:DataManager:unknownUnit"),
         (lambda: toSI(1, "parsec"), "MecaStruct:DataManager:unknownUnit"),
         (lambda: unitFactor(12), "MecaStruct:DataManager:unknownUnit"),
+        (lambda: unitFactor("mN"), "MecaStruct:DataManager:unknownUnit"),
+        (lambda: unitFactor("mPa"), "MecaStruct:DataManager:unknownUnit"),
+        (lambda: toSI(1, "mN.m"), "MecaStruct:DataManager:unknownUnit"),
         (lambda: toSI("a", "m"), "MecaStruct:DataManager:invalidValue"),
     ],
 )
@@ -125,6 +128,15 @@ def test_erreurs_unites(appel, identifiant):
     with pytest.raises(MecaStructError) as err:
         appel()
     assert err.value.identifier == identifiant
+
+
+def test_repli_casse_sans_confondre_milli_et_mega():
+    assert unitFactor("KN") == 1e3
+    assert unitFactor("Mpa") == 1e6
+    assert unitFactor("KPA") == 1e3
+    for unite in ("mN", "mPa", "mpa", "MM"):
+        with pytest.raises(MecaStructError):
+            unitFactor(unite)
 
 
 def test_mecastruct_error():

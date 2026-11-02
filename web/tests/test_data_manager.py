@@ -164,6 +164,27 @@ def test_complete_isotropic():
     verifier_erreur("MecaStruct:DataManager:invalidModulus", completeIsotropic, {"E": -1, "nu": 0.3})
 
 
+def test_complete_isotropic_nu_et_modules_absents():
+    """ν contrôlé dans tous les cas ; E et G tous deux absents refusés."""
+    verifier_erreur("MecaStruct:DataManager:invalidNu", completeIsotropic, {"E": 200e9, "G": 80e9, "nu": 0.7})
+    verifier_erreur("MecaStruct:DataManager:invalidModulus", completeIsotropic, {"nu": 0.3})
+    verifier_erreur("MecaStruct:DataManager:invalidModulus", completeIsotropic, {})
+
+
+def test_ajout_materiau_bornes_plausibilite():
+    """Matériau utilisateur : E, Re, Rm en Pa dans des plages plausibles, 0 < Re ≤ Rm."""
+    dm = DataManager()
+    base = {"Name": "Essai", "E": 200e9, "nu": 0.3, "Re": 300e6, "Rm": 450e6}
+    for champ, valeur in [("E", 200.0), ("E", 1e12), ("Re", 300.0), ("Re", 0.0), ("Rm", 4e9), ("Re", math.inf)]:
+        verifier_erreur("MecaStruct:DataManager:invalidMaterial", dm.addMaterial, {**base, champ: valeur})
+    verifier_erreur("MecaStruct:DataManager:invalidMaterial", dm.addMaterial, {**base, "Re": 500e6})
+    verifier_erreur("MecaStruct:DataManager:invalidMaterial", dm.addMaterial, {"Name": "x", "G": 1e9, "nu": 0.3})
+    with pytest.raises(MecaStructError, match="en Pa"):
+        dm.addMaterial({**base, "E": 200.0})
+    dm.addMaterial(base)
+    assert dm.getMaterial("Essai")["Re"] == 300e6
+
+
 def test_ajout_suppression_materiau():
     dm = DataManager()
     n0 = len(dm.Materials)

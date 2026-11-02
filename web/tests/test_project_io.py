@@ -55,6 +55,14 @@ def test_projet_onglet_absent_signale():
     assert echecs == ["Fla", "Ten"] and "Beam" in relus
 
 
+def test_materiau_absent_de_la_base_signale(dm):
+    saisies = {k: loadExample(k) for k in project_io.PROJECT_KEYS}
+    saisies["Fla"]["mat"] = saisies["Tra"]["mat"] = "Acier utilisateur"  # ajouté dans une autre session
+    relus, _ = project_io.projectFromJson(project_io.projectToJson(saisies))
+    assert project_io.missingMaterials(relus, dm.listMaterials() + ["Acier utilisateur"]) == {}
+    assert project_io.missingMaterials(relus, dm.listMaterials()) == {"Acier utilisateur": ["Tra", "Fla"]}
+
+
 def test_autre_onglet_refuse():
     texte = project_io.problemToJson("Fla", loadExample("Fla"))
     with pytest.raises(MecaStructError, match="cet onglet") as e:

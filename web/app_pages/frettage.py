@@ -20,6 +20,9 @@ mp.init(P, DEFAUT)
 def _norme() -> None:
     """Qualités, lissage et jeu de montage conseillés par la norme pour le diamètre saisi (bouton)."""
     n = shrink_fit.normValues(st.session_state[f"{P}.d"])
+    st.session_state[f"{P}.horsTable"] = n is None
+    if n is None:
+        return
     st.session_state[f"{P}.qa"], st.session_state[f"{P}.qm"] = int(n["qualiteArbre"]), int(n["qualiteMoyeu"])
     st.session_state[f"{P}.lissage"], st.session_state[f"{P}.jeu"] = n["lissage"], n["jeu"]
 
@@ -48,6 +51,8 @@ with gauche:
         mp.num(P, "lissage", "Lissage (perte de serrage)", "µm", min_value=0.0)
         mp.num(P, "jeu", "Jeu de montage à chaud", "mm", min_value=0.0)
         st.button("Valeurs conseillées par la norme pour ce diamètre", key=f"{P}.norme", on_click=_norme)
+        if st.session_state.get(f"{P}.horsTable"):
+            st.warning("Diamètre hors table : saisir les valeurs.")
     s = mp.saisie(P, DEFAUT)
     mp.calcul(P, s, lambda x: machine.computeShrinkFit(x, dm))
     st.caption(

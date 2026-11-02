@@ -81,7 +81,7 @@ def _saisie() -> None:
         widgets.num("Fla", "Re", "Re", "MPa")
         widgets.num("Fla", "L", "Longueur L", "m", min_value=0.0)
         widgets.choice("Fla", "cond", "Conditions aux limites", list(CONDITIONS), format_func=CONDITIONS.get)
-        widgets.num("Fla", "P", "P appliquée (0 = aucune)", "kN")
+        widgets.num("Fla", "P", "P appliquée (compression > 0, 0 = aucune)", "kN")
         widgets.num("Fla", "s", "Coefficient de sécurité s", "-")
 
 
@@ -92,6 +92,12 @@ def _resultats(res: dict) -> None:
     if math.isfinite(b["P"]):  # P = 0 : aucune charge appliquée, pas de verdict
         mot = "vérifié" if b["ok"] else "NON vérifié"
         widgets.status(f"P = {b['P'] / 1e3:.5g} kN, Padm = {b['Padm'] / 1e3:.5g} kN : {mot}", bool(b["ok"]))
+    if buckling.alerteSeuilLambdaLim(b["lambda"], b["lambdaLim"]):
+        st.warning(
+            f"λ = {b['lambda']:.4g} est à moins de 10 % de λlim = {b['lambdaLim']:.4g} : la charge critique "
+            "change de modèle au seuil (Rankine → Euler) et saute de Re·S/2 à Re·S. "
+            "Verdict à interpréter avec prudence."
+        )
     widgets.plot(other_plots.bucklingCurve(c, b))
     widgets.plot(other_plots.bucklingMode(b))
     st.dataframe(res["tables"]["Synthèse"], hide_index=True)

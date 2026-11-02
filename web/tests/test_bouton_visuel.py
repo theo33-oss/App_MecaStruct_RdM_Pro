@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from mecastruct.ui.widgets import SAISIE_MODIFIEE
+
 PAGES = Path(__file__).resolve().parents[1] / "app_pages"
 
 
@@ -39,6 +41,29 @@ def test_bouton_du_visuel_sur_les_autres_pages(page, nom):
     at = AppTest.from_file(PAGES / page, default_timeout=60).run()
     at.button(key=f"zones.{nom}.calc").click().run()
     assert not at.exception
+
+
+def _textes_neutres(at) -> list[str]:
+    return [c.value for c in at.caption if SAISIE_MODIFIEE in c.value]
+
+
+def test_machine_saisie_modifiee_sans_verdict_colore():
+    at = AppTest.from_file(PAGES / "frettage.py", default_timeout=60).run()
+    at.button(key="zones.fre.calc").click().run()
+    assert at.success or at.error  # verdict coloré tant que la saisie est celle du calcul
+    assert not _textes_neutres(at)
+    at.number_input(key="fre.C").set_value(at.number_input(key="fre.C").value + 1).run()
+    assert not at.exception
+    assert not at.success and not at.error and _textes_neutres(at)
+
+
+def test_synthese_sous_calculer_suit_la_saisie():
+    at = AppTest.from_file(PAGES / "flambage.py", default_timeout=60).run()
+    at.button(key="zones.Fla.calc").click().run()
+    assert at.metric and not _textes_neutres(at)
+    at.number_input(key="Fla.L").set_value(at.number_input(key="Fla.L").value + 1).run()
+    assert not at.exception
+    assert not at.metric and _textes_neutres(at)
 
 
 def test_bouton_du_visuel_en_mode_ossature_3d():

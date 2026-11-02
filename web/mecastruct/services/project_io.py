@@ -121,6 +121,19 @@ def projectFromJson(text: str) -> tuple[dict[str, dict], list[str]]:
     return saisies, [k for k in PROJECT_KEYS if k not in saisies]
 
 
+def missingMaterials(saisies: dict[str, dict], materiaux: list[str]) -> dict[str, list[str]]:
+    """Matériaux (champ « mat ») des saisies relues absents de la base `materiaux` : nom → onglets qui l'utilisent.
+
+    Cas typique : un matériau utilisateur ajouté dans une autre session, que le fichier ne contient pas.
+    """
+    manquants: dict[str, list[str]] = {}
+    for tab, saisie in saisies.items():
+        nom = saisie.get("mat")
+        if isinstance(nom, str) and nom not in materiaux:
+            manquants.setdefault(nom, []).append(tab)
+    return manquants
+
+
 def beamEffortSheets(sol: dict) -> dict[str, pd.DataFrame]:
     """Feuilles « Enveloppe » (max / min de chaque effort) et « Efforts » (valeurs le long de la poutre), kN et kN·m.
 
