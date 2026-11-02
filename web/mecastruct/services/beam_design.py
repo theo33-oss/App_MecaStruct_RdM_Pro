@@ -7,7 +7,6 @@ modifient jamais leur entrée. Le dossier de validation et l'interface sont hors
 
 import copy
 import math
-import re
 
 import numpy as np
 import pandas as pd
@@ -19,6 +18,7 @@ from mecastruct.core.errors import MecaStructError
 from mecastruct.core.pp import ppEval
 from mecastruct.core.units import fromSI, toSI
 from mecastruct.services.beam_services import _okText, buildBeamModel, computeBeam, computeCombinations
+from mecastruct.services.limits import MAX_POSITIONS
 
 _ID = "MecaStruct:App:invalidInput"
 _EPS = np.finfo(float).eps  # eps de MATLAB, utilisé pour éviter une division par zéro sur la flèche
@@ -45,11 +45,11 @@ def _kvTable(rows: list[tuple]) -> pd.DataFrame:
 
 
 def _parseNumbers(txt: str, what: str) -> np.ndarray:
-    """Liste de nombres séparés par des espaces, virgules ou points-virgules (« 100 100, 50 »).
+    """Liste de nombres séparés par des espaces ou des points-virgules (« 100 100; 50 »), décimale virgule ou point.
 
-    Erreur : MecaStruct:App:invalidInput si un élément n'est pas un nombre fini (la virgule décimale n'est pas admise).
+    Erreur : MecaStruct:App:invalidInput si un élément n'est pas un nombre fini (« 10,5,3 » par exemple).
     """
-    parts = re.sub(r"[;,]+", " ", str(txt)).split()
+    parts = str(txt).replace(",", ".").replace(";", " ").split()
     try:
         v = np.array([float(p) for p in parts])
     except ValueError:
@@ -459,9 +459,10 @@ def computeMovingLoad(saisie: dict, dm: DataManager) -> tuple[pd.DataFrame, dict
         )
     if P.size > 20:
         raise MecaStructError(_ID, "Charge mobile : 20 essieux au plus.")
-    nPos = math.floor(saisie["mvN"] + 0.5)  # arrondi comme round de MATLAB
-    if not 2 <= nPos <= 500:
-        raise MecaStructError(_ID, "Charge mobile : 2 à 500 positions de base.")
+    m = saisie["mvN"]
+    nPos = math.floor(m + 0.5) if math.isfinite(m) else 0  # arrondi comme round de MATLAB ; ∞ ou NaN refusés
+    if not 2 <= nPos <= MAX_POSITIONS:
+        raise MecaStructError(_ID, f"Charge mobile : 2 à {MAX_POSITIONS} positions de base.")
 
     offs = np.concatenate([[0.0], np.cumsum(gaps)])
     model = buildBeamModel(saisie, dm)
