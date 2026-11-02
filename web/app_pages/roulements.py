@@ -6,9 +6,10 @@ Formules et règles du cours « Calcul sur les roulements » et « Liaison pivot
 import streamlit as st
 
 from mecastruct.core import bearings
+from mecastruct.plots import machine_schemas
 from mecastruct.services import machine_courses as mc
+from mecastruct.ui import machine_dossier, state, widgets
 from mecastruct.ui import machine_page as mp
-from mecastruct.ui import state, widgets
 
 state.init()
 P, ENS = "rlt", "rlt_ens"
@@ -49,7 +50,8 @@ with onglets[0]:
             "Un roulement de butée ne reçoit que Fa (Fr = 0)."
         )
     with droite:
-        mp.resultats(P, s)
+        mp.apercu(lambda: machine_schemas.bearingSection(s))
+        mp.resultats(P, s, lambda r: machine_schemas.bearingLife(r, s))
 
 with onglets[1]:
     gauche, droite = widgets.zones(ENS)
@@ -68,6 +70,7 @@ with onglets[1]:
             "LG × n^(2/3), et l'ensemble dure LG."
         )
     with droite:
+        mp.apercu(lambda: machine_schemas.bearingSet(s_ens))
         mp.resultats(ENS, s_ens)
 
 with onglets[2]:
@@ -103,3 +106,10 @@ with onglets[2]:
             "entretoise, boîtier de roulement (Ø85 H7-h6 et Ø80 H7-h6), chapeau sur roulement rainuré, "
             "boîtier réglable avec cale."
         )
+
+st.divider()
+machine_dossier.bouton(
+    "roulements",
+    "Roulements",
+    [(P, "Durée de vie", DEFAUT, "bearing"), (ENS, "Ensemble de roulements", DEFAUT_ENS, "bearingSet")],
+)
