@@ -75,6 +75,13 @@ répétée identique) : les contenus ont été récupérés morceau par morceau.
 - **17 nuances** du classeur matériaux ajoutées à `data/materials_extra.json` (E = 210 GPa pour les aciers).
 - Chaque calcul a son onglet « Explications du calcul » (formules remplies avec les valeurs, démarche).
   Tests : `tests/test_machine_elements.py`.
+- **Cours IUT de Bordeaux** (2 novembre, pages « Roulements », « Engrenages », « Trains épicycloïdaux », « Freins et
+  embrayages », « Dimensionnement moteur ») : formules et exemples des six PDF, avec « Explications du calcul ».
+  Roulements : L10, L10h, Lnh (a1), charge équivalente P (table e, X, Y du cours), charge requise, ensembles iso-fiables,
+  règles de montage (bague serrée ou glissante, ajustements du tableau). Engrenages : géométrie, efforts, pied de dent
+  (module minimal avec Re de la base), train en série. Épicycloïdal : Willis, montage. Freins : pression ou usure
+  constante ; embrayage : couple de synchronisation. Moteur : couple équivalent thermique, inertie ramenée.
+  Tests : `tests/test_machine_courses.py`.
 
 ## Corrections de données (notées dans `data/iso286.json`)
 
@@ -98,4 +105,14 @@ répétée identique) : les contenus ont été récupérés morceau par morceau.
 - **ISO 286** : colonnes a, b, cd, d, ef, fg, t, u, v, x, y, z, za, zb, zc et leurs alésages non recoupées avec la
   norme (valeurs du classeur, deux coquilles déjà trouvées dans les autres colonnes).
 - **Dossier de validation** : non branché pour les trois nouvelles pages (explications à côté seulement).
-- **Engrenages** : en attente des cours ; la vidéo est illisible (piste vidéo corrompue).
+- **Cours : écarts relevés dans les PDF** (à signaler à l'auteur du cours) : pour Fa/C0 = 0,064 le cours écrit
+  Y = 1,59, alors que l'interpolation donne 1,66 (pente inversée dans la formule). Exemple du roulement : le cours
+  annonce L10 = 185,3 M tours (10 294 h), or (C/P)³ avec C = 35,8 kN et P = 10,84 kN vaut 36 M tours (2 001 h à
+  300 tr/min). Y = 1,31 y est lu au bord de la table (Fa/C0 = 0,170), l'interpolation à 0,207 donne 1,256.
+- **Chaîne de transmission** : le cours ne donne ni les durées des phases de l'exemple ni la vitesse requise ; les
+  valeurs par défaut de la page (1 s, 13,3 s) retrouvent seulement le couple de 61 N·m.
+- **Engrenages, roulements** : pas de tableaux de catalogue (C, C0, e, X, Y par référence), pas de denture hélicoïdale
+  ni déportée. La table e, X, Y est celle des billes à contact radial, saisie à la main pour les autres roulements.
+- **Freins** : pas de limite de puissance spécifique du fabricant (la page affiche la valeur à comparer).
+- **Embrayage** : modèle du cours (moteur à vitesse constante pendant la synchronisation), pas de modèle à vitesse
+  variable.
