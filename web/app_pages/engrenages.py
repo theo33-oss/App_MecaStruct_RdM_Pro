@@ -6,9 +6,10 @@ résistance d'une dent modélisée par une poutre.
 
 import streamlit as st
 
+from mecastruct.plots import machine_schemas
 from mecastruct.services import machine_courses as mc
+from mecastruct.ui import machine_dossier, state, widgets
 from mecastruct.ui import machine_page as mp
-from mecastruct.ui import state, widgets
 
 state.init()
 dm = st.session_state["dm"]
@@ -45,6 +46,7 @@ with onglets[0]:
             "Usuellement k entre 6 et 10 et s = 1,5 si l'effort est mal connu."
         )
     with droite:
+        mp.apercu(lambda: machine_schemas.gearMesh(s))
         mp.resultats(P, s)
 
 with onglets[1]:
@@ -68,4 +70,12 @@ with onglets[1]:
             "engrènement et le couple se calcule par C = P/ω."
         )
     with droite:
+        mp.apercu(lambda: machine_schemas.gearTrain(s_trn))
         mp.resultats(TRN, s_trn)
+
+st.divider()
+machine_dossier.bouton(
+    "engrenages",
+    "Engrenages",
+    [(P, "Engrènement", DEFAUT, "gearMesh"), (TRN, "Train d'engrenages", DEFAUT_TRN, "gearTrain")],
+)
