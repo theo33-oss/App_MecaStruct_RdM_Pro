@@ -44,7 +44,7 @@ st.markdown(
     "vous pouvez demander l'accès à vos données, leur rectification, leur effacement, ou vous opposer à leur "
     "traitement. L'éditeur ne détenant aucune donnée personnelle vous concernant, il vous indiquera "
     "le cas échéant ce qu'il ignore.\n\n"
-    "Pour exercer ces droits : [À COMPLÉTER PAR L'ÉDITEUR] (contact). "
+    "Pour exercer ces droits : brun.theo33@gmail.com."
     "Si vous estimez que vos droits ne sont pas respectés, vous pouvez déposer une réclamation auprès de la "
     "CNIL : [cnil.fr](https://www.cnil.fr)."
 )
