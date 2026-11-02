@@ -82,6 +82,13 @@ répétée identique) : les contenus ont été récupérés morceau par morceau.
   (module minimal avec Re de la base), train en série. Épicycloïdal : Willis, montage. Freins : pression ou usure
   constante ; embrayage : couple de synchronisation. Moteur : couple équivalent thermique, inertie ramenée.
   Tests : `tests/test_machine_courses.py`.
+- **Schémas qui suivent la saisie** (mêmes pages, redessinés à chaque valeur modifiée, avant « Calculer ») : pignon et
+  roue à denture en développante (α = 20°, cercles primitifs, entraxe, ligne d'action), train d'engrenages en schéma
+  cinématique, train épicycloïdal vu de face (élément bloqué hachuré, vitesses, montage vérifié ou non), roulement
+  chargé, durées d'un ensemble, disque de frein et rayons équivalents, synchronisation de l'embrayage, cycle de couple
+  du moteur ; après « Calculer » : courbe Lnh(P) et pression p(r) du frein. Tests : `tests/test_machine_schemas.py`
+  (dentures qui engrènent sans se chevaucher dès 17 dents). Sous 17 dents, le dégagement de pied n'est pas dessiné :
+  un avertissement le signale.
 
 ## Corrections de données (notées dans `data/iso286.json`)
 
@@ -104,7 +111,12 @@ répétée identique) : les contenus ont été récupérés morceau par morceau.
   Pression maxi calculée sans retrancher le lissage (prudent, comme le classeur).
 - **ISO 286** : colonnes a, b, cd, d, ef, fg, t, u, v, x, y, z, za, zb, zc et leurs alésages non recoupées avec la
   norme (valeurs du classeur, deux coquilles déjà trouvées dans les autres colonnes).
-- **Dossier de validation** : non branché pour les trois nouvelles pages (explications à côté seulement).
+- **Dossier de validation** : les cinq pages de cours (Roulements, Engrenages, Trains épicycloïdaux, Freins et
+  embrayages, Dimensionnement moteur) ont un dossier par page, qui réunit les calculs à jour de la page
+  (`services/machine_validation.py`, bouton `ui/machine_dossier.py`, tests `tests/test_machine_validation.py`). Ses
+  contrôles à la main réécrivent les formules du cours : ils prouvent que le solveur les applique, pas qu'elles
+  conviennent au cas. Pas de diagramme dans ces dossiers. Ajustements, Frettage et Paliers lisses n'ont toujours pas
+  de dossier (explications à côté seulement).
 - **Cours : écarts relevés dans les PDF** (à signaler à l'auteur du cours) : pour Fa/C0 = 0,064 le cours écrit
   Y = 1,59, alors que l'interpolation donne 1,66 (pente inversée dans la formule). Exemple du roulement : le cours
   annonce L10 = 185,3 M tours (10 294 h), or (C/P)³ avec C = 35,8 kN et P = 10,84 kN vaut 36 M tours (2 001 h à
