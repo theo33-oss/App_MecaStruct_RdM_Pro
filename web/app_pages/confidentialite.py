@@ -30,7 +30,7 @@ st.markdown(
 
 st.subheader("Ressources externes")
 st.markdown(
-    "Les pages du site n'appellent aucun service externe (pas de police, d'image ni de script venus d'un autre site).\n\n"
+    "Les pages du site n'appellent aucun service externe (ni police, ni image, ni script venus d'un autre site).\n\n"
     "Une seule exception, hors du site : le **dossier de validation** que vous téléchargez (fichier HTML) charge, "
     "quand vous l'ouvrez avec une connexion Internet, MathJax (pour les formules) depuis `cdnjs.cloudflare.com` "
     "et Plotly (pour les diagrammes) depuis son réseau de diffusion `cdn.plot.ly`. Votre navigateur "

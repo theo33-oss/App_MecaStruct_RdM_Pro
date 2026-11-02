@@ -11,6 +11,16 @@ state.init()
 
 st.title("Bienvenue dans MecaStruct RdM Pro")
 st.write(
+    "MecaStruct RdM Pro est un site gratuit, sans compte, de calcul de Résistance des Matériaux et d'éléments de "
+    "machines, pour apprendre et pré-dimensionner. **Calculs disponibles** : poutres (réactions, efforts, flèche), "
+    "treillis, caractéristiques de sections, sollicitations simples (traction, cisaillement, torsion, flexion), "
+    "flambage, tenseurs et critères de plasticité, loi de Hooke et jauges de déformation ; ajustements ISO 286, "
+    "frettage, paliers lisses, roulements, engrenages, trains épicycloïdaux, freins et embrayages, "
+    "dimensionnement moteur ; base de matériaux et de profilés, convertisseur d'unités. "
+    "**Limites** : outil pédagogique, résultats à vérifier, aucune garantie ; il ne remplace ni une note de calcul "
+    "certifiée ni les normes. L'hébergement est gratuit : le site peut être lent ou en veille au premier accès."
+)
+st.write(
     "Chaque onglet est déjà rempli avec un exemple d'école : cliquez sur « Calculer » pour voir un résultat, "
     "puis changez les valeurs. Que voulez-vous faire ?"
 )
@@ -89,3 +99,8 @@ st.caption(
     "Outil pédagogique et d'aide au pré-dimensionnement. Les résultats ne remplacent ni une note de calcul certifiée "
     "ni les normes en vigueur et doivent être vérifiés avant tout usage réel."
 )
+with st.container(horizontal=True):
+    st.page_link("app_pages/mentions_legales.py", label="Mentions légales")
+    st.page_link("app_pages/confidentialite.py", label="Confidentialité")
+    st.page_link("app_pages/cookies.py", label="Cookies")
+    st.page_link("app_pages/conditions.py", label="Conditions d'utilisation")

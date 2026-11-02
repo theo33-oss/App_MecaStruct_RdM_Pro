@@ -7,9 +7,6 @@ import streamlit as st
 
 from mecastruct.ui import state, widgets
 
-st.set_page_config(
-    page_title="MecaStruct RdM Pro", page_icon=":material/architecture:", layout="wide", initial_sidebar_state="auto"
-)
 state.init()
 
 pages = {
@@ -38,8 +35,21 @@ pages = {
         st.Page("app_pages/convertisseur.py", title="Convertisseur", icon="🔁"),
         st.Page("app_pages/references.py", title="Références", icon="📖"),
     ],
+    "ℹ️ Informations": [
+        st.Page("app_pages/mentions_legales.py", title="Mentions légales", icon="⚖️"),
+        st.Page("app_pages/confidentialite.py", title="Politique de confidentialité", icon="🔒"),
+        st.Page("app_pages/cookies.py", title="Cookies et traceurs", icon="🍪"),
+        st.Page("app_pages/conditions.py", title="Conditions d'utilisation", icon="📄"),
+    ],
 }
 pg = st.navigation(pages, position="sidebar" if widgets.vue() == "pc" else "top")
+# après st.navigation pour que l'onglet du navigateur porte le titre de la page ouverte
+st.set_page_config(
+    page_title="MecaStruct RdM Pro" if pg.title == "Accueil" else f"{pg.title} · MecaStruct RdM Pro",
+    page_icon=":material/architecture:",
+    layout="wide",
+    initial_sidebar_state="auto",
+)
 if widgets.vue() == "pc":
     st.sidebar.html("<style>" + widgets.css_menu_gauche() + "</style>")
 if pg.title != "Accueil":  # l'accueil a déjà l'interrupteur, à côté du choix d'affichage

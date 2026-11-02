@@ -324,8 +324,49 @@ def _theme_sombre() -> bool:
         return False
 
 
+def _sans_balises(texte: Any) -> str:
+    """Texte brut d'un titre Plotly : balises HTML (<br>, <sup>…) retirées, espaces réduits."""
+    return " ".join(re.sub(r"<[^>]+>", " ", str(texte or "")).split())
+
+
+def _extrema(courbe: Any) -> str:
+    """« nom : maximum y en x = …, minimum y en x = … » d'une courbe, ou « » si ses valeurs ne sont pas numériques."""
+    try:
+        pts = [
+            (float(x), float(y)) for x, y in zip(courbe.x, courbe.y, strict=False) if x is not None and y is not None
+        ]
+    except (TypeError, ValueError):
+        return ""
+    pts = [p for p in pts if math.isfinite(p[0]) and math.isfinite(p[1])]
+    if len(pts) < 3:
+        return ""
+    (xh, yh), (xb, yb) = max(pts, key=lambda p: p[1]), min(pts, key=lambda p: p[1])
+    return f"{courbe.name} : maximum {yh:.4g} en x = {xh:.4g}, minimum {yb:.4g} en x = {xb:.4g}."
+
+
+def resume_graphique(fig: Any) -> str:
+    """Description en texte d'un graphique (pour la lecture d'écran) : titre, axes, extrema de chaque courbe.
+
+    Calculée sur les données déjà tracées. Un dessin à l'échelle (schéma, section) n'est décrit que par son titre.
+    """
+    lay = fig.layout
+    morceaux = [_sans_balises(lay.title.text)]
+    if lay.yaxis.scaleanchor != "x":
+        x, y = _sans_balises(lay.xaxis.title.text), _sans_balises(lay.yaxis.title.text)
+        if x or y:
+            morceaux.append(f"Axes : x = {x or '—'}, y = {y or '—'}.")
+        courbes = [
+            t for t in fig.data if t.type == "scatter" and t.name and not t.fill and "lines" in (t.mode or "lines")
+        ]
+        morceaux += [e for e in map(_extrema, courbes[:4]) if e]
+    return " ".join(m for m in morceaux if m)
+
+
 def plot(fig: Any, **kw) -> None:
-    """Graphique Plotly : au doigt, sans barre d'outils ni zoom (le doigt fait défiler la page) ; téléphone : réduit."""
+    """Graphique Plotly : au doigt, sans barre d'outils ni zoom (le doigt fait défiler la page) ; téléphone : réduit.
+
+    Une légende textuelle (`resume_graphique`) suit le graphique.
+    """
     if vue() != "pc":
         if is_compact():
             fig.update_layout(
@@ -348,6 +389,10 @@ def plot(fig: Any, **kw) -> None:
     if contraste_eleve():
         _renforce(fig)
     st.plotly_chart(fig, config=config, **kw)
+    if resume := resume_graphique(fig):
+        st.caption(
+            re.sub(r"([\\`*_$~])", r"\\\1", resume)
+        )  # le texte est du Markdown : caractères spéciaux neutralisés
 
 
 def contraste_eleve() -> bool:

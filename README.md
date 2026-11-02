@@ -3,6 +3,22 @@
 Application MATLAB de Résistance des Matériaux et de dimensionnement des structures.
 L'interface est entièrement programmatique : `uifigure`, `uigridlayout`, `uitabgroup`, sans `.mlapp`.
 
+## Version web
+
+Le dossier `web/` contient la version web (Python, Streamlit) : site gratuit, sans compte ni paiement, publié sur
+https://appmecastructurerdm.streamlit.app/. Le détail de l'installation et des différences avec MATLAB est dans
+[web/README.md](web/README.md).
+
+- **Fonctions** : poutres 2D et ossatures 3D, treillis, sections, sollicitations simples, flambage, tenseurs et
+  critères, loi de Hooke et jauges ; ajustements ISO 286, frettage, paliers lisses, roulements, engrenages, trains
+  épicycloïdaux, freins et embrayages, dimensionnement moteur ; base de matériaux et de profilés, convertisseur
+  d'unités ; dossier de validation HTML téléchargeable pour chaque calcul.
+- **Limites** : outil pédagogique et de pré-dimensionnement, résultats à vérifier, aucune garantie ; il ne remplace
+  ni une note de calcul certifiée ni les normes. Hébergement gratuit : mise en veille après une période sans visite.
+- **Données** : aucune donnée personnelle collectée volontairement, aucun compte, aucune mesure d'audience ; les
+  saisies ne sont pas conservées par le serveur. Voir les pages « Informations » du site (mentions légales,
+  confidentialité, cookies, conditions d'utilisation).
+
 ## Lancer l'application
 
 Dans MATLAB (R2025b testé), ouvrir `Lancer.m` et cliquer sur « Exécuter » (ou taper `Lancer`) : le dossier courant est réglé tout seul. À la main, depuis ce dossier :
