@@ -6,9 +6,10 @@ quadratique moyen sur les phases d'accélération, de régime établi et de frei
 
 import streamlit as st
 
+from mecastruct.plots import machine_schemas
 from mecastruct.services import machine_courses as mc
+from mecastruct.ui import machine_dossier, state, widgets
 from mecastruct.ui import machine_page as mp
-from mecastruct.ui import state, widgets
 
 state.init()
 P = "mot"
@@ -52,4 +53,8 @@ with gauche:
             "tuyauteries, différentiels."
         )
 with droite:
+    mp.apercu(lambda: machine_schemas.motorCycle(s))
     mp.resultats(P, s)
+
+st.divider()
+machine_dossier.bouton("moteur", "Dimensionnement moteur", [(P, "Choix du moteur", DEFAUT, "motor")])
