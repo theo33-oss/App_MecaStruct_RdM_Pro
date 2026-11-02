@@ -77,25 +77,29 @@ with onglets[2]:
         "de l'arbre et de l'alésage."
     )
     bague = st.radio("Bague", ["intérieure", "extérieure"], horizontal=True, key="rlt_regle.bague")
-    rotations = list(dict.fromkeys(r for b, r, _ in bearings.AJUSTEMENTS if b == bague))
+    rotations = list(dict.fromkeys(r for (b, r, _), _ in bearings.AJUSTEMENTS if b == bague))
     rotation = st.radio(
         "Rotation de la bague par rapport à la direction de la charge",
         rotations,
         horizontal=True,
         key=f"rlt_regle.rotation.{bague}",
     )
-    charges = [c for b, r, c in bearings.AJUSTEMENTS if (b, r) == (bague, rotation)]
+    charges = [c for (b, r, c), _ in bearings.AJUSTEMENTS if (b, r) == (bague, rotation)]
     charge = st.selectbox("Charge", charges, key=f"rlt_regle.charge.{bague}.{rotation}")
     if rotation == "indéfinie":
-        st.info("Direction de la charge non définie : le cours conseille un alésage K7 pour une charge normale ou importante.")
+        st.info(
+            "Direction de la charge non définie : le cours conseille un alésage K7 pour une charge normale "
+            "ou importante."
+        )
     else:
         st.success(f"Bague montée {bearings.mountingRule(bague, rotation)}")
     portee, ajustement = bearings.fitRule(bague, rotation, charge)
     st.write(f"Ajustement conseillé : {portee} {ajustement}")
     with st.expander("Immobilisation axiale (solutions du cours)"):
         st.markdown(
-            "- **Bague intérieure** : anneau élastique, épaulement, entretoise (Ø70 H11-d11 en exemple), écrou à encoche "
-            "avec rondelle frein.\n"
-            "- **Bague extérieure** : épaulement, anneau élastique, chapeau centré (Ø80 H7-h6 en exemple), entretoise, "
-            "boîtier de roulement (Ø85 H7-h6 et Ø80 H7-h6), chapeau sur roulement rainuré, boîtier réglable avec cale."
+            "- **Bague intérieure** : anneau élastique, épaulement, entretoise (Ø70 H11-d11 en exemple), "
+            "écrou à encoche avec rondelle frein.\n"
+            "- **Bague extérieure** : épaulement, anneau élastique, chapeau centré (Ø80 H7-h6 en exemple), "
+            "entretoise, boîtier de roulement (Ø85 H7-h6 et Ø80 H7-h6), chapeau sur roulement rainuré, "
+            "boîtier réglable avec cale."
         )
