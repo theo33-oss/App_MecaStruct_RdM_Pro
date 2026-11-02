@@ -6,9 +6,10 @@ Formules du cours « Frein – Embrayage » (IUT de Bordeaux, ICM S5) : pression
 
 import streamlit as st
 
+from mecastruct.plots import machine_schemas
 from mecastruct.services import machine_courses as mc
+from mecastruct.ui import machine_dossier, state, widgets
 from mecastruct.ui import machine_page as mp
-from mecastruct.ui import state, widgets
 
 state.init()
 FRE, EMB = "frn", "emb"
@@ -37,7 +38,8 @@ with onglets[0]:
             "constante. La puissance spécifique moyenne est à comparer à la limite du fabricant de la garniture."
         )
     with droite:
-        mp.resultats(FRE, s_fre)
+        mp.apercu(lambda: machine_schemas.brakeDisc(s_fre))
+        mp.resultats(FRE, s_fre, lambda _: machine_schemas.brakePressure(s_fre))
 
 with onglets[1]:
     gauche, droite = widgets.zones(EMB)
@@ -57,4 +59,12 @@ with onglets[1]:
             "|CR| + JR·ω/ts. Vérification indicative : ce couple doit rester inférieur au couple moteur."
         )
     with droite:
+        mp.apercu(lambda: machine_schemas.clutchSync(s_emb))
         mp.resultats(EMB, s_emb)
+
+st.divider()
+machine_dossier.bouton(
+    "freins",
+    "Freins et embrayages",
+    [(FRE, "Frein à disque", DEFAUT_FRE, "brake"), (EMB, "Embrayage", DEFAUT_EMB, "clutch")],
+)
