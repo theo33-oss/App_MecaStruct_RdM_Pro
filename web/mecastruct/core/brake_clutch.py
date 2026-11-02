@@ -64,9 +64,11 @@ def clutchTorqueFor(JR: float, omegaM: float, CR: float, tsync: float) -> float:
 
 
 def syncTime(JR: float, omegaM: float, CT: float, CR: float) -> float:
-    """Durée de synchronisation (s) avec le couple CT : JR·ωM / (CT − |CR|). Erreur si CT ≤ |CR| (pas de synchronisation)."""
+    """Durée de synchronisation (s) avec le couple CT : JR·ωM / (CT − |CR|). Erreur si CT ≤ |CR|."""
     if CT <= abs(CR):
-        raise MecaStructError(_ID, f"Couple d'embrayage {CT:g} N·m insuffisant contre le couple résistant {abs(CR):g} N·m.")
+        raise MecaStructError(
+            _ID, f"Couple d'embrayage {CT:g} N·m insuffisant contre le couple résistant {abs(CR):g} N·m."
+        )
     return JR * omegaM / (CT - abs(CR))
 
 
