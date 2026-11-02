@@ -23,6 +23,11 @@ pages = {
         st.Page("app_pages/tenseurs.py", title="Tenseurs & critères", icon="⭕"),
         st.Page("app_pages/hooke_jauges.py", title="Hooke & jauges", icon="📈"),
     ],
+    "⚙️ Éléments de machines": [
+        st.Page("app_pages/ajustements.py", title="Ajustements ISO 286", icon="📏"),
+        st.Page("app_pages/frettage.py", title="Frettage", icon="🔧"),
+        st.Page("app_pages/paliers_lisses.py", title="Paliers lisses", icon="⚙️"),
+    ],
     "🛠️ Outils": [
         st.Page("app_pages/base_de_donnees.py", title="Base de données", icon="📚"),
         st.Page("app_pages/convertisseur.py", title="Convertisseur", icon="🔁"),
