@@ -21,11 +21,18 @@ st.title("Trains épicycloïdaux")
 gauche, droite = widgets.zones(P)
 with gauche:
     with st.expander("Dentures", expanded=True):
-        mp.num(P, "Z1", "Planétaire Z1", min_value=1.0, step=1.0)
-        mp.num(P, "Z21", "Satellite engrenant le planétaire Z21", min_value=1.0, step=1.0)
-        mp.num(P, "Z22", "Satellite engrenant la couronne Z22 (= Z21 si satellite simple)", min_value=1.0, step=1.0)
-        mp.num(P, "Z4", "Couronne Z4", min_value=1.0, step=1.0)
-        mp.num(P, "nSat", "Nombre de satellites", min_value=1.0, step=1.0)
+        mp.num(P, "Z1", "Planétaire Z1", min_value=1.0, max_value=1000.0, step=1.0)
+        mp.num(P, "Z21", "Satellite engrenant le planétaire Z21", min_value=1.0, max_value=1000.0, step=1.0)
+        mp.num(
+            P,
+            "Z22",
+            "Satellite engrenant la couronne Z22 (= Z21 si satellite simple)",
+            min_value=1.0,
+            max_value=1000.0,
+            step=1.0,
+        )
+        mp.num(P, "Z4", "Couronne Z4", min_value=1.0, max_value=1000.0, step=1.0)
+        mp.num(P, "nSat", "Nombre de satellites", min_value=1.0, max_value=24.0, step=1.0)
     with st.expander("Cinématique", expanded=True):
         st.selectbox("Élément bloqué", planetary.ELEMENTS, key=f"{P}.bloque")
         st.selectbox("Élément d'entrée", planetary.ELEMENTS, key=f"{P}.entree")
