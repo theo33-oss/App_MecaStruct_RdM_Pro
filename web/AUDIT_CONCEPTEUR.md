@@ -12,6 +12,9 @@ Ce fichier dit ce qui est corrigé, ce qui ne l'est pas, et ce qui n'a pas pu ê
   Sections, pas celle du calcul affiché. Ils utilisent maintenant la section enregistrée au clic sur « Calculer ».
 - **Dossier de validation** : bouton grisé si la saisie a changé depuis le dernier calcul ; un ancien dossier est
   effacé à chaque nouveau calcul.
+- **Bilan du dossier** (`validation_report.py`) : un sous-contrôle impossible (combinaisons, Eurocode 3, fatigue,
+  profilé) compte comme un écart ; des hypothèses non contrôlées ou un calcul annexe non refait figurent dans le
+  bilan au lieu de laisser « tout concorde ». Tests : `tests/test_validation_report.py`.
 - **Résultats périmés** : avertissement commun à toutes les pages de calcul (via le bouton du dossier).
 - **Poutres 2D, explications** : onglet « Explications du calcul » à côté des graphiques ; équilibres écrits avec leurs
   valeurs (kN, kN·m) ; coupes M(s) et T(s) avec les termes remplis, aux extrémités, à 10-25-50-75-90 % de L et aux
@@ -31,9 +34,8 @@ Ce fichier dit ce qui est corrigé, ce qui ne l'est pas, et ce qui n'a pas pu ê
   de tassements.
 - « Concorde avec le solveur » n'est pas indépendant pour Eurocode 3, fatigue et Navier (valeurs reprises du
   solveur) ; poutres hyperstatiques : les réactions surabondantes ne sont pas contrôlées.
-- Dossier : bilan « tout concorde » alors qu'un contrôle a pu échouer (`validation_report.py`, division par zéro
-  et échecs isolés hors total) ; diagrammes et formules chargés depuis un CDN (Plotly, MathJax) : sans Internet ils
-  disparaissent, le mot « autonome » est inexact ; charges réparties saisies peu lisibles.
+- Dossier : diagrammes et formules chargés depuis un CDN (Plotly, MathJax) : sans Internet ils disparaissent, le
+  mot « autonome » est inexact ; charges réparties saisies peu lisibles.
 - Eurocode 3 : le symbole I_z des formules désigne l'inertie faible (champ `Iy`).
 - Clavette, goupille, Sections, Flexion : contrôles à la main absents ou partiels ; hypothèses et verdicts visibles
   seulement dans le dossier.
