@@ -594,7 +594,7 @@ def page_ossature_3d() -> None:
             if k == "pieces":
                 _materiaux(tables[k], dm)
         pp = st.checkbox("Poids propre", key="p3d.pp", help="ρ·g·A selon -Z, g = 9,81 m/s².")
-        if widgets.calc_button("p3d"):
+        if widgets.calc_button("p3d.calc"):
             st.session_state.pop("p3d.res", None)
             try:
                 data = _donnees(tables, pp, dm)
