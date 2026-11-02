@@ -1,0 +1,56 @@
+{
+ "Source": "Classeur « CALCULS PALIERS LISSES.xlsm » de l'auteur, feuille MATIERE. Ordres de grandeur par famille de matériau : à confirmer sur la documentation du fabricant du coussinet.",
+ "Unites": "Pmax : pression maximale à très faible vitesse (MPa) ; Pdyn : pression admissible en mouvement, à 0,01 m/s (MPa) ; Vmax : vitesse de glissement maximale (m/s) ; f : coefficient de frottement",
+ "Modele": "P limite(V) : interpolation log-log de (0,001 m/s ; Pmax) à (0,01 m/s ; Pdyn), puis de (0,01 m/s ; Pdyn) à (Vmax ; 1 MPa).",
+ "Materiaux": [
+  {
+   "Name": "Bronze massif",
+   "Pmax": 45.0,
+   "Pdyn": 25.0,
+   "Vmax": 0.5,
+   "f": 0.15
+  },
+  {
+   "Name": "Bronze fritté",
+   "Pmax": 20.0,
+   "Pdyn": 10.0,
+   "Vmax": 0.25,
+   "f": 0.1
+  },
+  {
+   "Name": "Bronze roulé",
+   "Pmax": 120.0,
+   "Pdyn": 40.0,
+   "Vmax": 1.0,
+   "f": 0.15
+  },
+  {
+   "Name": "PTFE",
+   "Pmax": 250.0,
+   "Pdyn": 80.0,
+   "Vmax": 2.0,
+   "f": 0.25
+  },
+  {
+   "Name": "Polyamide + PTFE",
+   "Pmax": 80.0,
+   "Pdyn": 40.0,
+   "Vmax": 1.0,
+   "f": 0.15
+  },
+  {
+   "Name": "Fibres multicouches",
+   "Pmax": 200.0,
+   "Pdyn": 140.0,
+   "Vmax": 0.5,
+   "f": 0.08
+  },
+  {
+   "Name": "POM",
+   "Pmax": 250.0,
+   "Pdyn": 120.0,
+   "Vmax": 2.5,
+   "f": 0.2
+  }
+ ]
+}
