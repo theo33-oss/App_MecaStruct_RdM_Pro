@@ -35,8 +35,15 @@ def computeBearingLife(s: dict) -> dict:
     e et Y interpolés dans la table du cours, billes à contact radial ; False : e, X, Y saisis), Lh (durée visée, h).
     """
     if s["tableau"] and s["type"] != "billes":
-        raise MecaStructError("MecaStruct:Bearing:invalidInput", "La table du cours vaut pour les billes : saisir e, X, Y.")
+        raise MecaStructError(
+            "MecaStruct:Bearing:invalidInput", "La table du cours vaut pour les billes : saisir e, X, Y."
+        )
+    if s["C0"] <= 0:
+        raise MecaStructError(
+            "MecaStruct:Bearing:invalidInput", "La charge statique C0 doit être strictement positive."
+        )
     faC0 = s["Fa"] / s["C0"]
+    fafr = s["Fa"] / s["Fr"] if s["Fr"] > 0 else math.inf
     if s["tableau"]:
         e, Y = bearings.eYInterpolated(faC0)
         X = bearings.xyTable()["X"]
@@ -54,16 +61,25 @@ def computeBearingLife(s: dict) -> dict:
         f"Roulement : P = {P:.0f} N, L10h = {L10h:.0f} h, Lnh = {Lnh:.0f} h à {s['F']:g} % de fiabilité "
         f"({_verdict(ok)} pour {s['Lh']:g} h)"
     )
+    if s["Fr"] == 0:
+        equivalente = rf"P = F_a = {P:.5g}\ \mathrm{{N}}"
+    elif fafr <= e:
+        equivalente = rf"P = F_r = {P:.5g}\ \mathrm{{N}}"
+    else:
+        equivalente = (
+            rf"P = X F_r + Y F_a = {X:g} \times {s['Fr']:g} + {Y:.4g} \times {s['Fa']:g} = {P:.5g}\ \mathrm{{N}}"
+        )
     latex = [
         rf"Fa/C_0 = {faC0:.4g} \quad e = {e:.4g} \quad Y = {Y:.4g}",
-        rf"P = {P:.5g}\ \mathrm{{N}}" if s["Fa"] / s["Fr"] <= e else
-        rf"P = X F_r + Y F_a = {X:g} \times {s['Fr']:g} + {Y:.4g} \times {s['Fa']:g} = {P:.5g}\ \mathrm{{N}}",
+        equivalente,
         rf"L_{{10}} = \left(\frac{{C}}{{P}}\right)^{{{n:.4g}}} = {L10:.4g}\ \mathrm{{millions\ de\ tours}}",
         rf"L_{{10h}} = \frac{{10^6\, L_{{10}}}}{{60\, N}} = {L10h:.5g}\ \mathrm{{h}}",
         rf"L_{{nh}} = a_1\, L_{{10h}} = {a1:.4g} \times {L10h:.5g} = {Lnh:.5g}\ \mathrm{{h}}",
     ]
     rapport = [
-        f"Charge équivalente : Fa/Fr = {s['Fa'] / s['Fr']:.4g} comparé à e = {e:.4g}",
+        "Charge équivalente : butée, P = Fa"
+        if s["Fr"] == 0
+        else f"Charge équivalente : Fa/Fr = {fafr:.4g} comparé à e = {e:.4g}",
         f"Durée L10 : (C/P)^{n:.4g} = ({s['C']:g}/{P:.5g})^{n:.4g} = {L10:.4g} millions de tours",
         f"Fiabilité {s['F']:g} % : a1 = (ln(1/F)/ln(1/0,9))^(1/1,5) = {a1:.4g}",
         f"Charge de base minimale pour {s['Lh']:g} h à la fiabilité {s['F']:g} % : C = {Creq:.5g} N "
@@ -111,7 +127,9 @@ def computeBearingSet(s: dict) -> dict:
         rf"L_E = \left(\sum_j L_j^{{-1{{,}}5}}\right)^{{-1/1{{,}}5}} = {LE:.5g}\ \mathrm{{h}}",
         rf"L = L_G \cdot n_G^{{2/3}} = {s['LG']:g} \times {nG}^{{2/3}} = {Liso:.5g}\ \mathrm{{h}}",
     ]
-    tab = _synthese([("Durée de l'ensemble L_E (h)", f"{LE:.0f}"), ("Durée de chaque roulement iso-fiable (h)", f"{Liso:.0f}")])
+    tab = _synthese(
+        [("Durée de l'ensemble L_E (h)", f"{LE:.0f}"), ("Durée de chaque roulement iso-fiable (h)", f"{Liso:.0f}")]
+    )
     res = {"LE": LE, "Liso": Liso, "rapport": [head, *rapport], "latex": latex}
     return {"result": res, "tables": {"Synthèse": tab}, "status": head, "ok": None}
 
@@ -131,6 +149,8 @@ def computeGearMesh(s: dict, dm: DataManager) -> dict:
     Le pignon est vérifié avec Rpe = Re/s (Re lu dans la base de matériaux, converti en MPa).
     """
     Z1, Z2 = int(s["Z1"]), int(s["Z2"])
+    if s["N"] <= 0:
+        raise MecaStructError("MecaStruct:Gears:invalidInput", "La fréquence de rotation du pignon doit être positive.")
     C1 = 30 * s["P"] / (math.pi * s["N"])
     geo = gears.geometry(s["m"], Z1)
     r = gears.ratio(Z1, Z2)
@@ -147,8 +167,8 @@ def computeGearMesh(s: dict, dm: DataManager) -> dict:
     )
     latex = [
         rf"C_1 = \frac{{P}}{{\omega}} = {C1:.4g}\ \mathrm{{N{{\cdot}}m}}",
-        rf"F_t = \frac{{2C_1}}{{d_1}} = {f['Ft']:.5g}\ \mathrm{{N}}, \quad F_r = F_t \tan\alpha = {f['Fr']:.5g}\ \mathrm{{N}},"
-        rf" \quad F_n = \frac{{F_t}}{{\cos\alpha}} = {f['Fn']:.5g}\ \mathrm{{N}}",
+        rf"F_t = \frac{{2C_1}}{{d_1}} = {f['Ft']:.5g}\ \mathrm{{N}}, \quad F_r = F_t \tan\alpha = {f['Fr']:.5g}\ "
+        rf"\mathrm{{N}}, \quad F_n = \frac{{F_t}}{{\cos\alpha}} = {f['Fn']:.5g}\ \mathrm{{N}}",
         rf"\sigma = \frac{{54\, F_t}}{{\pi^2\, k\, m^2}} = {sigma:.4g}\ \mathrm{{MPa}}",
         rf"m \geq \sqrt{{\frac{{54\, F_t}}{{\pi^2\, k\, R_{{pe}}}}}} = {mMini:.4g}\ \mathrm{{mm}}",
     ]
@@ -218,7 +238,7 @@ def computeGearTrain(s: dict) -> dict:
 
 
 def defaultPlanetaryInput() -> dict:
-    """Exemple du cours : planétaire Z1 = 15, satellite Z2 = 9, couronne Z4 = 33 ; couronne bloquée, entrée à 1500 tr/min."""
+    """Exemple du cours : planétaire Z1 = 15, satellite Z2 = 9, couronne Z4 = 33, couronne bloquée."""
     return {"Z1": 15, "Z21": 9, "Z22": 9, "Z4": 33, "nSat": 3, "bloque": "couronne", "entree": "planétaire",
             "Ne": 1500.0}  # fmt: skip
 
@@ -247,7 +267,7 @@ def computePlanetary(s: dict) -> dict:
     latex = [
         rf"r_b = \frac{{\omega_{{couronne}} - \omega_{{PS}}}}{{\omega_{{planétaire}} - \omega_{{PS}}}} = "
         rf"\frac{{-Z_1 Z_{{22}}}}{{Z_{{21}} Z_4}} = {rb:.4g}",
-        rf"\omega_{{couronne}} - \omega_{{PS}} = r_b\,(\omega_{{planétaire}} - \omega_{{PS}})",
+        r"\omega_{couronne} - \omega_{PS} = r_b\,(\omega_{planétaire} - \omega_{PS})",
     ]
     tab = pd.DataFrame(
         [
@@ -350,8 +370,8 @@ def computeClutch(s: dict) -> dict:
 
 
 def defaultMotorInput() -> dict:
-    """Exemple du cours (ascenseur) : 120 N·m en accélération, 54 N·m en régime établi, moteur 63 N·m, 126 N·m, 1470 tr/min.
-
+    """Exemple du cours (ascenseur) : 120 N·m en accélération, 54 N·m en régime établi.
+    Moteur retenu dans le cours : 63 N·m nominal, 126 N·m maxi, 1470 tr/min.
     Les durées des phases ne sont pas données dans le cours : valeurs choisies pour retrouver C_th = 61 N·m.
     """
     return {"Ca": 120.0, "ta": 1.0, "Cc": 54.0, "tc": 13.3, "Cfr": 0.0, "tfr": 0.0, "Cn": 63.0, "Cmax": 126.0,
