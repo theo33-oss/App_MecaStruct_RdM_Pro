@@ -6,13 +6,23 @@ computeTorsion, computeBending). Cisaillement et flexion utilisent la section de
 
 import streamlit as st
 
-from mecastruct.core import geometry
+from mecastruct.core import geometry, key_pin
 from mecastruct.plots import section_plots, sollicitation_plots
-from mecastruct.services import beam_design, beam_services, compute
-from mecastruct.ui import state, widgets
+from mecastruct.services import beam_design, beam_services, compute, machine
+from mecastruct.ui import machine_page, state, widgets
 from mecastruct.ui.formula_panel import formula_panel
 
 CRITERES = {"Tresca": "Tresca (τe = Re/2)", "VonMises": "Von Mises (τe = Re/√3)"}
+FORMES_CLE = {"A": "A (bouts ronds)", "B": "B (bouts droits)", "C": "C (un bout rond)"}
+# goupille sous couple : (clé, libellé, valeur de départ) ; T en N·m, longueurs en mm
+GOUPILLE_COUPLE = [
+    ("T", "Couple T (N·m)", 50.0),
+    ("D", "Diamètre de l'arbre D (mm)", 30.0),
+    ("D1", "Diamètre extérieur du moyeu D1 (mm)", 50.0),
+    ("d", "Diamètre de la goupille d (mm)", 8.0),
+    ("dint", "Alésage d'une goupille élastique (0 = pleine) (mm)", 0.0),
+    ("l", "Longueur engagée l (mm)", 30.0),
+]
 ONGLETS = [
     ("Traction / compression", "traction", "Tra"),
     ("Cisaillement & matage", "cisaillement", "Cis"),
@@ -34,6 +44,11 @@ def _calcule(cle: str, travail) -> dict | None:
         return None
     state.set_result(cle, res)
     return res
+
+
+def _tau_adm(saisie: dict) -> float:
+    """τadm (MPa) du matériau et du critère de la saisie Cisaillement, comme pour la clavette et la goupille."""
+    return compute.computeKey(saisie, dm)["result"]["tauAdm"] / 1e6
 
 
 def _section_des_sections(saisie: dict) -> None:
@@ -138,6 +153,13 @@ def _cisaillement_saisie(calcule: bool) -> None:
         widgets.num("Cis", "Lk", "Longueur L (0 = dimensionner)", "mm", min_value=0.0)
         if st.button("Calculer la clavette", key="Cis.key"):
             _calcule("CisKey", lambda: compute.computeKey(saisie, dm))
+        st.markdown("**Clavette normalisée NF E22-177** : b × h, t1 et t2 lus d'après D ; C, D, L et P_adm ci-dessus.")
+        st.radio("Forme", list(key_pin.FORMES), key="Cis_cle_forme", horizontal=True, format_func=FORMES_CLE.get)
+        if st.button("Vérifier la clavette normalisée", key="Cis.keystd"):
+            _calcule(
+                "CisKeyStd",
+                lambda: machine.computeKeyStandard(saisie, st.session_state["Cis_cle_forme"], _tau_adm(saisie)),
+            )
 
     def goupille() -> None:
         widgets.num("Cis", "Fp", "F", "kN")
@@ -146,6 +168,18 @@ def _cisaillement_saisie(calcule: bool) -> None:
         widgets.num("Cis", "np", "Sections cisaillées n", "-", step=1)
         if st.button("Calculer la goupille", key="Cis.pin"):
             _calcule("CisPin", lambda: compute.computePin(saisie, dm))
+        st.markdown("**Goupille transmettant un couple** (arbre / moyeu ; P_adm et matériau ci-dessus)")
+        st.radio("Montage", ["transversale", "longitudinale"], key="Cis_gc_montage", horizontal=True)
+        q = st.session_state
+        inutile = "l" if q["Cis_gc_montage"] == "transversale" else "D1"
+        for cle, label, defaut in GOUPILLE_COUPLE:
+            q.setdefault(f"Cis_gc_{cle}", defaut)
+            if cle != inutile:
+                st.number_input(label, key=f"Cis_gc_{cle}", min_value=0.0, format="%.6g")
+        if st.button("Vérifier la goupille sous couple", key="Cis.pintorque"):
+            p = {cle: q.get(f"Cis_gc_{cle}", defaut) for cle, _, defaut in GOUPILLE_COUPLE}
+            p.update(montage=q["Cis_gc_montage"], Padm=saisie["Padm"], tauAdm=_tau_adm(saisie))
+            _calcule("CisPinT", lambda: machine.computePinTorque(p))
 
     widgets.panels(
         "Cis",
@@ -186,6 +220,14 @@ def _cisaillement_resultats() -> None:
         if autre is not None:
             st.subheader(titre)
             _synthese(autre)
+    for cle, titre in (("CisKeyStd", "Clavette normalisée"), ("CisPinT", "Goupille sous couple")):
+        autre = state.result(cle)
+        if autre is not None:
+            st.subheader(titre)
+            widgets.status(autre["status"], autre["ok"])
+            st.dataframe(autre["tables"]["Synthèse"], hide_index=True)
+            with st.expander("Explications du calcul"):
+                machine_page.explications(autre)
 
 
 # ------------------------------------------------------------------------------------------------- Torsion
