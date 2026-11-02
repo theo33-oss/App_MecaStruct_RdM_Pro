@@ -55,3 +55,47 @@ Ce fichier dit ce qui est corrigé, ce qui ne l'est pas, et ce qui n'a pas pu ê
   du développeur. L'application MATLAB de référence reste à 190 GPa : la référence golden S235
   (`tests/golden/golden_datamanager.json`) et 4 tests ont été alignés à la main. Les résultats d'acier diffèrent donc
   de ceux de MATLAB d'environ 10 % sur les flèches.
+
+# Éléments de machines (2 novembre 2026), d'après les classeurs Excel de l'auteur
+
+Sources : clé USB D: (« MOI », FAT32). **Les six fichiers y sont abîmés** (octets altérés sur le disque, lecture
+répétée identique) : les contenus ont été récupérés morceau par morceau. Faire une copie saine de la clé.
+
+## Fait
+
+- **Ajustements ISO 286** (page) : tables du classeur « ecarts-normalises » (`data/iso286.json`), règles ISO
+  appliquées correctement (colonnes j et k selon la qualité, Δ pour K, M, N ≤ 8 et P à ZC ≤ 7 : les macros du classeur
+  se trompaient). Vérifié sur des valeurs ISO 286-2 connues (K7, N7, P7, M7, JS7, J7, js6, k6, h8, j6, f7, r6, p6, s6).
+- **Frettage** (page) : méthode reconstruite (le module de calcul du classeur était illisible) ; retrouve toutes les
+  valeurs enregistrées du classeur (K, p mini, p maxi, σ équivalentes, coefficients de sécurité, ΔT) à 1e-12 près.
+- **Paliers lisses** (page) : P, V, PV, courbe P-V du matériau, rotation ou oscillation, collerette ; retrouve les
+  valeurs enregistrées du classeur. Pas de catalogue de fabricant (choix du développeur).
+- **Clavette normalisée** et **goupille sous couple** : ajoutées aux volets Clavette et Goupille de Sollicitations,
+  avec la pression de matage déjà choisie dans le volet.
+- **17 nuances** du classeur matériaux ajoutées à `data/materials_extra.json` (E = 210 GPa pour les aciers).
+- Chaque calcul a son onglet « Explications du calcul » (formules remplies avec les valeurs, démarche).
+  Tests : `tests/test_machine_elements.py`.
+
+## Corrections de données (notées dans `data/iso286.json`)
+
+- r / R : 26 → 28 µm (18 à 30 mm) et 66 → 68 µm (160 à 180 mm) ; c / C : ±670 → ∓70 µm (3 à 6 mm).
+
+## Non fait ou non vérifié
+
+- **Tableau des clavettes ressaisi à la main** (`data/keys_iso773.json`) d'après NF E22-177 / ISO 773 : le tableau
+  du classeur était illisible. À VÉRIFIER sur la norme.
+- **Cannelures** (flancs parallèles et en développante) : tableaux récupérés mais module de calcul illisible ; non
+  porté.
+- **Goupilles** : les configurations 1 et 2 du classeur (chape avec excentrement, goupille radiale dans un tube)
+  ont des formules incohérentes (longueur d'appui du moyeu prise égale à son diamètre, torsion calculée avec le
+  diamètre de la goupille) : non portées. Transversale et longitudinale sous couple : formules classiques
+  (Roloff/Matek), pas celles du classeur pour le matage du moyeu. Catalogue Mécanindus non publié (choix).
+- **Paliers lisses** : la vitesse en oscillation (V = π·d·4β·f/360/60) est une formule usuelle, le module du classeur
+  étant perdu ; les limites P-V par famille de matériau viennent du classeur, à confirmer chez le fabricant.
+  Une feuille de catalogue (PTFE) était illisible ; catalogues SKF non publiés (choix).
+- **Frettage** : contrainte de l'arbre plein prise à 2p (formule du classeur, prudente : Von Mises donne p).
+  Pression maxi calculée sans retrancher le lissage (prudent, comme le classeur).
+- **ISO 286** : colonnes a, b, cd, d, ef, fg, t, u, v, x, y, z, za, zb, zc et leurs alésages non recoupées avec la
+  norme (valeurs du classeur, deux coquilles déjà trouvées dans les autres colonnes).
+- **Dossier de validation** : non branché pour les trois nouvelles pages (explications à côté seulement).
+- **Engrenages** : en attente des cours ; la vidéo est illisible (piste vidéo corrompue).
