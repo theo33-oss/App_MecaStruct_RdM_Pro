@@ -27,6 +27,11 @@ pages = {
         st.Page("app_pages/ajustements.py", title="Ajustements ISO 286", icon="📏"),
         st.Page("app_pages/frettage.py", title="Frettage", icon="🔧"),
         st.Page("app_pages/paliers_lisses.py", title="Paliers lisses", icon="⚙️"),
+        st.Page("app_pages/roulements.py", title="Roulements", icon="🔘"),
+        st.Page("app_pages/engrenages.py", title="Engrenages", icon="⚙️"),
+        st.Page("app_pages/epicycloidaux.py", title="Trains épicycloïdaux", icon="🪐"),
+        st.Page("app_pages/freins_embrayages.py", title="Freins et embrayages", icon="🛑"),
+        st.Page("app_pages/dimensionnement_moteur.py", title="Dimensionnement moteur", icon="🔌"),
     ],
     "🛠️ Outils": [
         st.Page("app_pages/base_de_donnees.py", title="Base de données", icon="📚"),
