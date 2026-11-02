@@ -71,7 +71,7 @@ def dynamicLoad(Fr: float, Fa: float, e: float, X: float, Y: float) -> float:
 
 
 def lifeMTours(C: float, P: float, n: float) -> float:
-    """Durée de vie L10 en millions de tours : (C/P)^n, avec C charge dynamique de base (N) et P charge équivalente (N)."""
+    """Durée de vie L10 en millions de tours : (C/P)^n ; C charge dynamique de base (N), P charge équivalente (N)."""
     if C <= 0 or P <= 0:
         raise MecaStructError(_ID, "La charge de base C et la charge équivalente P doivent être strictement positives.")
     return (C / P) ** n
@@ -104,7 +104,7 @@ def lifeSet(lives: list[float]) -> float:
 
 
 def isoReliableLife(setLife: float, count: int) -> float:
-    """Durée de chacun des `count` roulements iso-fiables qui donnent la durée d'ensemble `setLife` : setLife·count^(2/3)."""
+    """Durée de chacun des `count` roulements iso-fiables donnant la durée `setLife` : setLife·count^(2/3)."""
     if count < 1:
         raise MecaStructError(_ID, "Il faut au moins un roulement.")
     return setLife * count ** (2 / 3)
