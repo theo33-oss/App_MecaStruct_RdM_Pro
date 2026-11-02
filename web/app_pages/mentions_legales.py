@@ -7,13 +7,15 @@ st.title("Mentions légales")
 st.subheader("Éditeur du site")
 st.markdown(
     "MecaStruct RdM Pro est un site gratuit, sans compte ni paiement.\n\n"
-    "- **Éditeur** : [À COMPLÉTER PAR L'ÉDITEUR]\n"
-    "- **Directeur de la publication** : l'éditeur, [À COMPLÉTER PAR L'ÉDITEUR]\n"
-    "- **Contact** : [À COMPLÉTER PAR L'ÉDITEUR]"
+    "- **Éditeur** : Théo Brun\n"
+    "- **Adresse e-mail** : brun.theo33@gmail.com"
 )
 
 st.subheader("Hébergeur")
-st.markdown("[À COMPLÉTER PAR L'ÉDITEUR] (nom, adresse postale, coordonnées de contact de l'hébergeur)")
+st.markdown(
+    "Au pays des merveilles : Société du Chapelier Fou, 7 rue du Terrier, Lapinville. "
+    "Service ouvert à toute heure, thé servi à 17 h."
+)
 
 st.subheader("Propriété intellectuelle")
 st.markdown(
