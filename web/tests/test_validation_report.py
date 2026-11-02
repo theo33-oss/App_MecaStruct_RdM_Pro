@@ -224,3 +224,18 @@ def test_bouton_dossier_de_validation():
     nom, html, _ = at.session_state["validation.Tra"]
     assert re.fullmatch(r"Validation_Traction_compression_\d{8}_\d{6}\.html", nom)
     assert all(t in html for t in TITRES)
+
+
+def test_controle_impossible_compte_comme_ecart():
+    """Un sous-contrôle qui plante n'est plus une simple ligne de titre : il entre dans le total et ne concorde pas."""
+    ligne = vr._safeRows(lambda: 1 / 0, "Fatigue")[0]
+    assert ligne["hand"] is not None and not vr._verdict(ligne)[1]
+
+
+def test_hypotheses_indisponibles_et_calculs_annexes_non_refaits_dans_le_bilan(monkeypatch):
+    def plante(*_):
+        raise ValueError("boum")
+
+    monkeypatch.setattr(vr, "_hypothesesHTML", plante)
+    assert vr._hypSafe("Beam", {}, {}, None)[2] == 1
+    assert "2 calcul(s) annexe(s) non refait(s)" in vr._bilan(5, 5, 0, 0, 2)
