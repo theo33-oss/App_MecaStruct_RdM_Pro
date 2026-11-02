@@ -13,6 +13,7 @@ from mecastruct.core.data_manager import DataManager
 from mecastruct.core.errors import MecaStructError
 from mecastruct.core.pp import ppEval
 from mecastruct.services.beam_design import (
+    _parseNumbers,
     checkEurocode,
     checkFatigue,
     computeMovingLoad,
@@ -132,6 +133,31 @@ def test_charge_mobile_deux_essieux(dm):
     s.update({"mvN": 241, "mvE": "1 2"})
     with pytest.raises(MecaStructError) as err:
         computeMovingLoad(s, dm)
+    assert err.value.identifier == _ID
+
+
+def test_charge_mobile_virgule_decimale_comme_un_point(dm):
+    """« -10,5 » est une charge de 10,5 kN, pas deux essieux : même convoi qu'avec un point."""
+    resultats = []
+    for charges, ecart in (("-10,5 -10", "4,5"), ("-10.5 -10", "4.5")):
+        s = _beam(dm)
+        s["pl"] = []
+        s["dl"] = []
+        s.update({"mvP": charges, "mvE": ecart, "mvN": 61})
+        _, env = computeMovingLoad(s, dm)
+        resultats.append(env)
+    virgule, point = resultats
+    assert virgule["extrema"]["Mmax"] == pytest.approx(point["extrema"]["Mmax"], rel=1e-12)
+    assert virgule["extrema"]["Mmin"] == pytest.approx(point["extrema"]["Mmin"], rel=1e-12)
+    assert virgule["Rmax"] == pytest.approx(point["Rmax"], rel=1e-12)
+
+
+def test_parse_nombres_virgule_decimale():
+    assert _parseNumbers("10,5", "x").tolist() == [10.5]
+    assert _parseNumbers("10,5 10; 4.5", "x").tolist() == [10.5, 10.0, 4.5]
+    assert _parseNumbers("", "x").size == 0
+    with pytest.raises(MecaStructError) as err:
+        _parseNumbers("10,5,3", "x")
     assert err.value.identifier == _ID
 
 
