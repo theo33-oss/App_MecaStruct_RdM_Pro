@@ -468,7 +468,8 @@ def zones(nom: str) -> tuple[Any, Any]:
     """Zones (saisie, visualisation) d'une page de calcul ; `nom` distingue les pages ou onglets d'une même page.
 
     Ordinateur et tablette : deux colonnes, la visualisation reste épinglée en haut de l'écran quand on défile dans la
-    saisie. Téléphone : la visualisation passe au-dessus de la saisie, épinglée en bandeau.
+    saisie, avec un bouton « Calculer » à côté de l'interrupteur (il lance le calcul « {nom}.calc »). Téléphone : la
+    visualisation passe au-dessus de la saisie, épinglée en bandeau, sans ce bouton.
     """
     st.sidebar.html("<style>" + _css_visualisation(is_compact()) + "</style>")
     if is_compact():
@@ -478,20 +479,36 @@ def zones(nom: str) -> tuple[Any, Any]:
     gauche, droite = st.columns([1, 5] if large else [1, 2], gap="large")
     with droite:
         visu = st.container(key=f"visu_{nom}")
-        visu.toggle(
+        ligne = visu.container(horizontal=True, vertical_alignment="center")
+        ligne.toggle(
             "Agrandir la visualisation",
             key=f"zones.{nom}.large",
             help="Élargit cette zone vers la gauche ; la saisie reste accessible dans la colonne étroite.",
         )
+        ligne.button(
+            "Calculer",
+            key=f"zones.{nom}.calc",
+            type="primary",
+            icon=":material/calculate:",
+            on_click=_demande_calcul,
+            args=(f"{nom}.calc",),
+        )
     return gauche, visu
+
+
+def _demande_calcul(cle: str) -> None:
+    """Clic sur « Calculer » du visuel : signale au bouton de saisie `cle` qu'il a été cliqué."""
+    st.session_state[f"{cle}.depuis_visuel"] = True
 
 
 def calc_button(key: str, label: str = "Calculer") -> bool:
     """Bouton principal pleine largeur, à placer en haut de la colonne de saisie ; True au clic.
 
-    Le calcul se lance plus bas, une fois les champs affichés : la saisie est alors à jour.
+    Le calcul se lance plus bas, une fois les champs affichés : la saisie est alors à jour. Le bouton du visuel
+    (`zones`) compte aussi comme un clic.
     """
-    return st.button(label, key=key, type="primary", width="stretch", icon=":material/calculate:")
+    clic = st.button(label, key=key, type="primary", width="stretch", icon=":material/calculate:")
+    return st.session_state.pop(f"{key}.depuis_visuel", False) or clic
 
 
 def tabs(contenus: list[tuple[str, Callable[[], Any]]]) -> None:
