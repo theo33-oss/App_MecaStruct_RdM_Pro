@@ -28,9 +28,9 @@ with onglets[0]:
             mp.num(P, "m", "Module m", "mm", min_value=0.1)
             c1, c2 = st.columns(2)
             with c1:
-                mp.num(P, "Z1", "Dents du pignon Z1", min_value=1.0, step=1.0)
+                mp.num(P, "Z1", "Dents du pignon Z1", min_value=1.0, max_value=1000.0, step=1.0)
             with c2:
-                mp.num(P, "Z2", "Dents de la roue Z2", min_value=1.0, step=1.0)
+                mp.num(P, "Z2", "Dents de la roue Z2", min_value=1.0, max_value=1000.0, step=1.0)
         with st.expander("Transmission", expanded=True):
             mp.num(P, "P", "Puissance au pignon P", "W", min_value=0.0)
             mp.num(P, "N", "Fréquence de rotation du pignon", "tr/min", min_value=0.1)
@@ -60,9 +60,11 @@ with onglets[1]:
             with st.expander(f"Engrènement {i} (menant Z{2 * i - 1}, mené Z{2 * i})", expanded=True):
                 c1, c2 = st.columns(2)
                 with c1:
-                    mp.num(TRN, f"Z{2 * i - 1}", f"Dents menant Z{2 * i - 1}", min_value=1.0, step=1.0)
+                    mp.num(
+                        TRN, f"Z{2 * i - 1}", f"Dents menant Z{2 * i - 1}", min_value=1.0, max_value=1000.0, step=1.0
+                    )
                 with c2:
-                    mp.num(TRN, f"Z{2 * i}", f"Dents mené Z{2 * i}", min_value=1.0, step=1.0)
+                    mp.num(TRN, f"Z{2 * i}", f"Dents mené Z{2 * i}", min_value=1.0, max_value=1000.0, step=1.0)
         s_trn = mp.saisie(TRN, DEFAUT_TRN)
         mp.calcul(TRN, s_trn, mc.computeGearTrain)
         st.caption(
