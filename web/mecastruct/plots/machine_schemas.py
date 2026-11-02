@@ -18,6 +18,8 @@ from mecastruct.plots.section_plots import _cote
 _ID = "MecaStruct:Schema:invalidInput"
 _ALPHA = math.radians(gears.ALPHA)
 _ZMIN = 5  # en dessous, le dessin d'une denture n'a plus de sens
+_ZMAX = 1000  # au-dessus, le dessin coûte des secondes et des millions de points (Z = 200 000 : 16 s)
+_NSATMAX = 24
 _ZINTERF = 17  # 2/sin²α = 17,1 : nombre de dents usuel sous lequel il y a interférence de taillage sans déport
 
 
@@ -105,6 +107,8 @@ def _vue(fig: go.Figure, titre: str, hauteur: int = 460, egal: bool = True) -> g
 def _dents(*Z: int) -> None:
     if min(Z) < _ZMIN:
         raise MecaStructError(_ID, f"Dessin des dentures à partir de {_ZMIN} dents.")
+    if max(Z) > _ZMAX:
+        raise MecaStructError(_ID, f"Dessin des dentures limité à {_ZMAX} dents.")
 
 
 # ------------------------------------------------------------------------------------------------- engrenages
@@ -313,8 +317,8 @@ def planetaryTrain(s: dict) -> go.Figure:
     """
     Z1, Z21, Z22, Z4, nSat = (int(s[k]) for k in ("Z1", "Z21", "Z22", "Z4", "nSat"))
     _dents(Z1, Z21, Z22, Z4)
-    if nSat < 1:
-        raise MecaStructError(_ID, "Au moins un satellite.")
+    if not 1 <= nSat <= _NSATMAX:
+        raise MecaStructError(_ID, f"Dessin limité à 1 à {_NSATMAX} satellites.")
     m = 1.0  # dessin en « modules »
     Rc = (Z1 + Z21) / 2  # rayon du porte-satellites
     try:
