@@ -11,9 +11,9 @@ import pytest
 
 from mecastruct.core.data_manager import DataManager
 from mecastruct.core.errors import MecaStructError
-from mecastruct.services import beam_services, compute, project_io
+from mecastruct.services import beam_design, beam_services, compute, project_io
 from mecastruct.services.examples import loadExample
-from mecastruct.services.limits import MAX_LIGNES, MAX_TEXTE
+from mecastruct.services.limits import MAX_LIGNES, MAX_POSITIONS, MAX_TEXTE
 
 RACINE = Path(__file__).resolve().parents[2]
 
@@ -54,6 +54,14 @@ def test_texte_trop_long_refuse():
     s = loadExample("Beam")
     s["mvP"] = "1 " * MAX_TEXTE
     assert _identifiant(beam_services.buildBeamModel, s, DataManager()) == "MecaStruct:App:invalidInput"
+
+
+def test_convoi_trop_de_positions_ou_valeur_non_finie_refusee():
+    # une valeur numérique n'est pas limitée par checkLimits : c'est computeMovingLoad qui la refuse
+    for valeur in (MAX_POSITIONS + 1, float("inf"), float("nan")):
+        s = loadExample("Beam")
+        s.update({"mvP": "-10", "mvE": "", "mvN": valeur})
+        assert _identifiant(beam_design.computeMovingLoad, s, DataManager()) == "MecaStruct:App:invalidInput"
 
 
 # ------------------------------------------------------------------------------------------------ fichiers importés
