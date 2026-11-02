@@ -38,6 +38,16 @@ def calcul(page: str, s: dict, travail: Callable[[dict], dict]) -> None:
             widgets.error_box(err)
 
 
+def apercu(dessin: Callable[[], Any]) -> None:
+    """Schéma dessiné d'après la saisie actuelle : il suit chaque valeur modifiée, avant même « Calculer »."""
+    try:
+        fig = dessin()
+    except Exception as err:  # saisie incomplète ou hors du domaine dessinable : le schéma est seulement omis
+        st.caption(f"Schéma indisponible : {getattr(err, 'message', err)}")
+        return
+    widgets.plot(fig)
+
+
 def resultats(page: str, s: dict, graphique: Callable[[dict], Any] | None = None) -> None:
     """Ligne d'état, graphique, synthèse et explications du calcul (formules remplies et démarche)."""
     calc = st.session_state.get(f"{page}.res")
