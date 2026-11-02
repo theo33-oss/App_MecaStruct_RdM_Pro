@@ -7,9 +7,10 @@ puis composer les vitesses par rapport au bâti.
 import streamlit as st
 
 from mecastruct.core import planetary
+from mecastruct.plots import machine_schemas
 from mecastruct.services import machine_courses as mc
+from mecastruct.ui import machine_dossier, state, widgets
 from mecastruct.ui import machine_page as mp
-from mecastruct.ui import state, widgets
 
 state.init()
 P = "epi"
@@ -36,4 +37,8 @@ with gauche:
         "entier. Les trois éléments doivent être distincts pour le bloqué et l'entrée."
     )
 with droite:
+    mp.apercu(lambda: machine_schemas.planetaryTrain(s))
     mp.resultats(P, s)
+
+st.divider()
+machine_dossier.bouton("epicycloidaux", "Trains épicycloïdaux", [(P, "Train épicycloïdal", DEFAUT, "planetary")])
