@@ -42,10 +42,12 @@ with gauche:
     )
     with st.expander("Classification des organes de transmission (cours)"):
         st.markdown(
-            "- **Transformer l'énergie** : moteurs électriques, thermiques, hydrauliques, pneumatiques ; vérins ; freins.\n"
-            "- **Transformer le mouvement** : vis-écrou, bielle-manivelle, came, pignon-crémaillère, tambour ou poulie.\n"
-            "- **Adapter la vitesse ou la puissance** : réducteurs (engrenages, courroie, chaîne), boîtes de vitesses, "
-            "embrayages, coupleurs hydrauliques.\n"
+            "- **Transformer l'énergie** : moteurs électriques, thermiques, hydrauliques, pneumatiques ; vérins ; "
+            "freins.\n"
+            "- **Transformer le mouvement** : vis-écrou, bielle-manivelle, came, pignon-crémaillère, tambour ou "
+            "poulie.\n"
+            "- **Adapter la vitesse ou la puissance** : réducteurs (engrenages, courroie, chaîne), boîtes de "
+            "vitesses, embrayages, coupleurs hydrauliques.\n"
             "- **Transporter ou distribuer l'énergie** : arbres, courroies, chaînes, câbles, joints de cardan, "
             "tuyauteries, différentiels."
         )
