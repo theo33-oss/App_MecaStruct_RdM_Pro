@@ -45,7 +45,6 @@ with onglets[1]:
         with st.expander("Moteur et récepteur", expanded=True):
             mp.num(EMB, "CM", "Couple moteur CM", "N·m", min_value=0.0)
             mp.num(EMB, "NM", "Fréquence de rotation du moteur", "tr/min", min_value=0.0)
-            mp.num(EMB, "JM", "Inertie du moteur JM", "kg·m²", min_value=0.0)
             mp.num(EMB, "JR", "Inertie du récepteur JR", "kg·m²", min_value=0.0)
             mp.num(EMB, "CR", "Couple résistant CR (négatif)", "N·m", max_value=0.0)
         with st.expander("Manœuvre", expanded=True):
