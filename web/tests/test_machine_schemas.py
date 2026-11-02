@@ -154,3 +154,12 @@ def test_courbe_de_duree_apres_calcul():
     assert not at.exception
     assert any("Durée de vie" in t for t in _titres(at))
     assert math.isfinite(len(at.get("plotly_chart")))
+
+
+def test_dessin_refuse_les_nombres_de_dents_et_de_satellites_demesures():
+    """Sans plafond, Z = 200 000 prend 16 s et 14 millions de points : un visiteur pourrait figer le serveur."""
+    s = mc.defaultGearInput() | {"Z1": 200_000, "Z2": 400_000}
+    with pytest.raises(MecaStructError, match="limité à 1000 dents"):
+        ms.gearMesh(s)
+    with pytest.raises(MecaStructError, match="1 à 24 satellites"):
+        ms.planetaryTrain(mc.defaultPlanetaryInput() | {"nSat": 3000})
