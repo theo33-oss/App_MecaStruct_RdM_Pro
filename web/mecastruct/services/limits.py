@@ -9,6 +9,7 @@ from mecastruct.core.errors import MecaStructError
 MAX_LIGNES = 200  # lignes par tableau (appuis, charges, combinaisons, nœuds, barres…)
 MAX_TEXTE = 2000  # caractères par texte saisi
 MAX_PROFONDEUR = 6  # imbrication listes / dictionnaires
+MAX_POSITIONS = 500  # positions de base d'un convoi mobile (chacune résout la poutre, 2 à 3 ms)
 _ID = "MecaStruct:App:invalidInput"
 
 
