@@ -3147,8 +3147,8 @@ def _handProfiles(saisie: dict, res: dict, dm) -> list[dict]:
 def _safeRows(fn, nom: str) -> list[dict]:
     try:
         return fn()
-    except Exception as err:
-        return [_grp(f"{nom} : contrôle impossible ({getattr(err, 'message', err)})")]
+    except Exception as err:  # un contrôle impossible est un contrôle raté : NaN ne concorde jamais (voir _verdict)
+        return [_hc(f"{nom} : contrôle impossible ({getattr(err, 'message', err)})", "", _NAN, _NAN)]
 
 
 def _handExtras(saisie: dict, res: dict, dm) -> list[dict]:
@@ -3570,7 +3570,7 @@ def generate(key: str, saisie: dict, res: dict, dm) -> str:
         date=datetime.now().strftime("%d/%m/%Y %H:%M"),
         python=platform.python_version(),
         statut=res.get("status", ""),
-        bilan=_bilan(nOK, nTot, nWarn, nKo),
+        bilan=_bilan(nOK, nTot, nWarn, nKo, len(res.get("erreursRecalcul", []))),
         erreurs=res.get("erreursRecalcul", []),
         sections=sections,
     )
@@ -3579,8 +3579,8 @@ def generate(key: str, saisie: dict, res: dict, dm) -> str:
 def _hypSafe(key: str, saisie: dict, res: dict, dm) -> tuple[str, int, int]:
     try:
         return _hypothesesHTML(key, saisie, res, dm)
-    except Exception as err:
-        return f'<p class="warnbox">Section indisponible : {_esc(err)}</p>', 0, 0
+    except Exception as err:  # hypothèses non contrôlées : compte comme une hypothèse non satisfaite dans le bilan
+        return f'<p class="warnbox">Section indisponible : {_esc(err)}</p>', 0, 1
 
 
 def _handSafe(key: str, saisie: dict, res: dict, dm) -> tuple[str, int, int]:
@@ -3590,7 +3590,7 @@ def _handSafe(key: str, saisie: dict, res: dict, dm) -> tuple[str, int, int]:
         return f'<p class="warnbox">Section indisponible : {_esc(err)}</p>', 0, 0
 
 
-def _bilan(nOK: int, nTot: int, nWarn: int, nKo: int) -> str:
+def _bilan(nOK: int, nTot: int, nWarn: int, nKo: int, nErr: int = 0) -> str:
     if nTot == 0:
         h = (
             '<span class="ko">vérification indépendante non exécutée (voir §3) : aucun contrôle de calcul n\'a pu '
@@ -3602,6 +3602,8 @@ def _bilan(nOK: int, nTot: int, nWarn: int, nKo: int) -> str:
         h += f' ; <span class="ko">{nTot - nOK} écart(s) à examiner</span>'
     if nKo > 0:
         h += f' ; <span class="ko">{nKo} hypothèse(s) NON satisfaite(s)</span>'
+    if nErr > 0:
+        h += f" ; <span class=\"ko\">{nErr} calcul(s) annexe(s) non refait(s) (voir l'encadré d'erreurs)</span>"
     if nWarn > 0:
         h += f' ; <span class="warn">{nWarn} point(s) d\'attention sur les hypothèses</span>'
     return h + "."
