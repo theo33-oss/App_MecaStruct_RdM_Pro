@@ -44,7 +44,7 @@ def speeds(rb: float, bloque: str, entree: str, valeur: float) -> dict[str, floa
 
 
 def assemblyChecks(Z1: int, Z21: int, Z22: int, Z4: int, nSat: int) -> list[tuple[str, float, bool]]:
-    """Conditions de montage : (nom, valeur, ok). Entraxes : Z4 − (Z1 + Z21 + Z22) = 0 ; haricot : (Z1 + Z4)/nSat entier."""
+    """Conditions de montage : (nom, valeur, ok). Entraxes Z4 − (Z1 + Z21 + Z22) = 0 ; (Z1 + Z4)/nSat entier."""
     if nSat < 1:
         raise MecaStructError(_ID, "Il faut au moins un satellite.")
     ecart = Z4 - (Z1 + Z21 + Z22)
