@@ -132,6 +132,11 @@ def test_bouton_du_dossier():
     fichier, html, _, _ = at.session_state["validation.freins"]
     assert fichier.startswith("Validation_Freins_et_embrayages_") and "Frein à disque" in html
     assert len(at.get("download_button")) == 1
+    for fmt, ext in (("PDF", ".pdf"), ("Word", ".docx"), ("HTML", ".html")):
+        at.radio(key="validation.freins.format").set_value(fmt).run()
+        assert not at.exception and not at.error
+        (telechargement,) = at.get("download_button")
+        assert telechargement.proto.label.endswith(f"{ext})")
     at.session_state["frn.F"] = 1000.0  # saisie modifiée : le dossier ne correspond plus
     at.run()
     assert len(at.get("download_button")) == 0 and dossier().disabled

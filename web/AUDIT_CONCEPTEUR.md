@@ -23,6 +23,10 @@ Ce fichier dit ce qui est corrigé, ce qui ne l'est pas, et ce qui n'a pas pu ê
 - **Ossature 3D** : onglet « Vérification à la main » (bilan ΣF et ΣM avec valeurs, contraintes comparées à Re) ;
   rapport avec charges nodales, Wy, Wz et β ; le texte de σmax décrit enfin ce que fait le code.
   Tests : `tests/test_verification_3d.py`.
+- **Dossier de validation en HTML, PDF ou Word** (3 novembre, choix du format sous le bouton du dossier, toutes les
+  pages) : le PDF et le Word reprennent les parties, les tableaux et les formules, dessinées en images (lisibles hors
+  connexion). Les diagrammes Plotly n'y sont pas (version HTML seulement) ; les formules en matrice (array) restent en
+  LaTeX brut. Code : `services/dossier_export.py` ; tests : `tests/test_dossier_export.py`.
 
 ## Non corrigé (à faire)
 

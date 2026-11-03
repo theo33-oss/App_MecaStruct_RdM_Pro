@@ -15,7 +15,7 @@ import pandas as pd
 import streamlit as st
 
 from mecastruct.core.errors import MecaStructError
-from mecastruct.services import compute, project_io, validation_report
+from mecastruct.services import compute, dossier_export, project_io, validation_report
 from mecastruct.services.examples import exampleNames, loadExample
 from mecastruct.services.limits import MAX_LIGNES
 from mecastruct.ui import state
@@ -787,9 +787,9 @@ def _genere_validation(tab: str) -> None:
 
 
 def validation_button(tab: str) -> None:
-    """« Dossier de validation de ce problème » : recalcule la page, puis propose le fichier HTML à télécharger.
+    """« Dossier de validation de ce problème » : recalcule la page, puis propose le dossier en HTML, PDF ou Word.
 
-    Actif seulement s'il y a un résultat pour l'onglet `tab`. Le PDF s'obtient par Imprimer → Enregistrer en PDF.
+    Actif seulement s'il y a un résultat pour l'onglet `tab`.
     """
     res = state.result(tab)
     if res is not None and not state.is_current(tab):  # signal commun à toutes les pages de calcul
@@ -814,21 +814,37 @@ def validation_button(tab: str) -> None:
     err = st.session_state.get(f"validation.{tab}.erreur")
     if err is not None:
         error_box(err)
-    dossier = st.session_state.get(f"validation.{tab}")
-    if dossier is not None:
-        nom, html, heure = dossier
-        st.download_button(
-            f"Télécharger le dossier ({nom})",
-            html,
-            file_name=nom,
-            mime="text/html",
-            key=f"validation.{tab}.telecharger",
-            on_click="ignore",
-        )
-        st.caption(
-            f"Dossier généré à {heure} avec la saisie de ce moment. Formules affichées par MathJax (connexion "
-            "Internet requise). Pour un PDF : ouvrir le fichier, Imprimer → Enregistrer en PDF."
-        )
+    dossier_download(f"validation.{tab}", st.session_state.get(f"validation.{tab}"))
+
+
+def dossier_download(cle: str, dossier: tuple | None) -> None:
+    """Choix du format (HTML, PDF, Word) et téléchargement d'un dossier de validation déjà généré.
+
+    Entrées : `cle` (préfixe des clés de widgets) ; `dossier` = (nom du fichier .html, HTML, heure de génération, …),
+    ou None s'il n'y a rien à télécharger.
+    """
+    if dossier is None:
+        return
+    fichier, html, heure = dossier[:3]
+    fmt = st.radio("Format du dossier", list(dossier_export.FORMATS), horizontal=True, key=f"{cle}.format")
+    ext, mime = dossier_export.FORMATS[fmt]
+    nom = fichier.removesuffix(".html") + ext
+    try:
+        with st.spinner(f"Conversion du dossier en {fmt}…"):
+            data = dossier_export.export(html, fmt)
+    except Exception as err:  # une conversion ratée ne doit pas masquer les autres formats
+        error_box(err)
+        return
+    st.download_button(
+        f"Télécharger le dossier ({nom})", data, file_name=nom, mime=mime, key=f"{cle}.telecharger", on_click="ignore"
+    )
+    legende = (
+        "Formules affichées par MathJax (connexion Internet requise) ; pour un PDF avec les diagrammes : ouvrir le "
+        "fichier, Imprimer → Enregistrer en PDF."
+        if fmt == "HTML"
+        else "Formules en images, lisibles hors connexion ; les diagrammes interactifs ne sont que dans le HTML."
+    )
+    st.caption(f"Dossier généré à {heure} avec la saisie de ce moment. {legende}")
 
 
 def explanation_panel(tab: str) -> None:

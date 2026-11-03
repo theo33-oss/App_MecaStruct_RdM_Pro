@@ -61,17 +61,6 @@ def bouton(nom: str, titre: str, calculs: list[tuple[str, str, dict, str]]) -> N
     if err is not None:
         widgets.error_box(err)
     dossier = st.session_state.get(f"validation.{nom}")
-    if dossier is not None and dossier[3] == empreintes:  # sinon le dossier ne correspond plus à la page
-        fichier, html, heure, _ = dossier
-        st.download_button(
-            f"Télécharger le dossier ({fichier})",
-            html,
-            file_name=fichier,
-            mime="text/html",
-            key=f"validation.{nom}.telecharger",
-            on_click="ignore",
-        )
-        st.caption(
-            f"Dossier généré à {heure} avec la saisie de ce moment. Formules affichées par MathJax (connexion "
-            "Internet requise). Pour un PDF : ouvrir le fichier, Imprimer → Enregistrer en PDF."
-        )
+    if dossier is not None and dossier[3] != empreintes:  # le dossier ne correspond plus à la page
+        dossier = None
+    widgets.dossier_download(f"validation.{nom}", dossier)
