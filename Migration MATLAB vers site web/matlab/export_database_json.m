@@ -13,7 +13,7 @@
 
 here = fileparts(mfilename('fullpath'));             % .../Migration MATLAB vers site web/matlab
 root = fileparts(fileparts(here));         % racine du projet
-addpath(root);
+addpath(fullfile(root, 'desktop'));
 outDir = fullfile(root, 'web', 'data');
 if ~exist(outDir, 'dir')
     mkdir(outDir);

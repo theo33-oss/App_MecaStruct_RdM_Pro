@@ -10,3 +10,25 @@ docs/.status/
 .streamlit/secrets.toml
 *.pem
 *.key
+
+# MATLAB
+*.asv
+*.autosave
+*.mex*
+slprj/
+codegen/
+desktop/userdata/
+desktop/validation/
+
+# Python
+*.egg-info/
+build/
+dist/
+.coverage
+venv/
+
+# Systeme / editeurs
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

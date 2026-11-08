@@ -1,10 +1,16 @@
+> ## ⚠️ VERSION WEB NON MAINTENUE : archivée
+> Cette version web (Python / Streamlit) est **abandonnée** et conservée uniquement pour archive. Elle ne reçoit plus
+> de corrections ni d'évolutions et peut être en retard sur l'application PC. Pour un outil à jour, utiliser
+> l'application MATLAB : voir [desktop/](../desktop/README.md) et le [README racine](../README.md).
+> Raison de l'abandon : [À COMPLÉTER PAR THÉO].
+
 # MecaStruct RdM Pro — version web
 
 Version web (Python, Streamlit) de l'application MATLAB MecaStruct RdM Pro, par Théo Brun.
 Les calculs sont ceux de l'application MATLAB, sans MATLAB. Le plan de migration est dans
 [PLAN.md](../Migration%20MATLAB%20vers%20site%20web/PLAN.md).
 
-**Adresse du site** : https://appmecastructurerdm.streamlit.app/
+**Site en ligne** : arrêté. L'ancienne adresse (appmecastructurerdm.streamlit.app) ne répond plus ; l'application ne se lance plus qu'en local (voir plus bas).
 
 ## Mode d'emploi rapide
 
@@ -82,4 +88,4 @@ python -m ruff check .
 - Python : 3.12 (« Advanced settings » au déploiement)
 - Dépendances : `web/requirements.txt` (pytest et ruff sont dans `requirements-dev.txt`, non installés en ligne)
 
-Chaque `git push` sur `main` met le site à jour.
+Historique : réglages utilisés quand le site était publié. Le site a été arrêté ; un `git push` ne met plus rien en ligne.

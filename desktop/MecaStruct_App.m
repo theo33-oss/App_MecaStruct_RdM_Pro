@@ -1719,7 +1719,7 @@ classdef MecaStruct_App < handle
         function f = openDoc(~, name)
             %OPENDOC Ouvre un document du dossier docs (HTML) dans le navigateur par défaut.
             %   f = app.openDoc('NOTE_DE_CALCUL.html') renvoie le chemin du fichier ouvert.
-            f = fullfile(fileparts(mfilename('fullpath')), 'docs', char(name));
+            f = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'docs', char(name));
             if ~isfile(f)
                 error('MecaStruct:App:docMissing', 'Document introuvable : %s', f);
             end

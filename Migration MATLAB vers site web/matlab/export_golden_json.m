@@ -19,7 +19,7 @@
 
 here = fileparts(mfilename('fullpath'));
 root = fileparts(fileparts(here));
-addpath(root);
+addpath(fullfile(root, 'desktop'));
 outDir = fullfile(root, 'web', 'tests', 'golden');
 if ~exist(outDir, 'dir')
     mkdir(outDir);

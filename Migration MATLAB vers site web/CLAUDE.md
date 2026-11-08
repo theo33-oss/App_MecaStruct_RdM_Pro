@@ -16,7 +16,7 @@ Python/Streamlit** (dossier `web/`). Le plan complet est dans `Migration MATLAB 
 
 ## Règles absolues
 
-- **Ne jamais modifier** les fichiers MATLAB (`*.m` à la racine, `tests/*.m`) ni `docs/ARCHITECTURE.md`.
+- **Ne jamais modifier** les fichiers MATLAB (`desktop/*.m`, `desktop/tests/*.m`) ni `docs/ARCHITECTURE.md`.
   Ils sont la référence. Seuls `web/`, `.streamlit/` (thème, à la racine : seul endroit lu par Streamlit Community Cloud), `.github/workflows/`,
   `Migration MATLAB vers site web/PROGRESSION.md` et `Migration MATLAB vers site web/BLOCAGES.md` sont modifiables (et `CLAUDE.md` si une fiche le demande).
 - **Ne jamais recopier à la main** une valeur numérique de la base (matériaux, profilés…) : elle vient
