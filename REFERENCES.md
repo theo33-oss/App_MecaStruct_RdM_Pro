@@ -3,9 +3,9 @@
 Sources théoriques identifiables dans le code et les fichiers du dépôt. Détail clause par clause : [docs/NORMES.md](docs/NORMES.md).
 
 ## Cours et ouvrages
-- Cours de Résistance des Matériaux de l'auteur ; références exactes du cours : [À COMPLÉTER PAR THÉO]
+- Cours de Résistance des Matériaux suivis par l'auteur pendant sa formation (supports de cours non publiés, non inclus dans le dépôt).
 - J.-L. Fanchon, *Guide du calcul en mécanique*, Nathan.
-- *Mémotech* (collection) ; titre exact : [À COMPLÉTER PAR THÉO]
+- *Mémotech* (collection d'aide-mémoire techniques).
 - Cours de RdM des IUT GMP.
 - *Guide du dessinateur industriel* (pressions de matage, `desktop/DataManager.m`).
 - W. D. Pilkey, *Peterson's Stress Concentration Factors*, Wiley (ajustements Kt).

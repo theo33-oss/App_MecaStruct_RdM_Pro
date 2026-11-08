@@ -40,13 +40,13 @@ Cas de contrôle (voir [desktop/README.md](desktop/README.md)) : poutre IPE 200 
 ## Limites connues et niveau de validation
 
 - Une suite de tests MATLAB existe (`desktop/tests/`, lancement : `run('desktop/tests/run_all_tests.m')`). Chaque calcul peut produire un dossier de validation qui refait les équations à la main : cela détecte des erreurs de programmation, **pas** un choix de formule ou de coefficient discutable.
-- Pas de validation externe indépendante connue à ce jour [À COMPLÉTER PAR THÉO si une relecture a eu lieu].
+- Aucune validation externe indépendante (relecture par un enseignant, un ingénieur ou un bureau d'études) n'est documentée dans ce dépôt : les résultats n'ont été contrôlés que par l'auteur et par les tests automatiques.
 - Limites détaillées dans [desktop/README.md](desktop/README.md) (section « Limites connues ») et [docs/NORMES.md](docs/NORMES.md). Exemples : poutre hyperstatique avec Iyz ≠ 0 non fiable ; interaction N+M de l'Eurocode 3 à vérifier dans la norme ; pas de section de classe 4.
 - Les valeurs tirées de normes et de catalogues sont à vérifier sur les textes officiels avant usage.
 
 ## Feuille de route
 
-Aucune feuille de route formelle. [À COMPLÉTER PAR THÉO]
+Pas de feuille de route planifiée : le projet évolue selon le temps libre de l'auteur. Les idées et corrections sont suivies dans les [issues GitHub](https://github.com/theo33-oss/App_MecaStruct_RdM_Pro/issues) ; toute proposition est la bienvenue (voir [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Contribuer
 

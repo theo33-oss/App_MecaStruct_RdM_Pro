@@ -26,7 +26,7 @@ Nous nous engageons à faire de la participation à ce projet une expérience sa
 
 Les responsables du projet peuvent modifier, supprimer ou rejeter les commentaires, commits, issues et contributions qui ne respectent pas ce code, et bloquer temporairement ou définitivement un contributeur.
 
-Pour signaler un comportement inacceptable : [À COMPLÉTER PAR THÉO : adresse de contact, ou « via un message privé sur GitHub »]. Les signalements seront traités avec discrétion et équité.
+Pour signaler un comportement inacceptable : ouvrir une *issue* GitHub demandant un contact privé avec le mainteneur (compte GitHub `theo33-oss`), sans y mettre de détails sensibles ; ou utiliser la fonction « Report content » de GitHub, qui prévient directement GitHub. Les signalements seront traités avec discrétion et équité.
 
 ## Champ d'application
 
