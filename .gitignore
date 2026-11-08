@@ -7,7 +7,6 @@ docs/.status/
 
 # secrets et clés : jamais dans le dépôt
 .env
-.streamlit/secrets.toml
 *.pem
 *.key
 
@@ -20,15 +19,13 @@ codegen/
 desktop/userdata/
 desktop/validation/
 
-# Python
-*.egg-info/
-build/
-dist/
-.coverage
-venv/
-
 # Systeme / editeurs
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+
+# Fichiers locaux générés
+.venv/
+__pycache__/
+*.pyc

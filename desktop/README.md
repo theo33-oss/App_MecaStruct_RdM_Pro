@@ -4,7 +4,6 @@ Application MATLAB de Résistance des Matériaux et de dimensionnement des struc
 L'interface est entièrement programmatique : `uifigure`, `uigridlayout`, `uitabgroup`, sans `.mlapp`.
 
 > Ce fichier détaille l'application PC. Présentation générale du projet : [README racine](../README.md).
-> La version web (Streamlit) est abandonnée : voir [web/README.md](../web/README.md).
 
 ## Lancer l'application
 
